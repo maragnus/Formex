@@ -20,6 +20,7 @@ export type PlotSaveInfo = {
 
 -- Stored representation
 export type PlotData = {
+	PlotId: number,
 	UserId: number,
 	SaveId: number,
 	Name: string,
@@ -63,12 +64,12 @@ export type ObjectData = {
 local module = {}
 
 module.Permissions = {
-	Banned = -1,
-	Guest = 0,
-	VIP = 1,
-	Manager = 2,
-	Owner = 3
-} :: { Permission: number }
+	Banned = "Banned",
+	Guest = "Guest",
+	VIP = "VIP",
+	Manager = "Manager",
+	Owner = "Owner"
+} :: { Permission: Permission }
 
 module.LevelHeight = 10 -- studs
 module.GridSize = 2 -- studs
@@ -95,6 +96,7 @@ module.Dimensions = {
 module.Functions = {
 	ClaimPlot = "ClaimPlot",
 	ReleasePlot = "ReleasePlot",
+	RenamePlot = "RenamePlot",
 	ListSaves = "ListSaves",
 	LoadSave = "LoadSave",
 	NewSave = "NewSave",

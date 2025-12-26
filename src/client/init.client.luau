@@ -22,21 +22,3 @@ end
 plotCollection.ChildAdded:Connect(function(child)
     FormexClient.RegisterPlot(child)
 end)
-
--- Example event handlers
-local eventHandlers = {
-    MyPlotChanged = function(newPlotId)
-        -- print("MyPlotId changed to:", newPlotId)
-    end,
-    CurrentPlotChanged = function(newPlotId)
-        -- print("CurrentPlotId changed to:", newPlotId)
-    end,
-}
-
--- Listen for client events
-FormexClient.ClientEvents:Connect(function(eventName, ...)
-    local eventHandler = eventHandlers[eventName]
-    if eventHandler then
-        eventHandlers[eventName](...)
-    end
-end)

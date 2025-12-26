@@ -74,7 +74,7 @@ local function subscribeToPlot(plotPart: Part)
         IsValid = true,
         PlotId = plotId,
         PlotPart = plotPart,
-        Name = plotPart:GetAttribute("Name") or "Unnamed",
+        Name = plotPart:GetAttribute("PlotName") or "Unnamed",
         OwnerUserId = plotPart:GetAttribute("OwnerUserId") or 0,
         OwnerName = plotPart:GetAttribute("OwnerName") or "Unknown Player",
         MyPermission = "Guest",
@@ -82,8 +82,8 @@ local function subscribeToPlot(plotPart: Part)
     }
     module.Plots[plotId] = info
 
-    plotPart:GetAttributeChangedSignal("Name"):Connect(function()
-        info.Name = plotPart:GetAttribute("Name") or "Unnamed"
+    plotPart:GetAttributeChangedSignal("PlotName"):Connect(function()
+        info.Name = plotPart:GetAttribute("PlotName") or "Unnamed"
         notifyPlotChange(plotId)
     end)
 
@@ -135,14 +135,14 @@ end
 
 function module.ClaimPlot()
     FormexFunctions:InvokeServer(Formex.Functions.ClaimPlot)
-    local result = FormexUI.Dialog("Test", "Test dialog", {}, function(dialog)
-        FormexUI.CreateTextInput(dialog.ContentFrame, "name", "Plot name", function(value) dialog.Result = value end)
-    end)
-    print(result)
 end
 
 function module.ReleasePlot()
     FormexFunctions:InvokeServer(Formex.Functions.ReleasePlot)
+end
+
+function module.RenamePlot(newName: string)
+    FormexFunctions:InvokeServer(Formex.Functions.RenamePlot, newName)
 end
 
 function module.ListSaves(): {[number]: Formex.PlotSaveInfo}
@@ -150,14 +150,14 @@ function module.ListSaves(): {[number]: Formex.PlotSaveInfo}
 end
 
 function module.LoadSave(saveId: number)
-    return FormexFunctions:InvokeServer(Formex.Functions.LoadPlot, saveId)
+    FormexFunctions:InvokeServer(Formex.Functions.LoadPlot, saveId)
 end
 
 function module.NewSave()
-    return FormexFunctions:InvokeServer(Formex.Functions.NewPlot)
+    FormexFunctions:InvokeServer(Formex.Functions.NewPlot)
 end
 
-function module.SetSavePermission(targetUserId: number, permission: Formex.Permission)
+function module.SetSavePermission(targetUserId: number, permission: Formex.Permission): (boolean, string?)
     return FormexFunctions:InvokeServer(Formex.Functions.SetPermission, targetUserId, permission)
 end
 

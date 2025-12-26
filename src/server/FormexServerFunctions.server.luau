@@ -13,6 +13,9 @@ local remoteFunctions = {
     [Formex.Functions.ReleasePlot] = function(player)
         return FormexServer.ReleasePlot(player)
     end,
+    [Formex.Functions.RenamePlot] = function(player, newName)
+        return FormexServer.RenamePlot(player, newName)
+    end,
     [Formex.Functions.ListSaves] = function(player)
         return FormexServer.ListSaves(player)
     end,
@@ -31,12 +34,15 @@ local remoteFunctions = {
 }
 
 FormexServer.Functions.OnServerInvoke = function(player, functionName, ...)
+    warn(player.Name .. " called " .. functionName)
     local func = remoteFunctions[functionName]
     if func and type(func) == "function" then
-        local result, message = pcall(func, player, ...)
-        if result == false and type(message) == "string" then
-            warn(functionName .. " failed: " .. message)
+        local success, result = pcall(func, player, ...)
+        if not success then
+            warn(functionName .. " failed:", result)
+            return false, result
         end
+
         return result
     else
         warn("FormexFunctions: Unknown function invoked:", functionName)

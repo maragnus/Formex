@@ -21,15 +21,10 @@ FormexEvents.Name = "FormexEvents"
 local module = {}
 module.Formex = Formex
 
-local plots: { [number]: BasePart } = {}
-local activePlotData: { [number]: Formex.PlotData } = {}
-local playerToPlot: {[number]: number} = {}
-local plotToPlayer: {[number]: number} = {}
-
-module.Plots = plots -- [plotId]: BasePart
-module.PlotData = activePlotData -- [plotId]: Formex.PlotData
-module.PlayerToPlot = playerToPlot -- [userId]: plotId
-module.PlotToPlayer = plotToPlayer -- [plotId]: userId
+module.Plots = {} :: { [number]: BasePart } -- [plotId]: BasePart
+module.PlotData = {} :: { [number]: Formex.PlotData } -- [plotId]: Formex.PlotData
+module.PlayerToPlot = {} :: {[number]: number} -- [userId]: plotId
+module.PlotToPlayer = {} :: {[number]: number} -- [plotId]: userId
 module.Functions = FormexFunctions
 module.Events = FormexEvents
 
@@ -46,12 +41,17 @@ end
 local function updatePlotAttributes(plotId: number)
     local plotPart = module.Plots[plotId]
     local plotData = module.PlotData[plotId]
+    if not plotPart or not plotData then return end
+
     local userId = plotData.UserId
-    local ownerPlayer = userId and Players:GetPlayerByUserId(userId)
+    local ownerPlayer = userId and userId ~= 0 and Players:GetPlayerByUserId(userId)
     local ownerName = userId and ownerPlayer and ownerPlayer.Name or ""
     local plotName = plotData.Name or (ownerPlayer and ownerName .. "'s Plot") or "Unclaimed Plot"
     local permissions = plotData.Permissions or {}
-    permissions[userId] = "Owner"
+
+    if userId and userId ~= 0 then
+        permissions[userId] = "Owner"
+    end
 
     plotPart:SetAttribute("OwnerUserId", plotData.UserId or 0)
     plotPart:SetAttribute("OwnerName", ownerName)
@@ -71,6 +71,16 @@ local function updatePlotAttributes(plotId: number)
             end
         end
     end
+end
+
+local function getPlayerCurrentPlot(player: Player) : (Formex.PlotData?, Formex.Permission)
+    local plotId = player:GetAttribute("CurrentPlotId") or 0
+    if not plotId or plotId == 0 then
+        return nil, nil
+    end
+
+    local plotData = module.PlotData[plotId]
+    return plotData, plotData.Permissions[player.UserId] or Formex.Permissions.Guest
 end
 
 function module.UnassignPlotToPlayer(player: Player)
@@ -146,6 +156,7 @@ function module.RegisterPlot(plotPart: Part)
     plotPart:SetAttribute("PlotId", plotId)
 
     module.PlotData[plotId] = {
+        PlotId = plotId,
         UserId = 0,
         SaveId = 0,
         Name = "Unclaimed Plot",
@@ -170,6 +181,7 @@ function module.SavePlot(plotId: number)
     local key = tostring(userId) .. ":" .. tostring(plotData.SaveId)
     local success, err = pcall(function()        
         plotDataStore:SetAsync(key, {
+            PlotId = plotId,
             UserId = userId,
             SaveId = plotData.SaveId,
             Name = plotData.Name,
@@ -197,6 +209,21 @@ function module.ReleasePlot(player: Player): boolean
     return module.UnassignPlotToPlayer(player)
 end
 
+function module.RenamePlot(player: Player, newName: string): boolean
+    if not newName or newName == "" then return false, "Invalid name" end
+
+    local plotData, permission = getPlayerCurrentPlot(player)
+    if not plotData then return false, "No current plot" end
+
+    if permission ~= Formex.Permissions.Owner then return false, "Permission denied" end
+    if plotData.Name == newName then return false, "Name unchanged" end
+
+    plotData.Name = newName
+    updatePlotAttributes(plotData.PlotId)
+
+    return true
+end
+
 function module.ListSaves(player: Player): {[number]: Formex.PlotSaveInfo}
     -- TODO implement
 end
@@ -210,11 +237,30 @@ function module.NewSave(player: Player): boolean
 end
 
 function module.SetPermission(player: Player, targetUserId: number, permission: Formex.Permission): boolean
-    -- TODO implement
+    local plotData, playerPermission = getPlayerCurrentPlot(player)
+    if not plotData then return false, "No current plot" end
+
+    if playerPermission ~= Formex.Permissions.Owner then error("Permission denied") end
+    if not targetUserId or targetUserId <= 0 then return error("Invalid target") end
+    if targetUserId == plotData.UserId then return error("Cannot change owner permission") end
+    if not Formex.Permissions[permission] then return error("Invalid permission") end
+
+    plotData.Permissions = plotData.Permissions or {}
+    if permission == Formex.Permissions.Guest then
+        plotData.Permissions[targetUserId] = nil
+    else
+        plotData.Permissions[targetUserId] = permission
+    end
+
+    updatePlotAttributes(plotData.PlotId)
+    return true
 end
 
 function module.GetPermissions(player: Player): {[number]: Formex.Permission}
-    -- TODO implement
+    local plotData = getPlayerCurrentPlot(player)
+    if not plotData then return false, "No current plot" end
+
+    return plotData.Permissions
 end
 
 -- Ensure defaults when players join

@@ -12,17 +12,6 @@ module.ScreenGui = screenGui
 module.BlurController = BlurController
 local currentContentParent: Instance? = nil
 
-export type ButtonType = "Primary" | "Secondary" | "Success" | "Info" | "Warn" | "Danger"
-
-export type ButtonStyle = "Solid" | "Outline"
-
-export type ButtonOptions = {
-    Icon: string?,
-    Type: ButtonType?,
-    Style: ButtonStyle?,
-    IsPressed: boolean?, -- Appears pressed for toggle button style
-}
-
 local buttonPalette = {
     Primary = { Base = Color3.fromRGB(88, 118, 255), Text = Color3.fromRGB(248, 249, 255) },
     Secondary = { Base = Color3.fromRGB(215, 220, 232), Text = Color3.fromRGB(60, 70, 90) },
@@ -40,29 +29,162 @@ local function darken(color: Color3, amount: number): Color3
     return color:Lerp(Color3.new(0, 0, 0), math.clamp(amount, 0, 1))
 end
 
-function module.CreateButton(parent: Instance, name: string, label: string, optionsOrAction: ButtonOptions | any, action: any)
-    local options: ButtonOptions? = optionsOrAction
-    if typeof(optionsOrAction) == "function" then
-        action = optionsOrAction
-        options = nil
+export type FlexItemOptions = {
+    FlexMode: Enum.UIFlexMode,
+    GrowRatio: number?,
+    StrinkRatio: number?,
+    ItemLineAlignment: Enum.ItemLineAlignment?,
+}
+
+function module.FlexItem(item: Instance, flexMode: Enum.UIFlexMode | FlexItemOptions)    
+    local flexItem = Instance.new("UIFlexItem", item)
+    if type(flexMode) == "table" then
+        flexItem.FlexMode = flexMode.FlexMode
+        if flexMode.GrowRatio ~= nil then flexItem.GrowRatio = flexMode.GrowRatio end
+        if flexMode.ShrinkRatio ~= nil then flexItem.ShrinkRatio = flexMode.StrinkRatio end
+        if flexMode.ItemLineAlignment ~= nil then flexItem.ItemLineAlignment = flexMode.ItemLineAlignment end
+    elseif flexMode ~= nil then
+        flexItem.FlexMode = flexMode
     end
+    return flexItem
+end
 
-    options = options or {}
-    options.Style = options.Style or "Solid"
-    options.Type = options.Type or "Primary"
+export type CommonOptions = {
+    Name: string?,
+    Position: UDim2?,
+    Size: UDim2?,
+    Padding: number | UDim | nil,
+    BackgroundTransparency: number?,
+    AutomaticSize: Enum.AutomaticSize?,
+    LayoutOrder: number?,
+    Selectable: boolean?,
+    Visible: boolean?,
+    FlexMode: Enum.UIFlexMode?,
+    FlexGrowRatio: number?,
+    FlexShrinkRatio: number?,
+    ItemLineAlignment: Enum.ItemLineAlignment,
+}
 
+local function updateGUIObject(instance: GuiObject, options: CommonOptions)
+    if options.Name ~= nil then instance.Name = options.Name end
+    if options.Position ~= nil then instance.Position = options.Position end
+    if options.Size ~= nil then instance.Size = options.Size end
+    if options.LayoutOrder ~= nil then instance.LayoutOrder = options.LayoutOrder end
+    if options.Selectable ~= nil then instance.Selectable = options.Selectable end
+    if options.Visible ~= nil then instance.Visible = options.Visible end
+    if options.AutomaticSize ~= nil then instance.AutomaticSize = options.AutomaticSize end
+    if options.BackgroundTransparency ~= nil then
+        instance.BackgroundTransparency = options.BackgroundTransparency
+    else
+        instance.BackgroundTransparency = 1
+    end
+    if options.Padding ~= nil then
+        local padding = Instance.new("UIPadding", instance)
+        padding.PaddingRight = type(options.Padding) == "number" and UDim.new(0, options.Padding) or options.Padding
+    end
+    if options.FlexMode then module.FlexItem(instance, options) end
+end
+
+export type LabelOptions = {
+    Parent: Instance,
+    Text: string?,
+    BackgroundTransparency: number?,
+    TextXAlignment: Enum.TextXAlignment?,
+    TextYAlignment: Enum.TextYAlignment?,
+    Font: Enum.Font?,
+    TextSize: number?,
+    TextColor3: Color3?,
+    FlexMode: Enum.UIFlexMode?,
+    FlexGrowRatio: number?,
+    FlexShrinkRatio: number?,
+    ItemLineAlignment: Enum.ItemLineAlignment,
+} | CommonOptions
+
+function module.CreateLabel(options: LabelOptions)
+    local label = Instance.new("TextLabel", options.Parent)
+    if options.Name then label.Name = options.Name end
+    label.Text = options.Text or ""
+    label.TextXAlignment = options.TextXAlignment or Enum.TextXAlignment.Center
+    label.TextYAlignment = options.TextYAlignment or Enum.TextYAlignment.Center
+    label.Font = options.Font or Enum.Font.Gotham
+    label.TextSize = options.TextSize or 14
+    label.TextColor3 = options.TextColor3 or Color3.fromRGB(0, 0, 0)
+    updateGUIObject(label, options)
+end
+
+export type FlexOptions = {
+    Parent: Instance,
+    SortOrder: Enum.SortOrder?,
+    Gap: number?,
+    HorizontalAlignment: Enum.HorizontalAlignment?,
+    VerticalAlignment: Enum.VerticalAlignment?,
+    AutomaticSize: Enum.AutomaticSize?,
+    Wraps: boolean?,
+} | CommonOptions
+
+function module.CreateRow(options: FlexOptions)
+    local header = Instance.new("Frame", options.Parent)
+    updateGUIObject(header, options)
+
+    local headerLayout = Instance.new("UIListLayout", header)
+    headerLayout.FillDirection = Enum.FillDirection.Horizontal
+    headerLayout.SortOrder = options.SortOrder or Enum.SortOrder.LayoutOrder
+    headerLayout.Padding = UDim.new(0, options.Gap or 0)
+    headerLayout.HorizontalAlignment = options.HorizontalAlignment or Enum.HorizontalAlignment.Center
+    headerLayout.VerticalAlignment = options.VerticalAlignment or Enum.VerticalAlignment.Center
+    headerLayout.Wraps = options.Wraps or false
+
+    return header
+end
+
+function module.CreateColumn(options: FlexOptions)
+    local header = Instance.new("Frame", options.Parent)
+    updateGUIObject(header, options)
+
+    local headerLayout = Instance.new("UIListLayout", header)
+    headerLayout.FillDirection = Enum.FillDirection.Vertical
+    headerLayout.SortOrder = options.SortOrder or Enum.SortOrder.LayoutOrder
+    headerLayout.Padding = UDim.new(0, options.Gap or 0)
+    headerLayout.HorizontalAlignment = options.HorizontalAlignment or Enum.HorizontalAlignment.Center
+    headerLayout.VerticalAlignment = options.VerticalAlignment or Enum.VerticalAlignment.Center
+    headerLayout.Wraps = options.Wraps or false
+
+    return header
+end
+
+export type ButtonType = "Primary" | "Secondary" | "Success" | "Info" | "Warn" | "Danger"
+
+export type ButtonStyle = "Solid" | "Outline"
+
+export type ButtonOptions = {
+    Parent: Instance,
+    Text: string?,
+    Icon: string?,
+    Type: ButtonType?,
+    Style: ButtonStyle?,
+    IsPressed: boolean?, -- Appears pressed for toggle button style
+} | CommonOptions
+
+function module.CreateButton(options: ButtonOptions, action: (GuiButton) -> boolean)
     local palette = buttonPalette[options.Type] or buttonPalette.Primary
     local baseColor = palette.Base
     local outlineTextColor = (options.Type == "Secondary" or options.Type == "Warn") and darken(baseColor, 0.35) or baseColor
+    local hasLabel = options.Text ~= nil and options.Text ~= ""
+    local isIconOnly = options.Icon ~= nil and not hasLabel
+    local buttonHeight = 44
+    local buttonWidth = isIconOnly and buttonHeight or 132
 
-    local button = Instance.new("ImageButton", parent)
-    button.Name = name
+    options.Size = options.Size or UDim2.new(0, buttonWidth, 0, buttonHeight)
+    options.Style = options.Style or "Solid"
+    options.Type = options.Type or "Primary"
+
+    local button = Instance.new("ImageButton", options.Parent)
+    updateGUIObject(button, options)
     button.AutoButtonColor = false
-    button.BackgroundTransparency = 0
     button.ClipsDescendants = false
-    button.Size = UDim2.new(0, 132, 0, 44)
     button.Visible = false
     button.BorderSizePixel = 0
+    button.BackgroundTransparency = 0
 
     local buttonCorner = Instance.new("UICorner", button)
     buttonCorner.CornerRadius = UDim.new(0, 12)
@@ -75,15 +197,16 @@ function module.CreateButton(parent: Instance, name: string, label: string, opti
     gradient.Rotation = 90
 
     local padding = Instance.new("UIPadding", button)
-    padding.PaddingLeft = UDim.new(0, 14)
-    padding.PaddingRight = UDim.new(0, 14)
+    padding.PaddingLeft = UDim.new(0, isIconOnly and 10 or 14)
+    padding.PaddingRight = UDim.new(0, isIconOnly and 10 or 14)
 
     local contentLayout = Instance.new("UIListLayout", button)
     contentLayout.FillDirection = Enum.FillDirection.Horizontal
     contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     contentLayout.VerticalAlignment = Enum.VerticalAlignment.Center
     contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    contentLayout.Padding = UDim.new(0, options.Icon and 8 or 4)
+    local contentSpacing = hasLabel and (options.Icon and 8 or 4) or 0
+    contentLayout.Padding = UDim.new(0, contentSpacing)
 
     local iconImage: ImageLabel? = nil
     if options.Icon then
@@ -95,18 +218,21 @@ function module.CreateButton(parent: Instance, name: string, label: string, opti
         iconImage.ScaleType = Enum.ScaleType.Fit
     end
 
-    local labelText = Instance.new("TextLabel", button)
-    labelText.Name = "Label"
-    labelText.BackgroundTransparency = 1
-    labelText.Size = UDim2.new(0, 0, 1, 0)
-    labelText.AutomaticSize = Enum.AutomaticSize.X
-    labelText.Font = Enum.Font.GothamSemibold
-    labelText.Text = label
-    labelText.TextSize = 16
-    labelText.TextColor3 = palette.Text
-    labelText.TextXAlignment = Enum.TextXAlignment.Left
-    labelText.TextYAlignment = Enum.TextYAlignment.Center
-    labelText.ZIndex = 2
+    local labelText: TextLabel? = nil
+    if hasLabel then
+        labelText = Instance.new("TextLabel", button)
+        labelText.Name = "Label"
+        labelText.BackgroundTransparency = 1
+        labelText.Size = UDim2.new(0, 0, 1, 0)
+        labelText.AutomaticSize = Enum.AutomaticSize.X
+        labelText.Font = Enum.Font.GothamSemibold
+        labelText.Text = options.Text or ""
+        labelText.TextSize = 16
+        labelText.TextColor3 = palette.Text
+        labelText.TextXAlignment = Enum.TextXAlignment.Left
+        labelText.TextYAlignment = Enum.TextYAlignment.Center
+        labelText.ZIndex = 2
+    end
 
     local function applyStyle(isHover: boolean, isActive: boolean)
         local pressed = options.IsPressed or isActive
@@ -116,7 +242,9 @@ function module.CreateButton(parent: Instance, name: string, label: string, opti
             button.BackgroundColor3 = tint
             stroke.Color = darken(baseColor, 0.15)
             gradient.Color = ColorSequence.new(lighten(tint, 0.04), darken(tint, 0.02))
-            labelText.TextColor3 = outlineTextColor
+            if labelText then
+                labelText.TextColor3 = outlineTextColor
+            end
             if iconImage then
                 iconImage.ImageColor3 = outlineTextColor
             end
@@ -126,7 +254,9 @@ function module.CreateButton(parent: Instance, name: string, label: string, opti
             button.BackgroundColor3 = baseColor
             stroke.Color = darken(baseColor, 0.2)
             gradient.Color = ColorSequence.new(top, bottom)
-            labelText.TextColor3 = palette.Text
+            if labelText then
+                labelText.TextColor3 = palette.Text
+            end
             if iconImage then
                 iconImage.ImageColor3 = palette.Text
             end
@@ -214,25 +344,16 @@ local function mergeDialogOptions(options: DialogOptions?): DialogOptions
     return merged
 end
 
-function module.CreateTextInput(parentOrName: Instance | string, nameOrLabel: string?, labelOrCallback: string | ((value: string) -> nil)?, onChanged: ((value: string) -> nil)?): TextBox
-    local parent: Instance
-    local name: string
-    local label: string
-    local callback: ((value: string) -> nil)?
+export type TextInputOptions = {
+    Parent: Instance,
+    Label: string?,
+    Text: string?,
+} | CommonOptions
 
-    if typeof(parentOrName) == "string" then
-        parent = currentContentParent or screenGui
-        name = parentOrName
-        label = (nameOrLabel :: string?) or parentOrName
-        callback = labelOrCallback :: ((value: string) -> nil)?
-    else
-        parent = parentOrName
-        name = nameOrLabel or "Input"
-        label = (labelOrCallback :: string?) or name
-        callback = onChanged
-    end
 
-    local container = Instance.new("Frame", parent)
+function module.CreateTextInput(options: TextInputOptions, onChanged: ((value: string) -> nil)?): TextBox
+    local name = options.Name or options.Label or "TextInput"
+    local container = Instance.new("Frame", options.Parent)
     container.Name = name .. "Container"
     container.Active = true
     container.Size = UDim2.new(1, 0, 0, 64)
@@ -264,19 +385,19 @@ function module.CreateTextInput(parentOrName: Instance | string, nameOrLabel: st
     labelText.BackgroundTransparency = 1
     labelText.Size = UDim2.new(1, 0, 0, 16)
     labelText.Font = Enum.Font.GothamMedium
-    labelText.Text = label
+    labelText.Text = options.Label or ""
     labelText.TextColor3 = Color3.fromRGB(90, 100, 130)
     labelText.TextSize = 13
     labelText.TextXAlignment = Enum.TextXAlignment.Left
 
     local input = Instance.new("TextBox", container)
     input.Name = name
+    input.Text = options.Text or ""
     input.Size = UDim2.new(1, 0, 0, 28)
     input.BackgroundColor3 = container.BackgroundColor3
     input.BackgroundTransparency = 0
     input.BorderSizePixel = 0
     input.TextColor3 = Color3.fromRGB(40, 45, 70)
-    input.Text = ""
     input.PlaceholderText = ""
     input.ClearTextOnFocus = false
     input.Font = Enum.Font.Gotham
@@ -285,8 +406,8 @@ function module.CreateTextInput(parentOrName: Instance | string, nameOrLabel: st
     input.TextYAlignment = Enum.TextYAlignment.Center
 
     local function emitChange()
-        if callback then
-            callback(input.Text)
+        if onChanged then
+            onChanged(input.Text)
         end
     end
 
@@ -459,7 +580,6 @@ function module.Dialog(name: string, title: string, options: DialogOptions?, con
         blur:Destroy()
     end)
 
-    currentContentParent = contentFrame
     if contents then
         local success, err = pcall(contents, dialog)
         if not success then
@@ -467,17 +587,16 @@ function module.Dialog(name: string, title: string, options: DialogOptions?, con
             dialog.Close(false)
         end
     end
-    currentContentParent = nil
 
     for index, buttonInfo in ipairs(mergedOptions.Buttons or {}) do
         local info = buttonInfo
-        local button = module.CreateButton(buttonsFrame, "Button" .. tostring(index), info.Label or "OK", info.Options, function()
-            local buttonResult = info.Result
-            if buttonResult == nil then
-                buttonResult = dialog.Result
-            end
-            dialog.Close(buttonResult)
-        end)
+        local button = module.CreateButton({
+            Parent = buttonsFrame,
+            Text = info.Label or "OK",
+            Style = info.Style,
+            Type = info.Type,
+            Icon = info.Icon
+        }, function() dialog.Close(info.Result) end)
 
         button.Visible = true
         button.LayoutOrder = index
