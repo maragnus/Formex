@@ -47,7 +47,7 @@ function module.FlexItem(item: Instance, flexMode: Enum.UIFlexMode | FlexItemOpt
         flexItem.FlexMode = flexMode
     end
     return flexItem
-end
+end 
 
 export type CommonOptions = {
     Name: string?,
@@ -300,12 +300,6 @@ export type ButtonInfo = {
     Options: ButtonOptions | nil
 }
 
-export type DialogOptions = {
-    Size: DialogSize?,
-    CanClose: boolean?,
-    Buttons: {[number]: ButtonInfo}?
-}
-
 local defaultDialogOptions: DialogOptions = {
     CanClose = true,
     Size = "Small",
@@ -448,14 +442,80 @@ function module.CreateTextInput(options: TextInputOptions, onChanged: ((value: s
     return input
 end
 
-function module.Dialog(name: string, title: string, options: DialogOptions?, contents: ((dialog: Dialog) -> nil))
+function module.Corner(parent: GuiObject, radius: number)
+    local corner = Instance.new("UICorner", parent)
+    corner.CornerRadius = UDim.new(0, radius)
+    return corner
+end
+
+function module.Padding(parent: GuiObject, top: number, right: number?, bottom: number?, left: number?)
+    local padding = Instance.new("UIPadding", parent)
+    padding.PaddingTop = UDim.new(0, top)
+    padding.PaddingRight = UDim.new(0, right or top)
+    padding.PaddingBottom = UDim.new(0, bottom or top)
+    padding.PaddingLeft = UDim.new(0, left or right or top)
+    return padding
+end
+
+local FOOTER_CONTENT_HEIGHT = 44
+local FOOTER_EDGE_BOUNDARY = 64
+local FOOTER_BORDER = 16
+local FOOTER_CORNER_RADIUS = 32
+local FOOTER_TOTAL_HEIGHT = FOOTER_CONTENT_HEIGHT + FOOTER_BORDER * 4
+
+function module.Footer(parent: ScreenGui)
+    local footerFrame = Instance.new("Frame", parent)
+    footerFrame.Name = "Footer"
+    footerFrame.BackgroundColor3 = Color3.fromRGB(250, 245, 255)
+    footerFrame.BackgroundTransparency = 0.5
+    footerFrame.Position = UDim2.new(0, FOOTER_EDGE_BOUNDARY, 1, -FOOTER_TOTAL_HEIGHT + FOOTER_CORNER_RADIUS / 4)
+    footerFrame.Size = UDim2.new(1, -FOOTER_EDGE_BOUNDARY * 2, 0, FOOTER_TOTAL_HEIGHT + FOOTER_CORNER_RADIUS)
+
+    module.Padding(footerFrame, FOOTER_BORDER, FOOTER_BORDER, FOOTER_BORDER + FOOTER_CORNER_RADIUS, FOOTER_BORDER)
+    module.Corner(footerFrame, FOOTER_CORNER_RADIUS)
+    BlurController.new(footerFrame, "Rectangle")
+
+    local footerContainer = Instance.new("ScrollingFrame", footerFrame)
+    footerContainer.Name = "Container"
+    footerContainer.BackgroundColor3 = Color3.fromRGB(250, 245, 255)
+    footerContainer.BackgroundTransparency = 0
+    footerContainer.Size = UDim2.new(1, 0, 1, 0)
+    footerContainer.AutomaticCanvasSize = Enum.AutomaticSize.X
+    footerContainer.ScrollingDirection = Enum.ScrollingDirection.X
+    footerContainer.ScrollingEnabled = true
+    module.Padding(footerContainer, FOOTER_BORDER, FOOTER_BORDER, FOOTER_BORDER, FOOTER_BORDER)
+    module.Corner(footerContainer, FOOTER_CORNER_RADIUS * 0.75)
+    
+    local dialogStroke = Instance.new("UIStroke", footerContainer)
+    dialogStroke.Color = Color3.fromRGB(210, 210, 230)
+    dialogStroke.Thickness = 2
+
+    local footerLayout: UIListLayout = Instance.new("UIListLayout", footerContainer)
+    footerLayout.FillDirection = Enum.FillDirection.Horizontal
+    footerLayout.Padding = UDim.new(0, 16)
+    footerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+    return footerContainer
+end
+
+
+export type DialogOptions = {
+    Name: string,
+    Title: string,
+    Size: DialogSize?,
+    CanClose: boolean?,
+    Scrolling: Enum.ScrollingDirection?,
+    Buttons: {[number]: ButtonInfo}?
+}
+
+function module.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> nil))
     local mergedOptions = mergeDialogOptions(options)
     local result: any = nil
     local closed = false
     local size = dialogSizes[mergedOptions.Size or "Small"] or dialogSizes.Small
     local dialog: Dialog = {
-        Name = name,
-        Title = title,
+        Name = options.Name or "Dialog",
+        Title = options.Title or "Dialog",
         Size = mergedOptions.Size or "Small",
         Result = nil
     }
@@ -470,7 +530,7 @@ function module.Dialog(name: string, title: string, options: DialogOptions?, con
     end
 
     local overlay = Instance.new("Frame", screenGui)
-    overlay.Name = name .. "Overlay"
+    overlay.Name = dialog.Name .. "Overlay"
     overlay.Active = true
     overlay.BackgroundTransparency = 0.45
     overlay.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
@@ -479,7 +539,7 @@ function module.Dialog(name: string, title: string, options: DialogOptions?, con
     overlay.ZIndex = 20
 
     local dialogFrame = Instance.new("Frame", overlay)
-    dialogFrame.Name = name
+    dialogFrame.Name = dialog.Name
     dialogFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     dialogFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     dialogFrame.Size = UDim2.new(0, size, 0, 0)
@@ -519,7 +579,7 @@ function module.Dialog(name: string, title: string, options: DialogOptions?, con
     titleText.BackgroundTransparency = 1
     titleText.Size = UDim2.new(1, mergedOptions.CanClose and -36 or 0, 1, 0)
     titleText.Font = Enum.Font.GothamBold
-    titleText.Text = title
+    titleText.Text = dialog.Title
     titleText.TextColor3 = Color3.fromRGB(50, 55, 80)
     titleText.TextSize = 20
     titleText.TextXAlignment = Enum.TextXAlignment.Left

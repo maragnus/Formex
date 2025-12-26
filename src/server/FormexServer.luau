@@ -10,7 +10,7 @@ local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
 local Formex = require(FormexFolder:WaitForChild("Formex"))
 local FormexBuild = require(script.Parent:WaitForChild("FormexBuild"))
 
-local plotDataStore = DataStoreService:GetDataStore("FormexPlotData")
+local plotDataStore: DataStore = DataStoreService:GetDataStore("FormexPlotData")
 
 local FormexFunctions: RemoteFunction = Instance.new("RemoteFunction", FormexFolder)
 FormexFunctions.Name = "FormexFunctions"
@@ -169,6 +169,31 @@ function module.RegisterPlot(plotPart: Part)
     print("Registering plot with PlotId:", plotId)
 end
 
+function module.ClaimPlot(player: Player, plotId: number?): (boolean, string)
+    plotId = plotId or player:GetAttribute("CurrentPlotId")
+    if not plotId then return false, "No plot specified" end
+    return module.AssignPlotToPlayer(player, plotId)
+end
+
+function module.ReleasePlot(player: Player): boolean
+    return module.UnassignPlotToPlayer(player)
+end
+
+function module.RenamePlot(player: Player, newName: string): boolean
+    if not newName or newName == "" then return false, "Invalid name" end
+
+    local plotData, permission = getPlayerCurrentPlot(player)
+    if not plotData then return false, "No current plot" end
+
+    if permission ~= Formex.Permissions.Owner then return false, "Permission denied" end
+    if plotData.Name == newName then return false, "Name unchanged" end
+
+    plotData.Name = newName
+    updatePlotAttributes(plotData.PlotId)
+
+    return true
+end
+
 function module.SavePlot(plotId: number)
     local plotData = module.PlotData[plotId]
     if not plotData or plotData.SaveId == 0 then return end
@@ -199,41 +224,33 @@ function module.SavePlot(plotId: number)
     return true
 end
 
-function module.ClaimPlot(player: Player, plotId: number?): (boolean, string)
-    plotId = plotId or player:GetAttribute("CurrentPlotId")
-    if not plotId then return false, "No plot specified" end
-    return module.AssignPlotToPlayer(player, plotId)
-end
-
-function module.ReleasePlot(player: Player): boolean
-    return module.UnassignPlotToPlayer(player)
-end
-
-function module.RenamePlot(player: Player, newName: string): boolean
-    if not newName or newName == "" then return false, "Invalid name" end
-
-    local plotData, permission = getPlayerCurrentPlot(player)
-    if not plotData then return false, "No current plot" end
-
-    if permission ~= Formex.Permissions.Owner then return false, "Permission denied" end
-    if plotData.Name == newName then return false, "Name unchanged" end
-
-    plotData.Name = newName
-    updatePlotAttributes(plotData.PlotId)
-
-    return true
-end
-
+-- This method can throw errors because is always called via pcall
 function module.ListSaves(player: Player): {[number]: Formex.PlotSaveInfo}
+    local userId = player.UserId
+    local saves = plotDataStore:ListKeysAsync(tostring(userId) .. ":", 16, nil, true)
+
     -- TODO implement
 end
 
+-- This method can throw errors because is always called via pcall
 function module.LoadSave(player: Player, saveId: number): boolean
     -- TODO implement
 end
 
+-- This method can throw errors because is always called via pcall
 function module.NewSave(player: Player): boolean
-    -- TODO implement
+    local plotId = module.PlayerToPlot[player.UserId]
+    if not plotId or plotId == 0 then error("No claimed plot") end
+    local plotData = module.PlotData[plotId]
+    if not plotData then error("Invalid plot") end
+    
+    local saveId = Random.new():NextInteger(1000, 10000000)
+    plotData.SaveId = saveId
+    plotData.Name = player.Name .. "'s Plot"
+    plotData.Permissions[player.UserId] = Formex.Permissions.Owner
+    plotData.Levels = {}
+
+    module.SavePlot(plotId)
 end
 
 function module.SetPermission(player: Player, targetUserId: number, permission: Formex.Permission): boolean

@@ -12,6 +12,7 @@ export type PlotInfo = {
     IsValid: boolean,
     PlotId: number,
     PlotPart: BasePart,
+    SaveId: number,
     Name: string,
     OwnerUserId: number,
     OwnerName: string,
@@ -24,6 +25,7 @@ local EmptyPlotInfo: PlotInfo = {
     IsValid = false,
     PlotId = 0,
     PlotPart = nil,
+    SaveId = 0,
     Name = "",
     OwnerUserId = 0,
     OwnerName = "",
@@ -133,7 +135,7 @@ function module.RegisterPlot(plotPart: Part)
     end
 end
 
-function module.ClaimPlot()
+function module.ClaimPlot() : boolean
     FormexFunctions:InvokeServer(Formex.Functions.ClaimPlot)
 end
 
@@ -145,7 +147,7 @@ function module.RenamePlot(newName: string)
     FormexFunctions:InvokeServer(Formex.Functions.RenamePlot, newName)
 end
 
-function module.ListSaves(): {[number]: Formex.PlotSaveInfo}
+function module.GetSaves(): {[number]: Formex.PlotSaveInfo}
     return FormexFunctions:InvokeServer(Formex.Functions.ReleasePlot)
 end
 
