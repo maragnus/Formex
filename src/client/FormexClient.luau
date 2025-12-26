@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
 local Formex = require(FormexFolder:WaitForChild("Formex"))
+local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
 local FormexFunctions: RemoteFunction = FormexFolder:WaitForChild("FormexFunctions")
 local FormexEvents: RemoteEvent = FormexFolder:WaitForChild("FormexEvents")
 
@@ -134,6 +135,10 @@ end
 
 function module.ClaimPlot()
     FormexFunctions:InvokeServer(Formex.Functions.ClaimPlot)
+    local result = FormexUI.Dialog("Test", "Test dialog", {}, function(dialog)
+        FormexUI.CreateTextInput(dialog.ContentFrame, "name", "Plot name", function(value) dialog.Result = value end)
+    end)
+    print(result)
 end
 
 function module.ReleasePlot()

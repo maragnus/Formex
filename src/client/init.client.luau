@@ -26,10 +26,10 @@ end)
 -- Example event handlers
 local eventHandlers = {
     MyPlotChanged = function(newPlotId)
-        print("MyPlotId changed to:", newPlotId)
+        -- print("MyPlotId changed to:", newPlotId)
     end,
     CurrentPlotChanged = function(newPlotId)
-        print("CurrentPlotId changed to:", newPlotId)
+        -- print("CurrentPlotId changed to:", newPlotId)
     end,
 }
 

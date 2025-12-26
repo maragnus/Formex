@@ -1,13 +1,11 @@
 local Players = game:GetService("Players")
 local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
-
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BlurController = require(script.Parent:WaitForChild("BlurController"))
+local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
+local BlurController = FormexUI.BlurController
 
 local localPlayer = Players.LocalPlayer
 
-local screenGui: ScreenGui = Instance.new("ScreenGui", localPlayer:WaitForChild("PlayerGui"))
-screenGui.Name = "FormexUI"
+local screenGui: ScreenGui = FormexUI.ScreenGui
 
 -- Narrow bar at the bottom
 local padding = UDim.new(0, 8)
@@ -32,52 +30,8 @@ footerLayout.Padding = UDim.new(0, 16)
 footerLayout.SortOrder = Enum.SortOrder.LayoutOrder
 local footerButtons = {} :: {[string]: ImageButton}
 
-local function createButton(name: string, label: string, action: any)
-    local button = Instance.new("ImageButton", footerFrame)
-    button.Name = name
-    button.AutoButtonColor = false
-    button.BackgroundColor3 = Color3.fromRGB(252, 252, 255)
-    button.ClipsDescendants = false
-    button.Activated:Connect(action)
-    button.Visible = false
-    button.Size = UDim2.new(0, 128, 1, 0)
-    local buttonCorner = Instance.new("UICorner", button)
-    local buttonShadow = Instance.new("Frame", button)
-    buttonShadow.Name = "Shadow"
-    buttonShadow.AnchorPoint = Vector2.new(0.5, 0.5)
-    buttonShadow.Position = UDim2.new(0.5, 0, 0.5, 4)
-    buttonShadow.Size = UDim2.new(1, 8, 1, 12)
-    buttonShadow.BackgroundTransparency = 0.85
-    buttonShadow.BackgroundColor3 = Color3.new(0, 0, 0)
-    buttonShadow.ZIndex = 0
-    local shadowCorner = Instance.new("UICorner", buttonShadow)
-    shadowCorner.CornerRadius = UDim.new(0, 12)
-
-    buttonCorner.CornerRadius = UDim.new(0, 12)
-    local stroke = Instance.new("UIStroke", button)
-    stroke.Color = Color3.fromRGB(200, 200, 220)
-    stroke.Thickness = 2
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-    local gradient = Instance.new("UIGradient", button)
-    gradient.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(230, 234, 255))
-    gradient.Rotation = 90
-
-    local labelText = Instance.new("TextLabel", button)
-    labelText.AnchorPoint = Vector2.new(0.5, 0.5)
-    labelText.Position = UDim2.new(0.5, 0, 0.5, -2)
-    labelText.Size = UDim2.new(1, -16, 1, -16)
-    labelText.BackgroundTransparency = 1
-    labelText.Text = label
-    labelText.Font = Enum.Font.GothamBold
-    labelText.TextSize = 18
-    labelText.TextColor3 = Color3.fromRGB(60, 65, 90)
-    labelText.ZIndex = 2
-    local textStroke = Instance.new("UIStroke", labelText)
-    textStroke.Thickness = 1
-    textStroke.Color = Color3.fromRGB(255, 255, 255)
-    textStroke.Transparency = 0.4
-
+local function createButton(name: string, label: string, icon: string, action: any)
+    local button = FormexUI.CreateButton(footerFrame, name, label, { Icon = icon }, action)
     footerButtons[name] = button
 end
 
@@ -110,55 +64,60 @@ local uiSettings = {
 
 local refreshUI
 
-createButton("CLAIM", "Claim", function()
+createButton("CLAIM", "Claim", "85199762467908", function()
     print("Do Claim")
     FormexClient.ClaimPlot()
 end)
 
-createButton("UNCLAIM", "Unclaim", function()
+createButton("UNCLAIM", "Unclaim", "137711830774408", function()
     print("Do Unclaim")
     FormexClient.ReleasePlot()
 end)
 
-createButton("HOME", "Go Home", function()
+createButton("HOME", "Go Home", nil, function()
     print("Teleport Home")
 end)
 
-createButton("RENAME", "Change Name", function()
+createButton("RENAME", "Change Name", "74166756362476", function()
     print("Change name")
 end)
 
-createButton("PERMISSIONS", "Permissions", function()
+createButton("PERMISSIONS", "Permissions", "83277863761797", function()
     print("Change Permissions")
 end)
 
-createButton("DESIGN", "Design", function()
+createButton("DESIGN", "Design", "78727585562674", function()
     uiSettings.DesignMode = uiSettings.IsManager and "Furniture"
     refreshUI()
 end)
 
-createButton("EXIT_DESIGN", "Exit Design", function()
+createButton("EXIT_DESIGN", "Exit Design", "78727585562674", function()
     uiSettings.DesignMode = nil
     refreshUI()
 end)
 
-createButton("DESIGN_FLOOR", "Floors", function()
+createButton("DESIGN_FLOOR", "Floors", "136537860205120", function()
     uiSettings.DesignMode = uiSettings.IsManager and "Furniture"
     refreshUI()
 end)
 
-createButton("DESIGN_CEILING", "Ceilings", function()
+createButton("DESIGN_CEILING", "Ceilings", "86944909652185", function()
     uiSettings.DesignMode = uiSettings.IsManager and "Furniture"
     refreshUI()
 end)
 
-createButton("DESIGN_WALL", "Walls", function()
+createButton("DESIGN_WALL", "Walls", "105416010695180", function()
     uiSettings.DesignMode = uiSettings.IsManager and "Furniture"
     refreshUI()
 end)
 
-createButton("DESIGN_FURNITURE", "Furniture", function()
+createButton("DESIGN_FURNITURE", "Furniture", "120639802680464", function()
     uiSettings.DesignMode = uiSettings.IsManager and "Furniture"
+    refreshUI()
+end)
+
+createButton("DESIGN_PAINT", "Paint", "92885878760720", function()
+    uiSettings.DesignMode = uiSettings.IsManager and "Paint"
     refreshUI()
 end)
 
@@ -188,8 +147,6 @@ FormexClient.ClientEvents:Connect(function(eventName)
     uiSettings.IsVIP = uiSettings.IsManager or info.MyPermission == "VIP"
     uiSettings.IsGuest = uiSettings.IsVIP or info.MyPermission == "Guest"
     uiSettings.DesignMode = uiSettings.IsManager and uiSettings.DesignMode
-
-    print(info)
 
     refreshUI()
 end)
