@@ -28,14 +28,133 @@ local function getUserInfo(userId: number): (string, string)
 end
 
 function module.PlotLoad()
-    local saves = FormexClient.GetSaves()
+    local saves = FormexClient.GetSaves() or {}
+
+    table.sort(saves, function(a, b)
+        return (a.LastPlayed or 0) > (b.LastPlayed or 0)
+    end)
+
+    local function formatTimestamp(timestamp: number?): string
+        if not timestamp or timestamp == 0 then
+            return "Never played"
+        end
+        return "Last played " .. os.date("%x %X", timestamp)
+    end
 
     FormexUI.Dialog({
         Name = "LoadSaveDialog",
         Title = "Load a save",
+        Size = "Medium",
+        Scrolling = Enum.ScrollingDirection.Y,
+        Buttons = {
+            { Label = "Close", Result = false, Options = { Type = "Secondary", Style = "Outline" } }
+        }
     }, function(dialog)
-        -- TODO list saves, sort by last played: FormexClient.LoadSave(saveId)
-        -- TODO include option to create a new save: FormexClient.NewSave()
+        local list = FormexUI.CreateColumn({
+            Parent = dialog.ContentFrame,
+            Name = "Saves",
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Size = UDim2.new(1, 0, 0, 0),
+            Gap = 10,
+            HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        })
+
+        if #saves == 0 then
+            FormexUI.CreateLabel({
+                Parent = list,
+                Text = "No saves yet. Create a new save slot to start building.",
+                TextXAlignment = Enum.TextXAlignment.Center,
+                Size = UDim2.new(1, -12, 0, 48),
+                TextSize = 16,
+                TextColor3 = Color3.fromRGB(70, 80, 110)
+            })
+        end
+
+        for _, save in ipairs(saves) do
+            local row = Instance.new("Frame", list)
+            row.Name = "Save_" .. tostring(save.SaveId or "Unknown")
+            row.BackgroundColor3 = Color3.fromRGB(245, 248, 255)
+            row.BackgroundTransparency = 0
+            row.Size = UDim2.new(1, -6, 0, 76)
+            local corner = Instance.new("UICorner", row)
+            corner.CornerRadius = UDim.new(0, 12)
+            local padding = Instance.new("UIPadding", row)
+            padding.PaddingTop = UDim.new(0, 10)
+            padding.PaddingBottom = UDim.new(0, 10)
+            padding.PaddingLeft = UDim.new(0, 12)
+            padding.PaddingRight = UDim.new(0, 12)
+            local layout = Instance.new("UIListLayout", row)
+            layout.FillDirection = Enum.FillDirection.Horizontal
+            layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+            layout.VerticalAlignment = Enum.VerticalAlignment.Center
+            layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.Padding = UDim.new(0, 12)
+
+            local info = Instance.new("Frame", row)
+            info.Name = "Info"
+            info.BackgroundTransparency = 1
+            info.Size = UDim2.new(1, -150, 1, 0)
+            local infoLayout = Instance.new("UIListLayout", info)
+            infoLayout.FillDirection = Enum.FillDirection.Vertical
+            infoLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            infoLayout.Padding = UDim.new(0, 6)
+
+            local nameLabel = Instance.new("TextLabel", info)
+            nameLabel.Name = "Name"
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Size = UDim2.new(1, 0, 0, 24)
+            nameLabel.Font = Enum.Font.GothamSemibold
+            nameLabel.Text = save.Name or ("Save " .. tostring(save.SaveId))
+            nameLabel.TextSize = 18
+            nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+            nameLabel.TextColor3 = Color3.fromRGB(45, 50, 80)
+
+            local detailsLabel = Instance.new("TextLabel", info)
+            detailsLabel.Name = "Details"
+            detailsLabel.BackgroundTransparency = 1
+            detailsLabel.Size = UDim2.new(1, 0, 0, 18)
+            detailsLabel.Font = Enum.Font.Gotham
+            detailsLabel.Text = formatTimestamp(save.LastPlayed)
+            detailsLabel.TextSize = 14
+            detailsLabel.TextXAlignment = Enum.TextXAlignment.Left
+            detailsLabel.TextColor3 = Color3.fromRGB(90, 105, 140)
+
+            local loadButton = FormexUI.CreateButton({
+                Parent = row,
+                Name = "Load_" .. tostring(save.SaveId),
+                Text = "Load",
+                Type = "Primary",
+            }, function()
+                local success, message = FormexClient.LoadSave(save.SaveId)
+                if success == false then
+                    warn("Failed to load save:", message)
+                    return
+                end
+                dialog.Close(save.SaveId)
+            end)
+            loadButton.Visible = true
+            loadButton.LayoutOrder = 3
+            loadButton.Size = UDim2.new(0, 120, 0, 42)
+        end
+
+        if #saves < Formex.MaxSaveSlots then
+            local newSaveButton = FormexUI.CreateButton({
+                Parent = dialog.ContentFrame,
+                Name = "NewSave",
+                Text = "Create new save",
+                Type = "Success",
+                Style = "Solid"
+            }, function()
+                local saveId, message = FormexClient.NewSave()
+                if saveId == false then
+                    warn("Failed to create save:", message)
+                    return
+                end
+                dialog.Close(saveId or true)
+            end)
+            newSaveButton.Visible = true
+            newSaveButton.Size = UDim2.new(1, -6, 0, 44)
+        end
     end)
 end
 

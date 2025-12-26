@@ -14,8 +14,10 @@ export type Permission = "Guest" | "Banned" | "VIP" | "Manager" | "Owner"
 
 -- Client shared represenation
 export type PlotSaveInfo = {
+	SaveId: number,
 	Name: string,
-	Properties: {[string]: any}
+	LastPlayed: number,
+	Properties: {[string]: any}?
 }
 
 -- Stored representation

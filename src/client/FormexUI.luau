@@ -29,6 +29,14 @@ local function darken(color: Color3, amount: number): Color3
     return color:Lerp(Color3.new(0, 0, 0), math.clamp(amount, 0, 1))
 end
 
+local function normalizeAsset(assetId: string): string
+    if not assetId or assetId == "" then return "rbxassetid://0" end
+    if string.find(assetId, "^rbxassetid://") then
+        return assetId
+    end
+    return "rbxassetid://" .. assetId
+end
+
 export type FlexItemOptions = {
     FlexMode: Enum.UIFlexMode,
     GrowRatio: number?,
@@ -98,6 +106,7 @@ export type LabelOptions = {
     FlexGrowRatio: number?,
     FlexShrinkRatio: number?,
     ItemLineAlignment: Enum.ItemLineAlignment,
+    TextWrapped: boolean?
 } | CommonOptions
 
 function module.CreateLabel(options: LabelOptions)
@@ -109,6 +118,7 @@ function module.CreateLabel(options: LabelOptions)
     label.Font = options.Font or Enum.Font.Gotham
     label.TextSize = options.TextSize or 14
     label.TextColor3 = options.TextColor3 or Color3.fromRGB(0, 0, 0)
+    label.TextWrapped = options.TextWrapped or false
     updateGUIObject(label, options)
 end
 
@@ -153,8 +163,24 @@ function module.CreateColumn(options: FlexOptions)
 end
 
 export type ButtonType = "Primary" | "Secondary" | "Success" | "Info" | "Warn" | "Danger"
+module.ButtonTypes = {
+    Primary = "Primary",
+    Secondary = "Secondary",
+    Success = "Success",
+    Info = "Info",
+    Warn = "Warn",
+    Danger = "Danger",
+} :: {[ButtonType]: ButtonType}
+
+function module.GetButtonPalette(buttonType: ButtonType)
+    return buttonPalette[buttonType] or buttonPalette.Primary
+end
 
 export type ButtonStyle = "Solid" | "Outline"
+module.ButtonStyles = {
+    Solid = "Solid",
+    Outline = "Outline"
+} :: {[ButtonStyle]: ButtonStyle}
 
 export type ButtonOptions = {
     Parent: Instance,
@@ -214,7 +240,7 @@ function module.CreateButton(options: ButtonOptions, action: (GuiButton) -> bool
         iconImage.Name = "Icon"
         iconImage.BackgroundTransparency = 1
         iconImage.Size = UDim2.new(0, 18, 0, 18)
-        iconImage.Image = "rbxassetid://" .. options.Icon
+        iconImage.Image = normalizeAsset(options.Icon)
         iconImage.ScaleType = Enum.ScaleType.Fit
     end
 
@@ -286,7 +312,16 @@ function module.CreateButton(options: ButtonOptions, action: (GuiButton) -> bool
     applyStyle(false, options.IsPressed or false)
 
     if action then
-        button.Activated:Connect(action)
+        button.Activated:Connect(function(inputObject, clickCount)
+            button.Active = false
+            button.Interactable = false
+            local success, message = pcall(action, button, inputObject, clickCount)
+            if not success then
+                warn("Error on " .. button.Name .. " click: " .. message)
+            end
+            button.Interactable = true
+            button.Active = true
+        end)
     end
 
     return button
@@ -297,16 +332,7 @@ export type DialogSize = "Small" | "Medium" | "Large"
 export type ButtonInfo = {
     Label: string,
     Result: any?, -- if nil, returns Dialog.Result
-    Options: ButtonOptions | nil
-}
-
-local defaultDialogOptions: DialogOptions = {
-    CanClose = true,
-    Size = "Small",
-    Buttons = {
-        { Label = "OK" }
-    }
-}
+} | ButtonOptions
 
 export type Dialog = {
     Name: string,
@@ -324,19 +350,6 @@ local dialogSizes = {
     Medium = 480,
     Large = 640
 }
-
-local function mergeDialogOptions(options: DialogOptions?): DialogOptions
-    local merged: DialogOptions = table.clone(defaultDialogOptions)
-    if options then
-        for key, value in options do
-            merged[key] = value
-        end
-    end
-    merged.Size = merged.Size or defaultDialogOptions.Size
-    merged.Buttons = merged.Buttons or defaultDialogOptions.Buttons
-    merged.CanClose = merged.CanClose ~= nil and merged.CanClose or defaultDialogOptions.CanClose
-    return merged
-end
 
 export type TextInputOptions = {
     Parent: Instance,
@@ -504,21 +517,23 @@ export type DialogOptions = {
     Title: string,
     Size: DialogSize?,
     CanClose: boolean?,
+    CloseResult: any?,
     Scrolling: Enum.ScrollingDirection?,
     Buttons: {[number]: ButtonInfo}?
 }
 
 function module.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> nil))
-    local mergedOptions = mergeDialogOptions(options)
     local result: any = nil
     local closed = false
-    local size = dialogSizes[mergedOptions.Size or "Small"] or dialogSizes.Small
     local dialog: Dialog = {
         Name = options.Name or "Dialog",
         Title = options.Title or "Dialog",
-        Size = mergedOptions.Size or "Small",
+        Size = options.Size or "Small",
+        Buttons = options.Buttons or { {Label = "OK" } },
+        CanClose = options.CanClose ~= nil and options.CanClose or true,
         Result = nil
     }
+    local size = dialogSizes[options.Size or "Small"] or dialogSizes.Small
 
     dialog.Close = function(dialogResult)
         if closed then return end
@@ -577,7 +592,7 @@ function module.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> ni
     local titleText = Instance.new("TextLabel", header)
     titleText.Name = "Title"
     titleText.BackgroundTransparency = 1
-    titleText.Size = UDim2.new(1, mergedOptions.CanClose and -36 or 0, 1, 0)
+    titleText.Size = UDim2.new(1, options.CanClose and -36 or 0, 1, 0)
     titleText.Font = Enum.Font.GothamBold
     titleText.Text = dialog.Title
     titleText.TextColor3 = Color3.fromRGB(50, 55, 80)
@@ -585,7 +600,7 @@ function module.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> ni
     titleText.TextXAlignment = Enum.TextXAlignment.Left
     titleText.ZIndex = dialogFrame.ZIndex + 1
 
-    if mergedOptions.CanClose then
+    if options.CanClose then
         local closeButton = Instance.new("TextButton", header)
         closeButton.Name = "Close"
         closeButton.AnchorPoint = Vector2.new(1, 0.5)
@@ -604,16 +619,46 @@ function module.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> ni
         closeStroke.Color = Color3.fromRGB(210, 210, 225)
         closeStroke.Thickness = 1
         closeButton.Activated:Connect(function()
-            dialog.Close(false)
+            dialog.Close(options.CloseResult)
         end)
     end
 
-    local contentFrame = Instance.new("Frame", dialogFrame)
+    local scrollHeights = {
+        Small = 260,
+        Medium = 320,
+        Large = 380,
+    }
+    local contentContainer: GuiObject
+    if options.Scrolling then
+        local scrollingFrame = Instance.new("ScrollingFrame", dialogFrame)
+        scrollingFrame.Name = "ContentContainer"
+        scrollingFrame.BackgroundTransparency = 1
+        scrollingFrame.Size = UDim2.new(1, 0, 0, scrollHeights[dialog.Size] or 320)
+        scrollingFrame.AutomaticSize = Enum.AutomaticSize.None
+        scrollingFrame.LayoutOrder = 2
+        scrollingFrame.ScrollingDirection = options.Scrolling
+        scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.XY
+        scrollingFrame.CanvasSize = UDim2.new()
+        scrollingFrame.ScrollBarImageTransparency = 0.15
+        scrollingFrame.ScrollBarThickness = 6
+        scrollingFrame.BorderSizePixel = 0
+        contentContainer = scrollingFrame
+    else
+        local frame = Instance.new("Frame", dialogFrame)
+        frame.Name = "ContentContainer"
+        frame.BackgroundTransparency = 1
+        frame.Size = UDim2.new(1, 0, 0, 0)
+        frame.AutomaticSize = Enum.AutomaticSize.Y
+        frame.LayoutOrder = 2
+        contentContainer = frame
+    end
+
+    local contentFrame = Instance.new("Frame", contentContainer)
     contentFrame.Name = "Content"
     contentFrame.BackgroundTransparency = 1
     contentFrame.Size = UDim2.new(1, 0, 0, 0)
     contentFrame.AutomaticSize = Enum.AutomaticSize.Y
-    contentFrame.LayoutOrder = 2
+    contentFrame.LayoutOrder = 1
     local contentLayout = Instance.new("UIListLayout", contentFrame)
     contentLayout.FillDirection = Enum.FillDirection.Vertical
     contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -648,15 +693,22 @@ function module.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> ni
         end
     end
 
-    for index, buttonInfo in ipairs(mergedOptions.Buttons or {}) do
+    for index, buttonInfo in ipairs(options.Buttons or {}) do
         local info = buttonInfo
-        local button = module.CreateButton({
+        local options = {
             Parent = buttonsFrame,
             Text = info.Label or "OK",
             Style = info.Style,
             Type = info.Type,
             Icon = info.Icon
-        }, function() dialog.Close(info.Result) end)
+        }
+        if info.Options then
+            for key, value in info.Options do
+                options[key] = value
+            end
+        end
+
+        local button = module.CreateButton(options, function() dialog.Close(info.Result) end)
 
         button.Visible = true
         button.LayoutOrder = index
@@ -670,6 +722,97 @@ function module.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> ni
     overlay:Destroy()
 
     return result
+end
+
+export type AlertOptions = {
+    Name: string?,
+    Title: string?,
+    Message: string?,
+    Type: ButtonType?,
+    Size: DialogSize?,
+    CanClose: boolean?,
+    CloseResult: any?,
+    Buttons: {ButtonInfo}?,
+    Icon: string?,
+    Result: any?,
+}
+
+export type AlertType = "OkOnly" | "OkCancel" | "YesNo" | "YesNoCancel" | "RetryCancel"
+module.AlertTypes = {
+    OkOnly = "OkOnly",
+    OkCancel = "OkCancel",
+    YesNo = "YesNo",
+    YesNoCancel = "YesNoCancel",
+    RetryCancel = "RetryCancel"
+}
+
+local okButton = { Label = "OK", Result = true, Type = module.ButtonTypes.Primary }
+local yesButton = { Label = "Yes", Result = true, Type = module.ButtonTypes.Primary }
+local noButton = { Label = "No", Result = false, Type = module.ButtonTypes.Error }
+local retryButton = { Label = "Retry", Result = true, Type = module.ButtonTypes.Primary }
+local cancelButton = { Label = "Cancel", Result = nil, Type = module.ButtonTypes.Secondary, Style = module.ButtonStyles.Outline }
+local buttonGroups = {
+    OkOnly = {okButton},
+    OkCancel = {okButton, cancelButton},
+    YesNo = {yesButton, noButton},
+    YesNoCancel = {yesButton, noButton, cancelButton},
+    RetryCancel = {retryButton, cancelButton},
+} :: {[AlertType]: {ButtonInfo}}
+local alertIcons = {
+    Primary = "129480853732352",
+    Secondary = "74983288343353",
+    Info = "137935778957178",
+    Warn = "107054498570873",
+    Danger = "99865265033551",
+} :: {[ButtonType]: string}
+
+type ButtonPalette = { Base: Color3, Text: Color3 }
+
+function module.Alert(title: string, message: string, type: ButtonType, alertType: AlertType): any
+    local palette = module.GetButtonPalette(type)
+    local buttons = buttonGroups[alertType]
+    local icon = alertIcons[type]
+
+    return module.Dialog({
+        Name = "AlertDialog",
+        Title = title or "Alert",
+        Size = "Small",
+        CanClose = alertType == "OkCancel" or alertType == "YesNoCancel" or alertType == "RetryCancel",
+        CloseResult = nil,
+        Buttons = buttons,
+    }, function(dialog)
+        local content = module.CreateRow({
+            Parent = dialog.ContentFrame,
+            Name = "AlertContent",
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Size = UDim2.new(1, 0, 0, 0),
+            Gap = 12,
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Top,
+        })
+
+        local iconImage = Instance.new("ImageLabel", content)
+        iconImage.Name = "IconImage"
+        iconImage.BackgroundTransparency = 1
+        iconImage.Size = UDim2.new(0, 48, 0, 48)
+        iconImage.Image = normalizeAsset(icon)
+        iconImage.ImageColor3 = palette.Base
+        iconImage.ScaleType = Enum.ScaleType.Fit
+
+        module.CreateLabel({
+            Parent = content,
+            Name = "Message",
+            Text = message,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            TextSize = 16,
+            TextColor3 = Color3.fromRGB(55, 60, 85),
+            Font = Enum.Font.Gotham,
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Size = UDim2.new(1, -60, 0, 0),
+            TextWrapped = true
+        })
+    end)
 end
 
 return module

@@ -52,10 +52,13 @@ local function updatePlotAttributes(plotId: number)
     if userId and userId ~= 0 then
         permissions[userId] = "Owner"
     end
+    plotData.Permissions = permissions
 
     plotPart:SetAttribute("OwnerUserId", plotData.UserId or 0)
     plotPart:SetAttribute("OwnerName", ownerName)
     plotPart:SetAttribute("PlotName", plotName)
+    plotPart:SetAttribute("SaveId", plotData.SaveId or 0)
+    plotPart:SetAttribute("LastPlayed", plotData.LastPlayed or 0)
 
     -- Update permission attributes
     for permissionUserId, permission in permissions do
@@ -221,20 +224,87 @@ function module.SavePlot(plotId: number)
         return false, err
     end
 
+    updatePlotAttributes(plotId)
+
     return true
 end
 
 -- This method can throw errors because is always called via pcall
 function module.ListSaves(player: Player): {[number]: Formex.PlotSaveInfo}
     local userId = player.UserId
-    local saves = plotDataStore:ListKeysAsync(tostring(userId) .. ":", 16, nil, true)
+    local prefix = tostring(userId) .. ":"
+    local keyPages = plotDataStore:ListKeysAsync(prefix, Formex.MaxSaveSlots, nil, true)
+    local saves = {}
 
-    -- TODO implement
+    local function addSaves(page)
+        for _, keyInfo in ipairs(page:GetCurrentPage()) do
+            local key = keyInfo.KeyName
+            local saveId = tonumber(string.match(key, "^%d+:(%d+)$"))
+            if not saveId then
+                continue
+            end
+
+            local data = plotDataStore:GetAsync(key)
+            if data then
+                table.insert(saves, {
+                    SaveId = data.SaveId or saveId,
+                    Name = data.Name or ("Save " .. tostring(saveId)),
+                    LastPlayed = data.LastPlayed or 0,
+                })
+            end
+        end
+    end
+
+    addSaves(keyPages)
+    while not keyPages.IsFinished do
+        keyPages:AdvanceToNextPageAsync()
+        addSaves(keyPages)
+    end
+
+    table.sort(saves, function(a, b)
+        return (a.LastPlayed or 0) > (b.LastPlayed or 0)
+    end)
+
+    return saves
 end
 
 -- This method can throw errors because is always called via pcall
 function module.LoadSave(player: Player, saveId: number): boolean
-    -- TODO implement
+    if not saveId or saveId == 0 then error("Invalid save selected") end
+
+    local userId = player.UserId
+    local plotId = module.PlayerToPlot[userId]
+    if not plotId or plotId == 0 then error("No claimed plot") end
+
+    local plotPart = module.Plots[plotId]
+    if not plotPart then error("Invalid plot") end
+
+    local key = tostring(userId) .. ":" .. tostring(saveId)
+    local data: Formex.PlotData = plotDataStore:GetAsync(key)
+    if not data then error("Save not found") end
+
+    data.PlotId = plotId
+    data.UserId = userId
+    data.SaveId = data.SaveId or saveId
+    data.Name = data.Name or (player.Name .. "'s Plot")
+    data.LastPlayed = os.time()
+    data.Levels = data.Levels or {}
+    data.Permissions = data.Permissions or {}
+
+    module.PlotData[plotId] = deepClone(data)
+
+    local ok, renderErr = pcall(function()
+        FormexBuild.ClearPlot(plotPart)
+        FormexBuild.RenderPlot(plotPart, module.PlotData[plotId])
+    end)
+    if not ok then
+        warn("FormexServer.LoadSave render failed:", renderErr)
+    end
+
+    updatePlotAttributes(plotId)
+    module.SavePlot(plotId)
+
+    return true
 end
 
 -- This method can throw errors because is always called via pcall
@@ -251,6 +321,7 @@ function module.NewSave(player: Player): boolean
     plotData.Levels = {}
 
     module.SavePlot(plotId)
+    return plotData.SaveId
 end
 
 function module.SetPermission(player: Player, targetUserId: number, permission: Formex.Permission): boolean

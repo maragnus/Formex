@@ -2,7 +2,7 @@ local Players = game:GetService("Players")
 local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
 local Formex = FormexClient.Formex
 local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
-local FormexDialogs = require(script.Parent:WaitForChild("FormexDialogs"))
+local FormexPrompts = require(script.Parent:WaitForChild("FormexPrompts"))
 local BlurController = FormexUI.BlurController
 
 local screenGui: ScreenGui = FormexUI.ScreenGui
@@ -15,9 +15,15 @@ local function createButton(name: string, label: string?, icon: string, action: 
     local button = FormexUI.CreateButton({
         Parent = footerContainer,
         Name = name,
-        Text = label, 
-        Icon = icon 
-    }, action)
+        Text = label,
+        Icon = icon
+    }, function()
+        footerContainer.Active = false
+        footerContainer.Interactable = false
+        action()
+        footerContainer.Interactable = true
+        footerContainer.Active = true
+    end)
     footerButtons[name] = button
 end
 
@@ -54,7 +60,7 @@ local refreshUI
 
 createButton("CLAIM", "Claim", "85199762467908", function()
     if FormexClient.ClaimPlot() then
-        FormexDialogs.PlotLoad()
+        FormexPrompts.PlotLoad()
     end
 end)
 
@@ -63,19 +69,20 @@ createButton("UNCLAIM", "Unclaim", "137711830774408", function()
 end)
 
 createButton("LOAD", "Load Save", nil, function()
-    FormexDialogs.PlotLoad()
+    FormexPrompts.PlotLoad()
 end)
 
 createButton("HOME", "Go Home", nil, function()
     print("Teleport Home")
+    FormexUI.Alert("Teleport", "You can't teleport because it hasn't been implemented yet. You should die.", FormexUI.ButtonTypes.Danger, FormexUI.AlertTypes.RetryCancel)
 end)
 
 createButton("RENAME", "Rename", "74166756362476", function()
-    FormexDialogs.PlotRename()
+    FormexPrompts.PlotRename()
 end)
 
 createButton("PERMISSIONS", "Permissions", "83277863761797", function()
-    FormexDialogs.PlotPermissions()
+    FormexPrompts.PlotPermissions()
 end)
 
 createButton("DESIGN", "Design", "78727585562674", function()

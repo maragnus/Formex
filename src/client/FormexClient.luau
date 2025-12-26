@@ -19,6 +19,7 @@ export type PlotInfo = {
     IsClaimed: boolean,
     IsMine: boolean,
     MyPermission: Formex.Permission,
+    LastPlayed: number?,
     Properties: {[string]: any}
 }
 local EmptyPlotInfo: PlotInfo = {
@@ -32,6 +33,7 @@ local EmptyPlotInfo: PlotInfo = {
     IsClaimed = false,
     IsMine = false,
     MyPermission = "Guest",
+    LastPlayed = 0,
     Properties = {} :: {[string]: any}
 }
 
@@ -72,14 +74,22 @@ local function subscribeToPlot(plotPart: Part)
     -- CHECK: Wait for attribute using GetAttributeChangedSignal?
     local plotId = plotPart:GetAttribute("PlotId") or 0
    
+    local ownerUserId = plotPart:GetAttribute("OwnerUserId") or 0
+    local saveId = plotPart:GetAttribute("SaveId") or 0
+    local lastPlayed = plotPart:GetAttribute("LastPlayed") or 0
+
     local info: PlotInfo = {
         IsValid = true,
         PlotId = plotId,
         PlotPart = plotPart,
         Name = plotPart:GetAttribute("PlotName") or "Unnamed",
-        OwnerUserId = plotPart:GetAttribute("OwnerUserId") or 0,
+        OwnerUserId = ownerUserId,
         OwnerName = plotPart:GetAttribute("OwnerName") or "Unknown Player",
+        SaveId = saveId,
         MyPermission = "Guest",
+        LastPlayed = lastPlayed,
+        IsClaimed = ownerUserId ~= 0,
+        IsMine = ownerUserId == localPlayer.UserId,
         Properties = {}
     }
     module.Plots[plotId] = info
@@ -103,6 +113,16 @@ local function subscribeToPlot(plotPart: Part)
 
     plotPart:GetAttributeChangedSignal(permissionId):Connect(function()
         info.MyPermission = plotPart:GetAttribute(permissionId) or "Guest"
+        notifyPlotChange(plotId)
+    end)
+
+    plotPart:GetAttributeChangedSignal("SaveId"):Connect(function()
+        info.SaveId = plotPart:GetAttribute("SaveId") or 0
+        notifyPlotChange(plotId)
+    end)
+
+    plotPart:GetAttributeChangedSignal("LastPlayed"):Connect(function()
+        info.LastPlayed = plotPart:GetAttribute("LastPlayed") or 0
         notifyPlotChange(plotId)
     end)
 
@@ -135,28 +155,53 @@ function module.RegisterPlot(plotPart: Part)
     end
 end
 
-function module.ClaimPlot() : boolean
-    FormexFunctions:InvokeServer(Formex.Functions.ClaimPlot)
+function module.ClaimPlot(plotId: number?) : boolean
+    local result, message = FormexFunctions:InvokeServer(Formex.Functions.ClaimPlot, plotId)
+    if result == false then
+        warn("ClaimPlot failed:", message)
+    end
+    return result
 end
 
 function module.ReleasePlot()
-    FormexFunctions:InvokeServer(Formex.Functions.ReleasePlot)
+    local result, message = FormexFunctions:InvokeServer(Formex.Functions.ReleasePlot)
+    if result == false then
+        warn("ReleasePlot failed:", message)
+    end
+    return result
 end
 
 function module.RenamePlot(newName: string)
-    FormexFunctions:InvokeServer(Formex.Functions.RenamePlot, newName)
+    local result, message = FormexFunctions:InvokeServer(Formex.Functions.RenamePlot, newName)
+    if result == false then
+        warn("RenamePlot failed:", message)
+    end
+    return result
 end
 
 function module.GetSaves(): {[number]: Formex.PlotSaveInfo}
-    return FormexFunctions:InvokeServer(Formex.Functions.ReleasePlot)
+    local result, message = FormexFunctions:InvokeServer(Formex.Functions.ListSaves)
+    if result == false then
+        warn("ListSaves failed:", message)
+        return {}
+    end
+    return result or {}
 end
 
 function module.LoadSave(saveId: number)
-    FormexFunctions:InvokeServer(Formex.Functions.LoadPlot, saveId)
+    local result, message = FormexFunctions:InvokeServer(Formex.Functions.LoadSave, saveId)
+    if result == false then
+        warn("LoadSave failed:", message)
+    end
+    return result, message
 end
 
 function module.NewSave()
-    FormexFunctions:InvokeServer(Formex.Functions.NewPlot)
+    local result, message = FormexFunctions:InvokeServer(Formex.Functions.NewSave)
+    if result == false then
+        warn("NewSave failed:", message)
+    end
+    return result, message
 end
 
 function module.SetSavePermission(targetUserId: number, permission: Formex.Permission): (boolean, string?)
