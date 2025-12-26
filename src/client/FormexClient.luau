@@ -20,6 +20,8 @@ export type PlotInfo = {
     IsMine: boolean,
     MyPermission: Formex.Permission,
     LastPlayed: number?,
+    LevelsUnlocked: number,
+    SegmentsUnlocked: number,
     Properties: {[string]: any}
 }
 local EmptyPlotInfo: PlotInfo = {
@@ -75,8 +77,6 @@ local function subscribeToPlot(plotPart: Part)
     local plotId = plotPart:GetAttribute("PlotId") or 0
    
     local ownerUserId = plotPart:GetAttribute("OwnerUserId") or 0
-    local saveId = plotPart:GetAttribute("SaveId") or 0
-    local lastPlayed = plotPart:GetAttribute("LastPlayed") or 0
 
     local info: PlotInfo = {
         IsValid = true,
@@ -85,11 +85,13 @@ local function subscribeToPlot(plotPart: Part)
         Name = plotPart:GetAttribute("PlotName") or "Unnamed",
         OwnerUserId = ownerUserId,
         OwnerName = plotPart:GetAttribute("OwnerName") or "Unknown Player",
-        SaveId = saveId,
+        SaveId = plotPart:GetAttribute("SaveId") or 0,
         MyPermission = "Guest",
-        LastPlayed = lastPlayed,
+        LastPlayed = plotPart:GetAttribute("LastPlayed") or 0,
         IsClaimed = ownerUserId ~= 0,
         IsMine = ownerUserId == localPlayer.UserId,
+        LevelsUnlocked = plotPart:GetAttribute("LevelsUnlocked") or 0,
+        SegmentsUnlocked = plotPart:GetAttribute("SegmentsUnlocked") or 0,
         Properties = {}
     }
     module.Plots[plotId] = info
@@ -123,6 +125,16 @@ local function subscribeToPlot(plotPart: Part)
 
     plotPart:GetAttributeChangedSignal("LastPlayed"):Connect(function()
         info.LastPlayed = plotPart:GetAttribute("LastPlayed") or 0
+        notifyPlotChange(plotId)
+    end)
+
+    plotPart:GetAttributeChangedSignal("LevelsUnlocked"):Connect(function()
+        info.LevelsUnlocked = plotPart:GetAttribute("LevelsUnlocked") or 0
+        notifyPlotChange(plotId)
+    end)
+
+    plotPart:GetAttributeChangedSignal("SegmentsUnlocked"):Connect(function()
+        info.SegmentsUnlocked = plotPart:GetAttribute("SegmentsUnlocked") or 0
         notifyPlotChange(plotId)
     end)
 

@@ -59,6 +59,8 @@ local function updatePlotAttributes(plotId: number)
     plotPart:SetAttribute("PlotName", plotName)
     plotPart:SetAttribute("SaveId", plotData.SaveId or 0)
     plotPart:SetAttribute("LastPlayed", plotData.LastPlayed or 0)
+    plotPart:SetAttribute("LevelsUnlocked", plotData.LevelsUnlocked or 1)
+    plotPart:SetAttribute("SegmentsUnlocked", plotData.SegmentsUnlocked or 0)
 
     -- Update permission attributes
     for permissionUserId, permission in permissions do
@@ -193,6 +195,7 @@ function module.RenamePlot(player: Player, newName: string): boolean
 
     plotData.Name = newName
     updatePlotAttributes(plotData.PlotId)
+    module.SavePlot(plotData.PlotId)
 
     return true
 end
@@ -215,6 +218,8 @@ function module.SavePlot(plotId: number)
             Name = plotData.Name,
             LastPlayed = plotData.LastPlayed,
             Levels = plotData.Levels,
+            LevelsUnlocked = plotData.LevelsUnlocked or 1,
+            SegmentsUnlocked = plotData.SegmentsUnlocked or 0,
             Permissions = plotData.Permissions,
         })
     end)
@@ -268,7 +273,6 @@ function module.ListSaves(player: Player): {[number]: Formex.PlotSaveInfo}
     return saves
 end
 
--- This method can throw errors because is always called via pcall
 function module.LoadSave(player: Player, saveId: number): boolean
     if not saveId or saveId == 0 then error("Invalid save selected") end
 
@@ -280,34 +284,29 @@ function module.LoadSave(player: Player, saveId: number): boolean
     if not plotPart then error("Invalid plot") end
 
     local key = tostring(userId) .. ":" .. tostring(saveId)
-    local data: Formex.PlotData = plotDataStore:GetAsync(key)
-    if not data then error("Save not found") end
+    local saveData: Formex.PlotData = plotDataStore:GetAsync(key)
+    if not saveData then error("Save not found") end
 
-    data.PlotId = plotId
-    data.UserId = userId
-    data.SaveId = data.SaveId or saveId
-    data.Name = data.Name or (player.Name .. "'s Plot")
-    data.LastPlayed = os.time()
-    data.Levels = data.Levels or {}
-    data.Permissions = data.Permissions or {}
+    local plotData = module.PlotData[plotId]
+    if not plotData then error("Invalid plot") end
 
-    module.PlotData[plotId] = deepClone(data)
-
-    local ok, renderErr = pcall(function()
-        FormexBuild.ClearPlot(plotPart)
-        FormexBuild.RenderPlot(plotPart, module.PlotData[plotId])
-    end)
-    if not ok then
-        warn("FormexServer.LoadSave render failed:", renderErr)
-    end
-
+    plotData.SaveId = saveData.SaveId or saveId
+    plotData.Name = saveData.Name or (player.Name .. "'s Plot")
+    plotData.LastPlayed = os.time()
+    plotData.Levels = saveData.Levels or {}
+    plotData.LevelsUnlocked = saveData.LevelsUnlocked or 1
+    plotData.SegmentsUnlocked = saveData.SegmentsUnlocked or 0
+    plotData.Permissions = saveData.Permissions or {}
     updatePlotAttributes(plotId)
+
+    FormexBuild.ClearPlot(plotPart)
+    FormexBuild.RenderPlot(plotPart, module.PlotData[plotId])
+
     module.SavePlot(plotId)
 
     return true
 end
 
--- This method can throw errors because is always called via pcall
 function module.NewSave(player: Player): boolean
     local plotId = module.PlayerToPlot[player.UserId]
     if not plotId or plotId == 0 then error("No claimed plot") end
@@ -318,6 +317,8 @@ function module.NewSave(player: Player): boolean
     plotData.SaveId = saveId
     plotData.Name = player.Name .. "'s Plot"
     plotData.Permissions[player.UserId] = Formex.Permissions.Owner
+    plotData.LevelsUnlocked = 1
+    plotData.SegmentsUnlocked = 0
     plotData.Levels = {}
 
     module.SavePlot(plotId)
@@ -341,6 +342,8 @@ function module.SetPermission(player: Player, targetUserId: number, permission: 
     end
 
     updatePlotAttributes(plotData.PlotId)
+    module.SavePlot(plotData.PlotId)
+
     return true
 end
 

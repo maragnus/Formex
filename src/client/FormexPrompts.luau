@@ -104,7 +104,7 @@ function module.PlotLoad()
             nameLabel.BackgroundTransparency = 1
             nameLabel.Size = UDim2.new(1, 0, 0, 24)
             nameLabel.Font = Enum.Font.GothamSemibold
-            nameLabel.Text = save.Name or ("Save " .. tostring(save.SaveId))
+            nameLabel.Text = save.Name ~= nil and tostring(save.Name) or ("Save " .. tostring(save.SaveId))
             nameLabel.TextSize = 18
             nameLabel.TextXAlignment = Enum.TextXAlignment.Left
             nameLabel.TextColor3 = Color3.fromRGB(45, 50, 80)
@@ -162,6 +162,10 @@ function module.PlotRename()
     local newName = FormexUI.Dialog({
         Name = "RenamePlotDialog",
         Title = "Rename your plot",
+        Buttons = {
+            { Text = "OK", Result = nil, Type = FormexUI.ButtonTypes.Primary },
+            { Text = "Cancel", Result = false, Type = FormexUI.ButtonTypes.Secondary, Style = FormexUI.ButtonStyles.Outline }
+        }
     }, function(dialog)
         FormexUI.CreateTextInput({
             Parent = dialog.ContentFrame,
@@ -274,7 +278,7 @@ function module.PlotPermissions()
         Size = "Large",
         Scrolling = Enum.ScrollingDirection.Y,
         Buttons = {
-            { Label = "Close", Result = false, Options = { Type = "Secondary" } }
+            { Text = "Done", Type = FormexUI.ButtonTypes.Primary },
         }
     }, function(dialog)
         local refresh

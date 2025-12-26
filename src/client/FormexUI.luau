@@ -1,4 +1,6 @@
 --!strict
+local DEBUG = true
+
 local BlurController = require(script.Parent:WaitForChild("BlurController"))
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
@@ -14,7 +16,7 @@ local currentContentParent: Instance? = nil
 
 local buttonPalette = {
     Primary = { Base = Color3.fromRGB(88, 118, 255), Text = Color3.fromRGB(248, 249, 255) },
-    Secondary = { Base = Color3.fromRGB(215, 220, 232), Text = Color3.fromRGB(60, 70, 90) },
+    Secondary = { Base = Color3.fromRGB(215, 220, 232), Text = Color3.fromRGB(16, 20, 24) },
     Success = { Base = Color3.fromRGB(68, 180, 124), Text = Color3.fromRGB(245, 250, 248) },
     Info = { Base = Color3.fromRGB(88, 174, 255), Text = Color3.fromRGB(245, 248, 255) },
     Warn = { Base = Color3.fromRGB(255, 195, 88), Text = Color3.fromRGB(60, 45, 16) },
@@ -315,9 +317,13 @@ function module.CreateButton(options: ButtonOptions, action: (GuiButton) -> bool
         button.Activated:Connect(function(inputObject, clickCount)
             button.Active = false
             button.Interactable = false
-            local success, message = pcall(action, button, inputObject, clickCount)
-            if not success then
-                warn("Error on " .. button.Name .. " click: " .. message)
+            if DEBUG then
+                action(button, inputObject, clickCount)
+            else
+                local success, message = pcall(action, button, inputObject, clickCount)
+                if not success then
+                    warn("Error on " .. button.Name .. " click: " .. message)
+                end
             end
             button.Interactable = true
             button.Active = true
@@ -330,7 +336,6 @@ end
 export type DialogSize = "Small" | "Medium" | "Large"
 
 export type ButtonInfo = {
-    Label: string,
     Result: any?, -- if nil, returns Dialog.Result
 } | ButtonOptions
 
@@ -399,7 +404,7 @@ function module.CreateTextInput(options: TextInputOptions, onChanged: ((value: s
 
     local input = Instance.new("TextBox", container)
     input.Name = name
-    input.Text = options.Text or ""
+    input.Text = options.Text ~= nil and tostring(options.Text) or ""
     input.Size = UDim2.new(1, 0, 0, 28)
     input.BackgroundColor3 = container.BackgroundColor3
     input.BackgroundTransparency = 0
@@ -686,29 +691,20 @@ function module.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> ni
     end)
 
     if contents then
-        local success, err = pcall(contents, dialog)
-        if not success then
-            warn("[FormexUI.Dialog] Failed to build dialog contents:", err)
-            dialog.Close(false)
+        if DEBUG then
+            contents(dialog)
+        else
+            local success, err = pcall(contents, dialog)
+            if not success then
+                warn("[FormexUI.Dialog] Failed to build dialog contents:", err)
+                dialog.Close(false)
+            end
         end
     end
 
     for index, buttonInfo in ipairs(options.Buttons or {}) do
-        local info = buttonInfo
-        local options = {
-            Parent = buttonsFrame,
-            Text = info.Label or "OK",
-            Style = info.Style,
-            Type = info.Type,
-            Icon = info.Icon
-        }
-        if info.Options then
-            for key, value in info.Options do
-                options[key] = value
-            end
-        end
-
-        local button = module.CreateButton(options, function() dialog.Close(info.Result) end)
+        buttonInfo.Parent = buttonsFrame
+        local button = module.CreateButton(buttonInfo, function() dialog.Close(buttonInfo.Result) end)
 
         button.Visible = true
         button.LayoutOrder = index
@@ -746,12 +742,12 @@ module.AlertTypes = {
     RetryCancel = "RetryCancel"
 }
 
-local okButton = { Label = "OK", Result = true, Type = module.ButtonTypes.Primary }
-local yesButton = { Label = "Yes", Result = true, Type = module.ButtonTypes.Primary }
-local noButton = { Label = "No", Result = false, Type = module.ButtonTypes.Error }
-local retryButton = { Label = "Retry", Result = true, Type = module.ButtonTypes.Primary }
-local cancelButton = { Label = "Cancel", Result = nil, Type = module.ButtonTypes.Secondary, Style = module.ButtonStyles.Outline }
-local buttonGroups = {
+local okButton = { Text = "OK", Result = true, Type = module.ButtonTypes.Primary } :: ButtonInfo
+local yesButton = { Text = "Yes", Result = true, Type = module.ButtonTypes.Primary } :: ButtonInfo
+local noButton = { Text = "No", Result = false, Type = module.ButtonTypes.Error } :: ButtonInfo
+local retryButton = { Text = "Retry", Result = true, Type = module.ButtonTypes.Primary } :: ButtonInfo
+local cancelButton = { Text = "Cancel", Result = nil, Type = module.ButtonTypes.Secondary, Style = module.ButtonStyles.Outline } :: ButtonInfo
+module.ButtonGroups = {
     OkOnly = {okButton},
     OkCancel = {okButton, cancelButton},
     YesNo = {yesButton, noButton},
@@ -759,18 +755,18 @@ local buttonGroups = {
     RetryCancel = {retryButton, cancelButton},
 } :: {[AlertType]: {ButtonInfo}}
 local alertIcons = {
-    Primary = "129480853732352",
-    Secondary = "74983288343353",
-    Info = "137935778957178",
-    Warn = "107054498570873",
-    Danger = "99865265033551",
+    Primary = "103853485477063",
+    Secondary = "115719232269249",
+    Info = "119134101744939",
+    Warn = "111518129231234",
+    Danger = "73134495809587",
 } :: {[ButtonType]: string}
 
 type ButtonPalette = { Base: Color3, Text: Color3 }
 
 function module.Alert(title: string, message: string, type: ButtonType, alertType: AlertType): any
     local palette = module.GetButtonPalette(type)
-    local buttons = buttonGroups[alertType]
+    local buttons = module.ButtonGroups[alertType]
     local icon = alertIcons[type]
 
     return module.Dialog({
