@@ -35,9 +35,8 @@ function module.RenderLevel(data: RenderData, levelIndex: number)
     data.LevelData = data.PlotData.Levels[levelIndex]
     local levelPart = data:WaitForChild("Level_" .. tostring(data.LevelIndex))
     if (levelPart == nil) then
-        levelPart = Instance.new("Part")
+        levelPart = Instance.new("Part", data.PlotPart)
         levelPart.Name = "Level_" .. tostring(data.LevelIndex)
-        levelPart.Parent = data.PlotPart
         levelPart.Anchored = true
         levelPart.Position = data.PlotPart.Position + Vector3.new(0, Formex.LevelHeight * (levelIndex - 1), 0)
         levelPart.Size = Vector3.new(Formex.GridSize * Formex.SegmentSize.X, Formex.LevelHeight, Formex.GridSize * Formex.SegmentSize.Y)

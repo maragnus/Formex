@@ -12,13 +12,11 @@ local FormexBuild = require(script.Parent:WaitForChild("FormexBuild"))
 
 local plotDataStore = DataStoreService:GetDataStore("FormexPlotData")
 
-local FormexFunctions: RemoteFunction = Instance.new("RemoteFunction")
+local FormexFunctions: RemoteFunction = Instance.new("RemoteFunction", FormexFolder)
 FormexFunctions.Name = "FormexFunctions"
-FormexFunctions.Parent = FormexFolder
 
-local FormexEvents: RemoteEvent = Instance.new("RemoteEvent")
+local FormexEvents: RemoteEvent = Instance.new("RemoteEvent", FormexFolder)
 FormexEvents.Name = "FormexEvents"
-FormexEvents.Parent = FormexFolder
 
 local module = {}
 module.Formex = Formex
@@ -53,6 +51,7 @@ local function updatePlotAttributes(plotId: number)
     local ownerName = userId and ownerPlayer and ownerPlayer.Name or ""
     local plotName = plotData.Name or (ownerPlayer and ownerName .. "'s Plot") or "Unclaimed Plot"
     local permissions = plotData.Permissions or {}
+    permissions[userId] = "Owner"
 
     plotPart:SetAttribute("OwnerUserId", plotData.UserId or 0)
     plotPart:SetAttribute("OwnerName", ownerName)
@@ -79,6 +78,8 @@ function module.UnassignPlotToPlayer(player: Player)
     local plotId = module.PlayerToPlot[userId] or 0
     if plotId == 0 then return end
 
+    print(player.Name .. " unclaims plot " .. tostring(plotId))
+
     module.SavePlot(plotId)
 
     FormexBuild.ClearPlot(module.Plots[plotId])
@@ -87,8 +88,6 @@ function module.UnassignPlotToPlayer(player: Player)
     module.PlayerToPlot[userId] = nil
     player:SetAttribute("MyPlotId", 0)
 
-    updatePlotAttributes(plotId)
-
     local plotData = module.PlotData[plotId]
     plotData.UserId = 0
     plotData.SaveId = 0
@@ -96,6 +95,7 @@ function module.UnassignPlotToPlayer(player: Player)
     plotData.LastPlayed = 0
     plotData.Levels = {}
     plotData.Permissions = {}
+    updatePlotAttributes(plotId)
 
     return true
 end
@@ -110,6 +110,8 @@ function module.AssignPlotToPlayer(player: Player, plotId: number)
     plotId = plotId or 0
     if plotId == 0 then return end
 
+    print(player.Name .. " claims plot " .. tostring(plotId))
+
     local userId = player.UserId
     local plotName = player.Name .. "'s Plot"
 
@@ -117,15 +119,14 @@ function module.AssignPlotToPlayer(player: Player, plotId: number)
     module.PlotToPlayer[plotId] = userId
     player:SetAttribute("MyPlotId", plotId)
 
-    updatePlotAttributes(plotId)
-
     local plotData = module.PlotData[plotId]
-    plotData.UserId = player
+    plotData.UserId = player.UserId
     plotData.SaveId = 0
     plotData.Name = plotName
     plotData.LastPlayed = 0
     plotData.Levels = {}
     plotData.Permissions = {}
+    updatePlotAttributes(plotId)
     
     return true
 end
@@ -186,7 +187,7 @@ function module.SavePlot(plotId: number)
     return true
 end
 
-function module.ClaimPlot(player: Player, plotId: number?): boolean
+function module.ClaimPlot(player: Player, plotId: number?): (boolean, string)
     plotId = plotId or player:GetAttribute("CurrentPlotId")
     if not plotId then return false, "No plot specified" end
     return module.AssignPlotToPlayer(player, plotId)

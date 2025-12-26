@@ -46,14 +46,13 @@ function rebuildPartsList()
 end
 
 function BlurredGui.new(frame, shape)
-	local blurPart        = Instance.new("Part")
+	local blurPart        = Instance.new("Part", workspace.CurrentCamera)
 	blurPart.Size         = Vector3.new(1, 1, 1) * 0.01
 	blurPart.Anchored     = true
 	blurPart.CanCollide   = false
 	blurPart.CanTouch     = false
 	blurPart.Material     = Enum.Material.Glass
 	blurPart.Transparency = PART_TRANSPARENCY
-	blurPart.Parent       = workspace.CurrentCamera
 
 	local mesh
 	if (shape == "Rectangle") then

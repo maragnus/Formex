@@ -6,8 +6,6 @@ local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
 local Formex = require(FormexFolder:WaitForChild("Formex"))
 local FormexServer = require(script.Parent:WaitForChild("FormexServer"))
 
-local module = {}
-
 local remoteFunctions = {
     [Formex.Functions.ClaimPlot] = function(player)
         return FormexServer.ClaimPlot(player)
@@ -35,11 +33,13 @@ local remoteFunctions = {
 FormexServer.Functions.OnServerInvoke = function(player, functionName, ...)
     local func = remoteFunctions[functionName]
     if func and type(func) == "function" then
-        return func(player, ...)
+        local result, message = pcall(func, player, ...)
+        if result == false and type(message) == "string" then
+            warn(functionName .. " failed: " .. message)
+        end
+        return result
     else
         warn("FormexFunctions: Unknown function invoked:", functionName)
         return nil
     end
 end
-
-return module

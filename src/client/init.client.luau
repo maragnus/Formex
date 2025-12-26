@@ -14,12 +14,14 @@ localPlayer:GetAttributeChangedSignal("CurrentPlotId"):Connect(function()
 	FormexClient.SetCurrentPlotId(localPlayer:GetAttribute("CurrentPlotId") or 0)
 end)
 
--- Register all existing plots
-local CollectionService = game:GetService("CollectionService")
-local formexPlots = CollectionService:GetTagged("FormexPlot")
-for _, plotPart in ipairs(formexPlots) do
+-- Register all plots
+local plotCollection = workspace:WaitForChild("Formex"):WaitForChild("Plots")
+for _, plotPart in ipairs(plotCollection:GetChildren()) do
     FormexClient.RegisterPlot(plotPart)
 end
+plotCollection.ChildAdded:Connect(function(child)
+    FormexClient.RegisterPlot(child)
+end)
 
 -- Example event handlers
 local eventHandlers = {

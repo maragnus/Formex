@@ -8,17 +8,31 @@ local FormexFunctions: RemoteFunction = FormexFolder:WaitForChild("FormexFunctio
 local FormexEvents: RemoteEvent = FormexFolder:WaitForChild("FormexEvents")
 
 export type PlotInfo = {
+    IsValid: boolean,
     PlotId: number,
     PlotPart: BasePart,
     Name: string,
     OwnerUserId: number,
     OwnerName: string,
+    IsClaimed: boolean,
+    IsMine: boolean,
     MyPermission: Formex.Permission,
     Properties: {[string]: any}
 }
+local EmptyPlotInfo: PlotInfo = {
+    IsValid = false,
+    PlotId = 0,
+    PlotPart = nil,
+    Name = "",
+    OwnerUserId = 0,
+    OwnerName = "",
+    IsClaimed = false,
+    IsMine = false,
+    MyPermission = "Guest",
+    Properties = {} :: {[string]: any}
+}
 
-local events: BindableEvent = Instance.new("BindableEvent")
-events.Parent = workspace:WaitForChild("Formex")
+local events: BindableEvent = Instance.new("BindableEvent", workspace:WaitForChild("Formex"))
 events.Name = "FormexEvents"
 
 -- Wait until the LocalPlayer is available
@@ -26,6 +40,7 @@ local Players = game:GetService("Players")
 if not Players.LocalPlayer then
 	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
 end
+local localPlayer = Players.LocalPlayer
 
 local module = {}
 module.Formex = Formex
@@ -40,11 +55,11 @@ module.CurrentPlotId = 0
 local function notifyPlotChange(plotId: number)
     if module.MyPlotId == plotId then
         events:Fire("MyPlotChanged", plotId)
-        module.MyPlot = module.Plots[plotId] or {}
+        module.MyPlot = module.Plots[plotId] or EmptyPlotInfo
     end
     if module.CurrentPlotId == plotId then
         events:Fire("CurrentPlotChanged", plotId)
-        module.CurrentPlot = module.Plots[plotId] or {}
+        module.CurrentPlot = module.Plots[plotId] or EmptyPlotInfo
     end
 end
 
@@ -55,6 +70,7 @@ local function subscribeToPlot(plotPart: Part)
     local plotId = plotPart:GetAttribute("PlotId") or 0
    
     local info: PlotInfo = {
+        IsValid = true,
         PlotId = plotId,
         PlotPart = plotPart,
         Name = plotPart:GetAttribute("Name") or "Unnamed",
@@ -72,6 +88,8 @@ local function subscribeToPlot(plotPart: Part)
 
     plotPart:GetAttributeChangedSignal("OwnerUserId"):Connect(function()
         info.OwnerUserId = plotPart:GetAttribute("OwnerUserId") or 0
+        info.IsClaimed = info.OwnerUserId ~= 0
+        info.IsMine = info.OwnerUserId == localPlayer.UserId
         notifyPlotChange(plotId)
     end)
 
@@ -101,8 +119,17 @@ function module.SetCurrentPlotId(plotId)
 end
 
 function module.RegisterPlot(plotPart: Part)
-    local info = subscribeToPlot(plotPart)
-    print("Client registered plot with PlotId:", info.PlotId)
+    if plotPart:GetAttribute("PlotId") then
+        local info = subscribeToPlot(plotPart)
+        print("Client registered plot with PlotId:", info.PlotId)
+    else 
+        print("Delaying client registered plot")
+
+        plotPart:GetAttributeChangedSignal("PlotId"):Once(function() 
+            local info = subscribeToPlot(plotPart)
+            print("Client registered plot with PlotId:", info.PlotId)
+        end)
+    end
 end
 
 function module.ClaimPlot()
