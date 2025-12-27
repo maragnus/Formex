@@ -9,19 +9,19 @@ local Formex = require(FormexFolder:WaitForChild("Formex"))
 local FormexSystem = require(script.Parent:WaitForChild("FormexSystem"))
 local FormexBuild = require(script.Parent:WaitForChild("FormexBuild"))
 
-local FormexServer = {}
+local FormexPlot = {}
 
-function FormexServer.ClaimPlot(player: Player, plotId: number?): (boolean, string)
+function FormexPlot.ClaimPlot(player: Player, plotId: number?): (boolean, string)
     plotId = plotId or player:GetAttribute("CurrentPlotId")
     if not plotId then return false, "No plot specified" end
     return FormexSystem.AssignPlotToPlayer(player, plotId)
 end
 
-function FormexServer.ReleasePlot(player: Player): boolean
+function FormexPlot.ReleasePlot(player: Player): boolean
     return FormexSystem.UnassignPlotToPlayer(player)
 end
 
-function FormexServer.RenamePlot(player: Player, newName: string): boolean
+function FormexPlot.RenamePlot(player: Player, newName: string): boolean
     if not newName or newName == "" then return false, "Invalid name" end
 
     local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
@@ -38,7 +38,7 @@ function FormexServer.RenamePlot(player: Player, newName: string): boolean
 end
 
 -- This method can throw errors because is always called via pcall
-function FormexServer.ListSaves(player: Player): {[number]: Formex.PlotSaveInfo}
+function FormexPlot.ListSaves(player: Player): {[number]: Formex.PlotSaveInfo}
     local userId = player.UserId
     local prefix = tostring(userId) .. ":"
     local keyPages = FormexSystem.PlotDataStore:ListKeysAsync(prefix, Formex.MaxSaveSlots, nil, true)
@@ -76,7 +76,7 @@ function FormexServer.ListSaves(player: Player): {[number]: Formex.PlotSaveInfo}
     return saves
 end
 
-function FormexServer.LoadSave(player: Player, saveId: number): boolean
+function FormexPlot.LoadSave(player: Player, saveId: number): boolean
     if not saveId or saveId == 0 then error("Invalid save selected") end
 
     local userId = player.UserId
@@ -114,7 +114,7 @@ function FormexServer.LoadSave(player: Player, saveId: number): boolean
     return true
 end
 
-function FormexServer.NewSave(player: Player, startingSegment: number?): boolean
+function FormexPlot.NewSave(player: Player, startingSegment: number?): boolean
     local plotId = FormexSystem.PlayerToPlot[player.UserId]
     if not plotId or plotId == 0 then error("No claimed plot") end
     local plotData = FormexSystem.PlotData[plotId]
@@ -139,7 +139,7 @@ function FormexServer.NewSave(player: Player, startingSegment: number?): boolean
     return plotData.SaveId
 end
 
-function FormexServer.UnlockSegment(player: Player, segmentIndex: number): (boolean, string?)
+function FormexPlot.UnlockSegment(player: Player, segmentIndex: number): (boolean, string?)
     local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
     if not plotData then return false, "No current plot" end
     if plotData.SaveId == 0 then return false, "Load or create a save first." end
@@ -165,7 +165,7 @@ function FormexServer.UnlockSegment(player: Player, segmentIndex: number): (bool
     return true, mask
 end
 
-function FormexServer.SetPermission(player: Player, targetUserId: number, permission: Formex.Permission): boolean
+function FormexPlot.SetPermission(player: Player, targetUserId: number, permission: Formex.Permission): boolean
     local plotData, playerPermission = FormexSystem.GetPlayerCurrentPlot(player)
     if not plotData then return false, "No current plot" end
 
@@ -187,7 +187,7 @@ function FormexServer.SetPermission(player: Player, targetUserId: number, permis
     return true
 end
 
-function FormexServer.GetPermissions(player: Player): {[number]: Formex.Permission}
+function FormexPlot.GetPermissions(player: Player): {[number]: Formex.Permission}
     local plotData = FormexSystem.GetPlayerCurrentPlot(player)
     if not plotData then return false, "No current plot" end
 
@@ -238,4 +238,4 @@ RunService.Heartbeat:Connect(function(deltaTime)
     end
 end)
 
-return FormexServer
+return FormexPlot

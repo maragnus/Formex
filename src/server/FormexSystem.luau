@@ -204,7 +204,7 @@ function FormexSystem.SavePlot(plotId: number)
     end)
 
     if not success then
-        warn("FormexServer.SavePlot failed for PlotId", plotId, ":", err)
+        warn("FormexSystem.SavePlot failed for PlotId", plotId, ":", err)
         return false, err
     end
 

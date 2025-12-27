@@ -27,14 +27,25 @@ A **Plot** has a permissions list of other players that can interact with it. Th
 
 - Owner: Rename the plot, Update permissions, Purchase upgrades
 
-
 ## Autosave
 Any **Plot** with a selected **Save Slot** will have autosave enabled. Any change will create a 60 second timer to accumulate changes. After a save, the next change will create a new timer.
 
-## Communication
-- ClaimPlot(RemoteFunction): (plotId: number?) -> {success: boolean, message: string?, plotId: number}
-- ListSaves(RemoteFunction): () -> {{SaveId: number, LastPlayed: number}}
-- LoadPlot(RemoteFunction): (saveId: number) -> {success: boolean, plotId: number, saveId: number, data?: PlotData, message?: string}
-- NewPlot(RemoteFunction): () -> {success: boolean, plotId: number, saveId: number, data?: PlotData, message?: string}
-- SetSavePermission(RemoteFunction): (targetUserId: number, permission: Permissions) -> {success: boolean, message?: string}
+## Modules
+- `Formex` is the shared interface between client and server
 
+### Server-side
+- `FormexSystem`: manage core plot ownership and common systems
+- `FormexPlot`: handles client functions related to plot management
+- `FormexBuild`: handles client functions related to building and designing
+
+### Client-side
+- `FormexCamera`: manages camera modes
+- `FormexClient`: core management for the Formex state
+- `FormexDesign`: design mode functionality (floors, walls, objects)
+- `FormexFooter`: UI for the footer menu
+- `FormexPrompts`: UI popups
+- `FormexUI`: custom UI component library
+
+## Communication
+- `FormexClient` has methods that call methods named in `Formex.Functions`
+- `FormexServerFunctions` is the receiver for client functions and dispatches them to `FormexBuild`, `FormexServer`, etc

@@ -284,8 +284,8 @@ function FormexDesign.Select(part: Instance)
 		Trace backwards until `plotPart` then capture Level (currentLevel), ObjectType (selectionType), and Id (selectedId)
 		If Workspace is found instead, the selection is invalid
 	]]--
-	selectedId = nil
 	selectionType = FormexDesign.SelectionTypes.None
+	selectionData = nil -- TODO
 	currentLevel = currentLevel
 end
 

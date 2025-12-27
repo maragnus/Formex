@@ -6,7 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
 local Formex = require(FormexFolder:WaitForChild("Formex"))
-local FormexServer = require(script.Parent:WaitForChild("FormexServer"))
+local FormexPlot = require(script.Parent:WaitForChild("FormexPlot"))
 local FormexBuild = require(script.Parent:WaitForChild("FormexBuild"))
 
 local FormexFunctions: RemoteFunction = Instance.new("RemoteFunction", FormexFolder)
@@ -14,31 +14,31 @@ FormexFunctions.Name = "FormexFunctions"
 
 local remoteFunctions = {
     [Formex.Functions.ClaimPlot] = function(player)
-        return FormexServer.ClaimPlot(player)
+        return FormexPlot.ClaimPlot(player)
     end,
     [Formex.Functions.ReleasePlot] = function(player)
-        return FormexServer.ReleasePlot(player)
+        return FormexPlot.ReleasePlot(player)
     end,
     [Formex.Functions.RenamePlot] = function(player, newName)
-        return FormexServer.RenamePlot(player, newName)
+        return FormexPlot.RenamePlot(player, newName)
     end,
     [Formex.Functions.ListSaves] = function(player)
-        return FormexServer.ListSaves(player)
+        return FormexPlot.ListSaves(player)
     end,
     [Formex.Functions.LoadSave] = function(player, saveId)
-        return FormexServer.LoadSave(player, saveId)
+        return FormexPlot.LoadSave(player, saveId)
     end,
     [Formex.Functions.NewSave] = function(player, startingSegment)
-        return FormexServer.NewSave(player, startingSegment)
+        return FormexPlot.NewSave(player, startingSegment)
     end,
     [Formex.Functions.SetPermission] = function(player, targetUserId, permission)
-        return FormexServer.SetPermission(player, targetUserId, permission)
+        return FormexPlot.SetPermission(player, targetUserId, permission)
     end,
     [Formex.Functions.GetPermissions] = function(player)
-        return FormexServer.GetPermissions(player)
+        return FormexPlot.GetPermissions(player)
     end,
     [Formex.Functions.UnlockSegment] = function(player, segmentIndex)
-        return FormexServer.UnlockSegment(player, segmentIndex)
+        return FormexPlot.UnlockSegment(player, segmentIndex)
     end,
     [Formex.Functions.BuildWall] = function(player, wallData, action)
         return FormexBuild.BuildWall(player, wallData, action)
