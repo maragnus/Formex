@@ -3,6 +3,7 @@ local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
 local Formex = FormexClient.Formex
 local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
 local FormexPrompts = require(script.Parent:WaitForChild("FormexPrompts"))
+local FormexDesign = require(script.Parent:WaitForChild("FormexDesign"))
 local BlurController = FormexUI.BlurController
 
 local screenGui: ScreenGui = FormexUI.ScreenGui
@@ -39,6 +40,8 @@ local function updateFooter(buttons: {})
     end
 end
 
+type DesignMode = nil | "Expand" | "Floor" | "Ceiling" | "Wall" | "Furniture" | "Paint"
+
 local uiSettings = {
     PlotName = "Unclaimed",
     OwnerName = "Nobody",
@@ -53,7 +56,9 @@ local uiSettings = {
     IsManager = false,
     IsVIP = false,
     IsGuest = false,
-    DesignMode = false
+    IsNew = false,
+    DesignMode = nil :: DesignMode,
+    LastDesignMode = "Expand" :: DesignMode,
 }
 
 local refreshUI
@@ -86,37 +91,44 @@ createButton("PERMISSIONS", "Permissions", "83277863761797", function()
 end)
 
 createButton("DESIGN", "Design", "78727585562674", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Furniture"
+    local defaultMode: DesignMode = uiSettings.IsNew and "Expand" or uiSettings.LastDesignMode
+    uiSettings.DesignMode = uiSettings.IsManager and defaultMode or nil
     refreshUI()
 end)
 
 createButton("EXIT_DESIGN", "Exit Design", "78727585562674", function()
+    uiSettings.LastDesignMode = uiSettings.DesignMode or "Expand"
     uiSettings.DesignMode = nil
     refreshUI()
 end)
 
+createButton("DESIGN_EXPAND", "Expansion", "88488799504419", function()
+    uiSettings.DesignMode = uiSettings.IsManager and "Expand" or nil
+    refreshUI()
+end)
+
 createButton("DESIGN_FLOOR", "Floors", "136537860205120", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Furniture"
+    uiSettings.DesignMode = uiSettings.IsManager and "Floor" or nil
     refreshUI()
 end)
 
 createButton("DESIGN_CEILING", "Ceilings", "86944909652185", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Furniture"
+    uiSettings.DesignMode = uiSettings.IsManager and "Ceiling" or nil
     refreshUI()
 end)
 
 createButton("DESIGN_WALL", "Walls", "105416010695180", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Furniture"
+    uiSettings.DesignMode = uiSettings.IsManager and "Wall" or nil
     refreshUI()
 end)
 
 createButton("DESIGN_FURNITURE", "Furniture", "120639802680464", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Furniture"
+    uiSettings.DesignMode = uiSettings.IsManager and "Furniture" or nil
     refreshUI()
 end)
 
 createButton("DESIGN_PAINT", "Paint", "92885878760720", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Paint"
+    uiSettings.DesignMode = uiSettings.IsManager and "Paint" or nil
     refreshUI()
 end)
 
@@ -132,6 +144,7 @@ FormexClient.ClientEvents:Connect(function(eventName)
 
     local plot = FormexClient.CurrentPlot
     uiSettings.IsLoaded = plot.SaveId and plot.SaveId ~= 0
+    uiSettings.IsNew = uiSettings.IsLoaded and Formex.Segments.CountUnlocked(plot.SegmentsUnlocked) == 0
     uiSettings.PlotName = plot.Name
     uiSettings.OwnerName = plot.OwnerName
     uiSettings.ShowClaim = plot.IsValid and not plot.IsClaimed
@@ -140,7 +153,7 @@ FormexClient.ClientEvents:Connect(function(eventName)
     uiSettings.IsManager = uiSettings.IsOwner or plot.MyPermission == "Manager"
     uiSettings.IsVIP = uiSettings.IsManager or plot.MyPermission == "VIP"
     uiSettings.IsGuest = uiSettings.IsVIP or plot.MyPermission == "Guest"
-    uiSettings.DesignMode = uiSettings.IsLoaded and uiSettings.IsManager and uiSettings.DesignMode
+    uiSettings.DesignMode = (uiSettings.IsLoaded and uiSettings.IsManager) and uiSettings.DesignMode or nil
 
     refreshUI()
 end)
@@ -156,13 +169,15 @@ refreshUI = function()
     buttons["PERMISSIONS"] = uiSettings.IsLoaded and not uiSettings.DesignMode and uiSettings.IsOwner
     buttons["DESIGN"] = uiSettings.IsLoaded and not uiSettings.DesignMode and uiSettings.IsManager
     buttons["EXIT_DESIGN"] = uiSettings.DesignMode
-    buttons["DESIGN_FLOOR"] = uiSettings.DesignMode
-    buttons["DESIGN_CEILING"] = uiSettings.DesignMode
-    buttons["DESIGN_WALL"] = uiSettings.DesignMode
-    buttons["DESIGN_FURNITURE"] = uiSettings.DesignMode
+    buttons["DESIGN_EXPAND"] = uiSettings.DesignMode
+    buttons["DESIGN_FLOOR"] = not uiSettings.IsNew and uiSettings.DesignMode
+    buttons["DESIGN_CEILING"] = not uiSettings.IsNew and uiSettings.DesignMode
+    buttons["DESIGN_WALL"] = not uiSettings.IsNew and uiSettings.DesignMode
+    buttons["DESIGN_FURNITURE"] = not uiSettings.IsNew and uiSettings.DesignMode
 
     updateFooter(buttons)
 
+    FormexDesign.SetDesignMode(uiSettings.DesignMode)
     BlurController.updateAll();
 end
 

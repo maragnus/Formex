@@ -6,7 +6,6 @@ local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
 local Formex = require(FormexFolder:WaitForChild("Formex"))
 local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
 local FormexFunctions: RemoteFunction = FormexFolder:WaitForChild("FormexFunctions")
-local FormexEvents: RemoteEvent = FormexFolder:WaitForChild("FormexEvents")
 
 export type PlotInfo = {
     IsValid: boolean,
@@ -36,6 +35,8 @@ local EmptyPlotInfo: PlotInfo = {
     IsMine = false,
     MyPermission = "Guest",
     LastPlayed = 0,
+    LevelsUnlocked = 0,
+    SegmentsUnlocked = 0,
     Properties = {} :: {[string]: any}
 }
 
@@ -49,24 +50,26 @@ if not Players.LocalPlayer then
 end
 local localPlayer = Players.LocalPlayer
 
-local module = {}
-module.Formex = Formex
-module.ClientEvents = events.Event
-module.Plots = {} :: { [number]: PlotInfo }
+local FormexClient = {}
+
+FormexClient.Formex = Formex
+FormexClient.ClientEvents = events.Event
+FormexClient.Plots = {} :: { [number]: PlotInfo }
 
 -- local cached state
-module.MyPlotId = 0
-module.MyPlot = {} :: PlotInfo
-module.CurrentPlotId = 0
+FormexClient.MyPlotId = 0
+FormexClient.MyPlot = EmptyPlotInfo
+FormexClient.CurrentPlotId = 0
+FormexClient.CurrentPlot = EmptyPlotInfo
 
 local function notifyPlotChange(plotId: number)
-    if module.MyPlotId == plotId then
+    if FormexClient.MyPlotId == plotId then
         events:Fire("MyPlotChanged", plotId)
-        module.MyPlot = module.Plots[plotId] or EmptyPlotInfo
+        FormexClient.MyPlot = FormexClient.Plots[plotId] or EmptyPlotInfo
     end
-    if module.CurrentPlotId == plotId then
+    if FormexClient.CurrentPlotId == plotId then
         events:Fire("CurrentPlotChanged", plotId)
-        module.CurrentPlot = module.Plots[plotId] or EmptyPlotInfo
+        FormexClient.CurrentPlot = FormexClient.Plots[plotId] or EmptyPlotInfo
     end
 end
 
@@ -94,7 +97,7 @@ local function subscribeToPlot(plotPart: Part)
         SegmentsUnlocked = plotPart:GetAttribute("SegmentsUnlocked") or 0,
         Properties = {}
     }
-    module.Plots[plotId] = info
+    FormexClient.Plots[plotId] = info
 
     plotPart:GetAttributeChangedSignal("PlotName"):Connect(function()
         info.Name = plotPart:GetAttribute("PlotName") or "Unnamed"
@@ -143,17 +146,17 @@ local function subscribeToPlot(plotPart: Part)
     return info
 end
 
-function module.SetMyPlotId(plotId)
-	module.MyPlotId = plotId or 0
+function FormexClient.SetMyPlotId(plotId)
+	FormexClient.MyPlotId = plotId or 0
     notifyPlotChange(plotId)
 end
 
-function module.SetCurrentPlotId(plotId)
-	module.CurrentPlotId = plotId or 0
+function FormexClient.SetCurrentPlotId(plotId)
+	FormexClient.CurrentPlotId = plotId or 0
     notifyPlotChange(plotId)
 end
 
-function module.RegisterPlot(plotPart: Part)
+function FormexClient.RegisterPlot(plotPart: Part)
     if plotPart:GetAttribute("PlotId") then
         local info = subscribeToPlot(plotPart)
         print("Client registered plot with PlotId:", info.PlotId)
@@ -167,7 +170,7 @@ function module.RegisterPlot(plotPart: Part)
     end
 end
 
-function module.ClaimPlot(plotId: number?) : boolean
+function FormexClient.ClaimPlot(plotId: number?) : boolean
     local result, message = FormexFunctions:InvokeServer(Formex.Functions.ClaimPlot, plotId)
     if result == false then
         warn("ClaimPlot failed:", message)
@@ -175,7 +178,7 @@ function module.ClaimPlot(plotId: number?) : boolean
     return result
 end
 
-function module.ReleasePlot()
+function FormexClient.ReleasePlot()
     local result, message = FormexFunctions:InvokeServer(Formex.Functions.ReleasePlot)
     if result == false then
         warn("ReleasePlot failed:", message)
@@ -183,7 +186,15 @@ function module.ReleasePlot()
     return result
 end
 
-function module.RenamePlot(newName: string)
+function FormexClient.UnlockSegment(segmentIndex: number)
+    local result, message = FormexFunctions:InvokeServer(Formex.Functions.UnlockSegment, segmentIndex)
+    if result == false then
+        warn("UnlockSegment failed:", message)
+    end
+    return result, message
+end
+
+function FormexClient.RenamePlot(newName: string)
     local result, message = FormexFunctions:InvokeServer(Formex.Functions.RenamePlot, newName)
     if result == false then
         warn("RenamePlot failed:", message)
@@ -191,7 +202,7 @@ function module.RenamePlot(newName: string)
     return result
 end
 
-function module.GetSaves(): {[number]: Formex.PlotSaveInfo}
+function FormexClient.GetSaves(): {[number]: Formex.PlotSaveInfo}
     local result, message = FormexFunctions:InvokeServer(Formex.Functions.ListSaves)
     if result == false then
         warn("ListSaves failed:", message)
@@ -200,7 +211,7 @@ function module.GetSaves(): {[number]: Formex.PlotSaveInfo}
     return result or {}
 end
 
-function module.LoadSave(saveId: number)
+function FormexClient.LoadSave(saveId: number)
     local result, message = FormexFunctions:InvokeServer(Formex.Functions.LoadSave, saveId)
     if result == false then
         warn("LoadSave failed:", message)
@@ -208,20 +219,33 @@ function module.LoadSave(saveId: number)
     return result, message
 end
 
-function module.NewSave()
-    local result, message = FormexFunctions:InvokeServer(Formex.Functions.NewSave)
+function FormexClient.NewSave(startingSegment: number?)
+    local result, message = FormexFunctions:InvokeServer(Formex.Functions.NewSave, startingSegment)
     if result == false then
         warn("NewSave failed:", message)
     end
     return result, message
 end
 
-function module.SetSavePermission(targetUserId: number, permission: Formex.Permission): (boolean, string?)
+function FormexClient.SetSavePermission(targetUserId: number, permission: Formex.Permission): (boolean, string?)
     return FormexFunctions:InvokeServer(Formex.Functions.SetPermission, targetUserId, permission)
 end
 
-function module.GetSavePermissions(): {[number]: Formex.Permission}
+function FormexClient.GetSavePermissions(): {[number]: Formex.Permission}
     return FormexFunctions:InvokeServer(Formex.Functions.GetPermissions)
 end
 
-return module
+function FormexClient.BuildWall(wall: Formex.WallData, action: Formex.BuildAction): Formex.WallData
+    return FormexFunctions:InvokeServer(Formex.Functions.BuildWall)
+end
+
+function FormexClient.BuildFloor(wall: Formex.FloorData, action: Formex.BuildAction): Formex.FloorData
+    return FormexFunctions:InvokeServer(Formex.Functions.BuildFloor)
+end
+
+function FormexClient.BuildObject(wall: Formex.ObjectData, action: Formex.BuildAction): Formex.ObjectData
+    return FormexFunctions:InvokeServer(Formex.Functions.BuildObject)
+end
+
+
+return FormexClient

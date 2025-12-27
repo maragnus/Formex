@@ -1,4 +1,4 @@
-local FormexServer = require(script:WaitForChild("FormexServer"))
+local FormexSystem = require(script:WaitForChild("FormexSystem"))
 
 local FormexWorkspace = workspace:WaitForChild("Formex")
 local FormexPlots = FormexWorkspace:WaitForChild("Plots")
@@ -6,6 +6,6 @@ local FormexPlots = FormexWorkspace:WaitForChild("Plots")
 -- Register all existing plots
 for _, plot in ipairs(FormexPlots:GetChildren()) do
 	if plot:IsA("Part") then
-        FormexServer.RegisterPlot(plot)
+        FormexSystem.RegisterPlot(plot)
 	end
 end

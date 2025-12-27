@@ -9,9 +9,9 @@ screenGui.Name = "FormexUI"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-local module = {}
-module.ScreenGui = screenGui
-module.BlurController = BlurController
+local FormexUI = {}
+FormexUI.ScreenGui = screenGui
+FormexUI.BlurController = BlurController
 local currentContentParent: Instance? = nil
 
 local buttonPalette = {
@@ -46,7 +46,7 @@ export type FlexItemOptions = {
     ItemLineAlignment: Enum.ItemLineAlignment?,
 }
 
-function module.FlexItem(item: Instance, flexMode: Enum.UIFlexMode | FlexItemOptions)    
+function FormexUI.FlexItem(item: Instance, flexMode: Enum.UIFlexMode | FlexItemOptions)    
     local flexItem = Instance.new("UIFlexItem", item)
     if type(flexMode) == "table" then
         flexItem.FlexMode = flexMode.FlexMode
@@ -92,7 +92,7 @@ local function updateGUIObject(instance: GuiObject, options: CommonOptions)
         local padding = Instance.new("UIPadding", instance)
         padding.PaddingRight = type(options.Padding) == "number" and UDim.new(0, options.Padding) or options.Padding
     end
-    if options.FlexMode then module.FlexItem(instance, options) end
+    if options.FlexMode then FormexUI.FlexItem(instance, options) end
 end
 
 export type LabelOptions = {
@@ -111,7 +111,7 @@ export type LabelOptions = {
     TextWrapped: boolean?
 } | CommonOptions
 
-function module.CreateLabel(options: LabelOptions)
+function FormexUI.CreateLabel(options: LabelOptions)
     local label = Instance.new("TextLabel", options.Parent)
     if options.Name then label.Name = options.Name end
     label.Text = options.Text or ""
@@ -134,7 +134,7 @@ export type FlexOptions = {
     Wraps: boolean?,
 } | CommonOptions
 
-function module.CreateRow(options: FlexOptions)
+function FormexUI.CreateRow(options: FlexOptions)
     local header = Instance.new("Frame", options.Parent)
     updateGUIObject(header, options)
 
@@ -149,7 +149,7 @@ function module.CreateRow(options: FlexOptions)
     return header
 end
 
-function module.CreateColumn(options: FlexOptions)
+function FormexUI.CreateColumn(options: FlexOptions)
     local header = Instance.new("Frame", options.Parent)
     updateGUIObject(header, options)
 
@@ -165,7 +165,7 @@ function module.CreateColumn(options: FlexOptions)
 end
 
 export type ButtonType = "Primary" | "Secondary" | "Success" | "Info" | "Warn" | "Danger"
-module.ButtonTypes = {
+FormexUI.ButtonTypes = {
     Primary = "Primary",
     Secondary = "Secondary",
     Success = "Success",
@@ -174,12 +174,12 @@ module.ButtonTypes = {
     Danger = "Danger",
 } :: {[ButtonType]: ButtonType}
 
-function module.GetButtonPalette(buttonType: ButtonType)
+function FormexUI.GetButtonPalette(buttonType: ButtonType)
     return buttonPalette[buttonType] or buttonPalette.Primary
 end
 
 export type ButtonStyle = "Solid" | "Outline"
-module.ButtonStyles = {
+FormexUI.ButtonStyles = {
     Solid = "Solid",
     Outline = "Outline"
 } :: {[ButtonStyle]: ButtonStyle}
@@ -193,7 +193,7 @@ export type ButtonOptions = {
     IsPressed: boolean?, -- Appears pressed for toggle button style
 } | CommonOptions
 
-function module.CreateButton(options: ButtonOptions, action: (GuiButton) -> boolean)
+function FormexUI.CreateButton(options: ButtonOptions, action: (GuiButton) -> boolean)
     local palette = buttonPalette[options.Type] or buttonPalette.Primary
     local baseColor = palette.Base
     local outlineTextColor = (options.Type == "Secondary" or options.Type == "Warn") and darken(baseColor, 0.35) or baseColor
@@ -363,7 +363,7 @@ export type TextInputOptions = {
 } | CommonOptions
 
 
-function module.CreateTextInput(options: TextInputOptions, onChanged: ((value: string) -> nil)?): TextBox
+function FormexUI.CreateTextInput(options: TextInputOptions, onChanged: ((value: string) -> nil)?): TextBox
     local name = options.Name or options.Label or "TextInput"
     local container = Instance.new("Frame", options.Parent)
     container.Name = name .. "Container"
@@ -460,13 +460,13 @@ function module.CreateTextInput(options: TextInputOptions, onChanged: ((value: s
     return input
 end
 
-function module.Corner(parent: GuiObject, radius: number)
+function FormexUI.Corner(parent: GuiObject, radius: number)
     local corner = Instance.new("UICorner", parent)
     corner.CornerRadius = UDim.new(0, radius)
     return corner
 end
 
-function module.Padding(parent: GuiObject, top: number, right: number?, bottom: number?, left: number?)
+function FormexUI.Padding(parent: GuiObject, top: number, right: number?, bottom: number?, left: number?)
     local padding = Instance.new("UIPadding", parent)
     padding.PaddingTop = UDim.new(0, top)
     padding.PaddingRight = UDim.new(0, right or top)
@@ -481,7 +481,7 @@ local FOOTER_BORDER = 16
 local FOOTER_CORNER_RADIUS = 32
 local FOOTER_TOTAL_HEIGHT = FOOTER_CONTENT_HEIGHT + FOOTER_BORDER * 4
 
-function module.Footer(parent: ScreenGui)
+function FormexUI.Footer(parent: ScreenGui)
     local footerFrame = Instance.new("Frame", parent)
     footerFrame.Name = "Footer"
     footerFrame.BackgroundColor3 = Color3.fromRGB(250, 245, 255)
@@ -489,8 +489,8 @@ function module.Footer(parent: ScreenGui)
     footerFrame.Position = UDim2.new(0, FOOTER_EDGE_BOUNDARY, 1, -FOOTER_TOTAL_HEIGHT + FOOTER_CORNER_RADIUS / 4)
     footerFrame.Size = UDim2.new(1, -FOOTER_EDGE_BOUNDARY * 2, 0, FOOTER_TOTAL_HEIGHT + FOOTER_CORNER_RADIUS)
 
-    module.Padding(footerFrame, FOOTER_BORDER, FOOTER_BORDER, FOOTER_BORDER + FOOTER_CORNER_RADIUS, FOOTER_BORDER)
-    module.Corner(footerFrame, FOOTER_CORNER_RADIUS)
+    FormexUI.Padding(footerFrame, FOOTER_BORDER, FOOTER_BORDER, FOOTER_BORDER + FOOTER_CORNER_RADIUS, FOOTER_BORDER)
+    FormexUI.Corner(footerFrame, FOOTER_CORNER_RADIUS)
     BlurController.new(footerFrame, "Rectangle")
 
     local footerContainer = Instance.new("ScrollingFrame", footerFrame)
@@ -501,8 +501,8 @@ function module.Footer(parent: ScreenGui)
     footerContainer.AutomaticCanvasSize = Enum.AutomaticSize.X
     footerContainer.ScrollingDirection = Enum.ScrollingDirection.X
     footerContainer.ScrollingEnabled = true
-    module.Padding(footerContainer, FOOTER_BORDER, FOOTER_BORDER, FOOTER_BORDER, FOOTER_BORDER)
-    module.Corner(footerContainer, FOOTER_CORNER_RADIUS * 0.75)
+    FormexUI.Padding(footerContainer, FOOTER_BORDER, FOOTER_BORDER, FOOTER_BORDER, FOOTER_BORDER)
+    FormexUI.Corner(footerContainer, FOOTER_CORNER_RADIUS * 0.75)
     
     local dialogStroke = Instance.new("UIStroke", footerContainer)
     dialogStroke.Color = Color3.fromRGB(210, 210, 230)
@@ -527,7 +527,7 @@ export type DialogOptions = {
     Buttons: {[number]: ButtonInfo}?
 }
 
-function module.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> nil))
+function FormexUI.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> nil))
     local result: any = nil
     local closed = false
     local dialog: Dialog = {
@@ -704,7 +704,7 @@ function module.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> ni
 
     for index, buttonInfo in ipairs(options.Buttons or {}) do
         buttonInfo.Parent = buttonsFrame
-        local button = module.CreateButton(buttonInfo, function() dialog.Close(buttonInfo.Result) end)
+        local button = FormexUI.CreateButton(buttonInfo, function() dialog.Close(buttonInfo.Result) end)
 
         button.Visible = true
         button.LayoutOrder = index
@@ -734,7 +734,7 @@ export type AlertOptions = {
 }
 
 export type AlertType = "OkOnly" | "OkCancel" | "YesNo" | "YesNoCancel" | "RetryCancel"
-module.AlertTypes = {
+FormexUI.AlertTypes = {
     OkOnly = "OkOnly",
     OkCancel = "OkCancel",
     YesNo = "YesNo",
@@ -742,12 +742,12 @@ module.AlertTypes = {
     RetryCancel = "RetryCancel"
 }
 
-local okButton = { Text = "OK", Result = true, Type = module.ButtonTypes.Primary } :: ButtonInfo
-local yesButton = { Text = "Yes", Result = true, Type = module.ButtonTypes.Primary } :: ButtonInfo
-local noButton = { Text = "No", Result = false, Type = module.ButtonTypes.Error } :: ButtonInfo
-local retryButton = { Text = "Retry", Result = true, Type = module.ButtonTypes.Primary } :: ButtonInfo
-local cancelButton = { Text = "Cancel", Result = nil, Type = module.ButtonTypes.Secondary, Style = module.ButtonStyles.Outline } :: ButtonInfo
-module.ButtonGroups = {
+local okButton = { Text = "OK", Result = true, Type = FormexUI.ButtonTypes.Primary } :: ButtonInfo
+local yesButton = { Text = "Yes", Result = true, Type = FormexUI.ButtonTypes.Primary } :: ButtonInfo
+local noButton = { Text = "No", Result = false, Type = FormexUI.ButtonTypes.Error } :: ButtonInfo
+local retryButton = { Text = "Retry", Result = true, Type = FormexUI.ButtonTypes.Primary } :: ButtonInfo
+local cancelButton = { Text = "Cancel", Result = nil, Type = FormexUI.ButtonTypes.Secondary, Style = FormexUI.ButtonStyles.Outline } :: ButtonInfo
+FormexUI.ButtonGroups = {
     OkOnly = {okButton},
     OkCancel = {okButton, cancelButton},
     YesNo = {yesButton, noButton},
@@ -764,12 +764,12 @@ local alertIcons = {
 
 type ButtonPalette = { Base: Color3, Text: Color3 }
 
-function module.Alert(title: string, message: string, type: ButtonType, alertType: AlertType): any
-    local palette = module.GetButtonPalette(type)
-    local buttons = module.ButtonGroups[alertType]
+function FormexUI.Alert(title: string, message: string, type: ButtonType, alertType: AlertType): any
+    local palette = FormexUI.GetButtonPalette(type)
+    local buttons = FormexUI.ButtonGroups[alertType]
     local icon = alertIcons[type]
 
-    return module.Dialog({
+    return FormexUI.Dialog({
         Name = "AlertDialog",
         Title = title or "Alert",
         Size = "Small",
@@ -777,7 +777,7 @@ function module.Alert(title: string, message: string, type: ButtonType, alertTyp
         CloseResult = nil,
         Buttons = buttons,
     }, function(dialog)
-        local content = module.CreateRow({
+        local content = FormexUI.CreateRow({
             Parent = dialog.ContentFrame,
             Name = "AlertContent",
             AutomaticSize = Enum.AutomaticSize.Y,
@@ -795,7 +795,7 @@ function module.Alert(title: string, message: string, type: ButtonType, alertTyp
         iconImage.ImageColor3 = palette.Base
         iconImage.ScaleType = Enum.ScaleType.Fit
 
-        module.CreateLabel({
+        FormexUI.CreateLabel({
             Parent = content,
             Name = "Message",
             Text = message,
@@ -811,4 +811,4 @@ function module.Alert(title: string, message: string, type: ButtonType, alertTyp
     end)
 end
 
-return module
+return FormexUI

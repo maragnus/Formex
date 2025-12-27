@@ -4,11 +4,8 @@ local Players = game:GetService("Players")
 local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
 local Formex = FormexClient.Formex
 local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
-local BlurController = FormexUI.BlurController
-local localPlayer = Players.LocalPlayer
-local screenGui: ScreenGui = FormexUI.ScreenGui
 
-local module = {}
+local FormexPrompts = {}
 
 local function getUserInfo(userId: number): (string, string)
     local player = Players:GetPlayerByUserId(userId)
@@ -27,7 +24,7 @@ local function getUserInfo(userId: number): (string, string)
     return playerName, playerAvatar or "rbxassetid://0"
 end
 
-function module.PlotLoad()
+function FormexPrompts.PlotLoad()
     local saves = FormexClient.GetSaves() or {}
 
     table.sort(saves, function(a, b)
@@ -158,7 +155,7 @@ function module.PlotLoad()
     end)
 end
 
-function module.PlotRename()
+function FormexPrompts.PlotRename()
     local newName = FormexUI.Dialog({
         Name = "RenamePlotDialog",
         Title = "Rename your plot",
@@ -178,7 +175,7 @@ function module.PlotRename()
     end
 end
 
-function module.PlotPermissions()
+function FormexPrompts.PlotPermissions()
      if not FormexClient.CurrentPlot then return end
     local currentPlot = FormexClient.CurrentPlot
 
@@ -409,4 +406,4 @@ function module.PlotPermissions()
     end)
 end
 
-return module
+return FormexPrompts

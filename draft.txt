@@ -1,0 +1,35 @@
+`FormexDesign` has some work started but we need to make some more progress.
+
+`ghost` will be used for the client-side representation of what the user is placing.
+
+`ActionType` is used to track what the user is currently doing and what step they're on
+- When activating a design mode, it will always start in Select action and gracefully cancel any active action
+- Select is used for selecting existing objects in the design mode
+- Start is used to select where to start placing the object specific to the design mode
+- Step is used on the last step (e.g. placing the end of a wall, placing another point in the floor)
+- Move is used when an object or end point is being moved
+- Rotate is used for rotating furniture, requires a selected
+- After finishing an action, it should return to Select
+- Any action an be cancelled at any time
+
+Levels are Formex.SegmentSize.Height tall
+Walls are a Part that goes from floor height to ceiling height with a thickness of 1. They have a start and end point snapped to a grid point.
+Floors are a MeshPart that needs a EditableMesh created to represent the floor geometry
+Floors act as foundation on Level 1 going Formex.SegmentSize.Foundation units downward from floor height.
+Floors on upper levels include Formex.SegmentSize.Interfloor units downward from floor height.
+
+Implement `Formex` methods: `IsWallValid`, `CreateWall`, `EditWall`, `CreateFloor`, `EditFloor`
+- These methods will be used client-side to create ghost
+- These methods will be used server-side to create plot parts
+
+Implement drafting new walls and drawing floors
+- Walls should show a full height 1x1 wall part as a ghost
+- Walls click once to start and again to end
+- Floors are three or four point polygons
+- Floors click once to start, and end after fourth point
+- Walls and floors must snap to grid and only be placeable on owned segments
+- After finishing a wall or floor, the server FormexBuild needs to refresh and build any missing walls and floors
+
+Implement Select for walls and floors
+- Clicking on an invalid selection unselects anything
+- Add a highlight for selected parts.

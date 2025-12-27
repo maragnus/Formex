@@ -2,6 +2,8 @@
 
 Formex is a system for Roblox written in Luau that enabled Players to claim a predefined plot, design a building with floor, walls, ceilings, roof, windows, doors, and furniture.
 
+Do not use `pcall`. While developing, errors need to propogate normally to find them.
+
 ## Requirements
 
 - World has predefined `Part` instances created in the `Workspace/Formex/Plots` Folder to define the **Plots** that a player can claim.
