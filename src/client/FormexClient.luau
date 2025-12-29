@@ -62,6 +62,10 @@ FormexClient.MyPlot = EmptyPlotInfo
 FormexClient.CurrentPlotId = 0
 FormexClient.CurrentPlot = EmptyPlotInfo
 
+function FormexClient.FireEvent(eventName: string, ...)
+    events:Fire(eventName, ...)
+end
+
 local function notifyPlotChange(plotId: number)
     if FormexClient.MyPlotId == plotId then
         events:Fire("MyPlotChanged", plotId)
@@ -171,7 +175,7 @@ function FormexClient.RegisterPlot(plotPart: Part)
 end
 
 function FormexClient.ClaimPlot(plotId: number?) : boolean
-    local result, message = FormexFunctions:InvokeServer(Formex.Functions.ClaimPlot, plotId)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.ClaimPlot, plotId)
     if result == false then
         warn("ClaimPlot failed:", message)
     end
@@ -179,7 +183,7 @@ function FormexClient.ClaimPlot(plotId: number?) : boolean
 end
 
 function FormexClient.ReleasePlot()
-    local result, message = FormexFunctions:InvokeServer(Formex.Functions.ReleasePlot)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.ReleasePlot)
     if result == false then
         warn("ReleasePlot failed:", message)
     end
@@ -187,7 +191,7 @@ function FormexClient.ReleasePlot()
 end
 
 function FormexClient.UnlockSegment(segmentIndex: number)
-    local result, message = FormexFunctions:InvokeServer(Formex.Functions.UnlockSegment, segmentIndex)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.UnlockSegment, segmentIndex)
     if result == false then
         warn("UnlockSegment failed:", message)
     end
@@ -195,7 +199,7 @@ function FormexClient.UnlockSegment(segmentIndex: number)
 end
 
 function FormexClient.RenamePlot(newName: string)
-    local result, message = FormexFunctions:InvokeServer(Formex.Functions.RenamePlot, newName)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.RenamePlot, newName)
     if result == false then
         warn("RenamePlot failed:", message)
     end
@@ -203,7 +207,7 @@ function FormexClient.RenamePlot(newName: string)
 end
 
 function FormexClient.GetSaves(): {[number]: Formex.PlotSaveInfo}
-    local result, message = FormexFunctions:InvokeServer(Formex.Functions.ListSaves)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.ListSaves)
     if result == false then
         warn("ListSaves failed:", message)
         return {}
@@ -212,7 +216,7 @@ function FormexClient.GetSaves(): {[number]: Formex.PlotSaveInfo}
 end
 
 function FormexClient.LoadSave(saveId: number)
-    local result, message = FormexFunctions:InvokeServer(Formex.Functions.LoadSave, saveId)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.LoadSave, saveId)
     if result == false then
         warn("LoadSave failed:", message)
     end
@@ -220,7 +224,7 @@ function FormexClient.LoadSave(saveId: number)
 end
 
 function FormexClient.NewSave(startingSegment: number?)
-    local result, message = FormexFunctions:InvokeServer(Formex.Functions.NewSave, startingSegment)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.NewSave, startingSegment)
     if result == false then
         warn("NewSave failed:", message)
     end
@@ -228,23 +232,27 @@ function FormexClient.NewSave(startingSegment: number?)
 end
 
 function FormexClient.SetSavePermission(targetUserId: number, permission: Formex.Permission): (boolean, string?)
-    return FormexFunctions:InvokeServer(Formex.Functions.SetPermission, targetUserId, permission)
+    return FormexFunctions:InvokeServer(Formex.Function.SetPermission, targetUserId, permission)
 end
 
 function FormexClient.GetSavePermissions(): {[number]: Formex.Permission}
-    return FormexFunctions:InvokeServer(Formex.Functions.GetPermissions)
+    return FormexFunctions:InvokeServer(Formex.Function.GetPermissions)
 end
 
 function FormexClient.BuildWall(wall: Formex.WallData, action: Formex.BuildAction): Formex.WallData
-    return FormexFunctions:InvokeServer(Formex.Functions.BuildWall)
+    return FormexFunctions:InvokeServer(Formex.Function.BuildWall, wall, action)
 end
 
-function FormexClient.BuildFloor(wall: Formex.FloorData, action: Formex.BuildAction): Formex.FloorData
-    return FormexFunctions:InvokeServer(Formex.Functions.BuildFloor)
+function FormexClient.BuildFloor(level: number, x: number, y: number, material: number, material2: number): boolean
+    return FormexFunctions:InvokeServer(Formex.Function.BuildFloor, level, x, y, material, material2)
+end
+
+function FormexClient.BuildCeiling(level: number, x: number, y: number, material: number, material2: number): boolean
+    return FormexFunctions:InvokeServer(Formex.Function.BuildCeiling, level, x, y, material, material2)
 end
 
 function FormexClient.BuildObject(wall: Formex.ObjectData, action: Formex.BuildAction): Formex.ObjectData
-    return FormexFunctions:InvokeServer(Formex.Functions.BuildObject)
+    return FormexFunctions:InvokeServer(Formex.Function.BuildObject, wall, action)
 end
 
 

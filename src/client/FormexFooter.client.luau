@@ -11,6 +11,7 @@ local screenGui: ScreenGui = FormexUI.ScreenGui
 local footerContainer = FormexUI.Footer(screenGui)
 
 local footerButtons = {} :: {[string]: ImageButton}
+local floorMaterialButtonIds = {} :: {number}
 
 local function createButton(name: string, label: string?, icon: string, action: any)
     local button = FormexUI.CreateButton({
@@ -40,8 +41,6 @@ local function updateFooter(buttons: {})
     end
 end
 
-type DesignMode = nil | "Expand" | "Floor" | "Ceiling" | "Wall" | "Furniture" | "Paint"
-
 local uiSettings = {
     PlotName = "Unclaimed",
     OwnerName = "Nobody",
@@ -57,84 +56,139 @@ local uiSettings = {
     IsVIP = false,
     IsGuest = false,
     IsNew = false,
-    DesignMode = nil :: DesignMode,
-    LastDesignMode = "Expand" :: DesignMode,
 }
 
 local refreshUI
 
-createButton("CLAIM", "Claim", "85199762467908", function()
+local function canDesign(): boolean
+    return uiSettings.IsLoaded and uiSettings.IsManager
+end
+
+local function setDesignMode(mode)
+    if mode == FormexDesign.DesignMode.Play or canDesign() then
+        FormexDesign.SetDesignMode(mode)
+    end
+end
+
+local function isFloorMaterial(materialInfo: Formex.MaterialInfo): boolean
+    local categories = materialInfo.Categories
+    if not categories then
+        return false
+    end
+    return table.find(categories, "Floor") ~= nil
+end
+
+createButton("Claim", "Claim", "85199762467908", function()
     if FormexClient.ClaimPlot() then
         FormexPrompts.PlotLoad()
     end
 end)
 
-createButton("UNCLAIM", "Unclaim", "137711830774408", function()
+createButton("Unclaim", "Unclaim", "137711830774408", function()
     FormexClient.ReleasePlot()
 end)
 
-createButton("LOAD", "Load Save", nil, function()
+createButton("Load", "Load Save", nil, function()
     FormexPrompts.PlotLoad()
 end)
 
-createButton("HOME", "Go Home", nil, function()
+createButton("Home", "Go Home", nil, function()
     print("Teleport Home")
     FormexUI.Alert("Teleport", "You can't teleport because it hasn't been implemented yet. You should die.", FormexUI.ButtonTypes.Danger, FormexUI.AlertTypes.RetryCancel)
 end)
 
-createButton("RENAME", "Rename", "74166756362476", function()
+createButton("Rename", "Rename", "74166756362476", function()
     FormexPrompts.PlotRename()
 end)
 
-createButton("PERMISSIONS", "Permissions", "83277863761797", function()
+createButton("Permissions", "Permissions", "83277863761797", function()
     FormexPrompts.PlotPermissions()
 end)
 
-createButton("DESIGN", "Design", "78727585562674", function()
-    local defaultMode: DesignMode = uiSettings.IsNew and "Expand" or uiSettings.LastDesignMode
-    uiSettings.DesignMode = uiSettings.IsManager and defaultMode or nil
-    refreshUI()
+createButton("Design", "Design", "78727585562674", function()
+    setDesignMode(FormexDesign.DesignMode.Design)
 end)
 
-createButton("EXIT_DESIGN", "Exit Design", "78727585562674", function()
-    uiSettings.LastDesignMode = uiSettings.DesignMode or "Expand"
-    uiSettings.DesignMode = nil
-    refreshUI()
+createButton("ExitDesign", "Exit Design", "78727585562674", function()
+    setDesignMode(FormexDesign.DesignMode.Play)
 end)
 
-createButton("DESIGN_EXPAND", "Expansion", "88488799504419", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Expand" or nil
-    refreshUI()
+createButton("AddExpansions", "Expansions", "88488799504419", function()
+    setDesignMode(FormexDesign.DesignMode.Expand)
 end)
 
-createButton("DESIGN_FLOOR", "Floors", "136537860205120", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Floor" or nil
-    refreshUI()
+createButton("EditWalls", "Walls", "105416010695180", function()
+    setDesignMode(FormexDesign.DesignMode.Wall)
 end)
 
-createButton("DESIGN_CEILING", "Ceilings", "86944909652185", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Ceiling" or nil
-    refreshUI()
+createButton("EditFloors", "Floors", "136537860205120", function()
+    setDesignMode(FormexDesign.DesignMode.Floor)
 end)
 
-createButton("DESIGN_WALL", "Walls", "105416010695180", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Wall" or nil
-    refreshUI()
+createButton("EditObjects", "Objects", "120639802680464", function()
+    setDesignMode(FormexDesign.DesignMode.Object)
 end)
 
-createButton("DESIGN_FURNITURE", "Furniture", "120639802680464", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Furniture" or nil
-    refreshUI()
+createButton("Paint", "Paint", "92885878760720", function()
+    setDesignMode(FormexDesign.DesignMode.Paint)
 end)
 
-createButton("DESIGN_PAINT", "Paint", "92885878760720", function()
-    uiSettings.DesignMode = uiSettings.IsManager and "Paint" or nil
-    refreshUI()
+createButton("Back", "Back", nil, function()
+    setDesignMode(FormexDesign.DesignMode.Design)
 end)
+
+createButton("Add", "Add", "88488799504419", function()
+    local mode = FormexDesign.GetDesignMode()
+    if mode == FormexDesign.DesignMode.Wall then
+        FormexDesign.StartWall()
+    elseif mode == FormexDesign.DesignMode.Floor then
+        FormexDesign.StartFloor()
+    end
+end)
+
+createButton("Delete", "Delete", nil, function()
+    local mode = FormexDesign.GetDesignMode()
+    if mode == FormexDesign.DesignMode.Floor
+    or mode == FormexDesign.DesignMode.Ceiling then
+        FormexDesign.SetFloorMaterial(0)
+        return
+    end
+
+    local selectionType, partId, level = FormexDesign.GetSelectionInfo()
+    if not partId or not level then
+        return
+    end
+
+    if selectionType == FormexDesign.SelectionType.Wall then
+        FormexClient.BuildWall({
+            WallId = partId,
+            Level = level,
+            Start = Vector2.new(0, 0),
+            End = Vector2.new(0, 0),
+            FrontMaterial = Formex.DefaultWallMaterial,
+            BackMaterial = Formex.DefaultWallMaterial,
+            Part = nil
+        }, Formex.BuildAction.Delete)
+        FormexDesign.ClearSelection()
+    end
+end)
+
+createButton("Cancel", "Cancel", nil, function()
+    FormexDesign.CancelAction()
+end)
+
+for materialId, materialInfo in ipairs(Formex.Materials) do
+    if isFloorMaterial(materialInfo) then
+        table.insert(floorMaterialButtonIds, materialId)
+        createButton("FloorMaterial_" .. tostring(materialId), materialInfo.Name, nil, function()
+            FormexDesign.SetFloorMaterial(materialId)
+        end)
+    end
+end
 
 -- Listen for client events
 FormexClient.ClientEvents:Connect(function(eventName)
-    if eventName ~= "MyPlotChanged" and eventName ~= "CurrentPlotChanged" then return end
+    if eventName ~= "MyPlotChanged" and eventName ~= "CurrentPlotChanged" and eventName ~= "DesignModeChanged" then return end
 
     uiSettings.HasHome = FormexClient.MyPlotId ~= 0
     uiSettings.IsHome = uiSettings.HasHome and FormexClient.CurrentPlotId == FormexClient.MyPlotId
@@ -153,31 +207,74 @@ FormexClient.ClientEvents:Connect(function(eventName)
     uiSettings.IsManager = uiSettings.IsOwner or plot.MyPermission == "Manager"
     uiSettings.IsVIP = uiSettings.IsManager or plot.MyPermission == "VIP"
     uiSettings.IsGuest = uiSettings.IsVIP or plot.MyPermission == "Guest"
-    uiSettings.DesignMode = (uiSettings.IsLoaded and uiSettings.IsManager) and uiSettings.DesignMode or nil
 
     refreshUI()
 end)
 
 refreshUI = function()
     local buttons = {}
+    local designMode = FormexDesign.GetDesignMode()
+    local actionType = FormexDesign.GetActionType()
+    local selectionType = FormexDesign.GetSelection()
 
-    buttons["CLAIM"] = uiSettings.ShowClaim
-    buttons["UNCLAIM"] = not uiSettings.DesignMode and uiSettings.ShowUnclaim
-    buttons["LOAD"] = uiSettings.IsHome
-    buttons["HOME"] = not uiSettings.IsHome and uiSettings.HasHome
-    buttons["RENAME"] = uiSettings.IsLoaded and not uiSettings.DesignMode and uiSettings.IsOwner
-    buttons["PERMISSIONS"] = uiSettings.IsLoaded and not uiSettings.DesignMode and uiSettings.IsOwner
-    buttons["DESIGN"] = uiSettings.IsLoaded and not uiSettings.DesignMode and uiSettings.IsManager
-    buttons["EXIT_DESIGN"] = uiSettings.DesignMode
-    buttons["DESIGN_EXPAND"] = uiSettings.DesignMode
-    buttons["DESIGN_FLOOR"] = not uiSettings.IsNew and uiSettings.DesignMode
-    buttons["DESIGN_CEILING"] = not uiSettings.IsNew and uiSettings.DesignMode
-    buttons["DESIGN_WALL"] = not uiSettings.IsNew and uiSettings.DesignMode
-    buttons["DESIGN_FURNITURE"] = not uiSettings.IsNew and uiSettings.DesignMode
+    local canEdit = uiSettings.IsLoaded and uiSettings.IsManager
+    local inDesign = designMode ~= FormexDesign.DesignMode.Play
+    if inDesign and not canEdit then
+        FormexDesign.SetDesignMode(FormexDesign.DesignMode.Play)
+        return
+    end
+
+    local inDesignMenu = designMode == FormexDesign.DesignMode.Design
+    local inWallMode = designMode == FormexDesign.DesignMode.Wall
+    local inFloorMode = designMode == FormexDesign.DesignMode.Floor
+    local inObjectMode = designMode == FormexDesign.DesignMode.Object
+    local inExpandMode = designMode == FormexDesign.DesignMode.Expand
+    local inPaintMode = designMode == FormexDesign.DesignMode.Paint
+    local isSelectAction = actionType == FormexDesign.ActionType.Select
+
+    buttons["Claim"] = uiSettings.ShowClaim
+    buttons["Unclaim"] = not inDesign and uiSettings.ShowUnclaim
+    buttons["Load"] = uiSettings.IsHome and not inDesign
+    buttons["Home"] = not uiSettings.IsHome and uiSettings.HasHome
+    buttons["Rename"] = uiSettings.IsLoaded and not inDesign and uiSettings.IsOwner
+    buttons["Permissions"] = uiSettings.IsLoaded and not inDesign and uiSettings.IsOwner
+    buttons["Design"] = uiSettings.IsLoaded and uiSettings.IsManager and not inDesign
+
+    if inDesignMenu then
+        buttons["ExitDesign"] = true
+        buttons["AddExpansions"] = true
+        buttons["EditWalls"] = not uiSettings.IsNew
+        buttons["EditFloors"] = not uiSettings.IsNew
+        buttons["EditObjects"] = not uiSettings.IsNew
+        buttons["Paint"] = not uiSettings.IsNew
+    elseif inWallMode then
+        if isSelectAction then
+            buttons["Back"] = true
+            buttons["Add"] = true
+            buttons["Delete"] = selectionType ~= FormexDesign.SelectionType.None
+        else
+            buttons["Cancel"] = true
+        end
+    elseif inFloorMode then
+        buttons["Back"] = true
+        buttons["Delete"] = true
+        for _, materialId in ipairs(floorMaterialButtonIds) do
+            buttons["FloorMaterial_" .. tostring(materialId)] = true
+        end
+    elseif inObjectMode then
+        if isSelectAction then
+            buttons["Back"] = true
+            buttons["Add"] = true
+            buttons["Delete"] = selectionType ~= FormexDesign.SelectionType.None
+        else
+            buttons["Cancel"] = true
+        end
+    elseif inExpandMode or inPaintMode then
+        buttons["Back"] = true
+    end
 
     updateFooter(buttons)
 
-    FormexDesign.SetDesignMode(uiSettings.DesignMode)
     BlurController.updateAll();
 end
 

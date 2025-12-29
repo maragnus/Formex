@@ -27,7 +27,7 @@ function FormexPlot.RenamePlot(player: Player, newName: string): boolean
     local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
     if not plotData then return false, "No current plot" end
 
-    if permission ~= Formex.Permissions.Owner then return false, "Permission denied" end
+    if permission ~= Formex.Permission.Owner then return false, "Permission denied" end
     if plotData.Name == newName then return false, "Name unchanged" end
 
     plotData.Name = newName
@@ -90,6 +90,8 @@ function FormexPlot.LoadSave(player: Player, saveId: number): boolean
     local saveData: Formex.PlotData = FormexSystem.PlotDataStore:GetAsync(key)
     if not saveData then error("Save not found") end
 
+    saveData.Levels = (FormexSystem.PlotDataStore:GetAsync(key .. ":data") or {}) :: Formex.LevelData
+
     local plotData = FormexSystem.PlotData[plotId]
     if not plotData then error("Invalid plot") end
 
@@ -130,7 +132,7 @@ function FormexPlot.NewSave(player: Player, startingSegment: number?): boolean
     plotData.SaveId = saveId
     plotData.Name = player.Name .. "'s Plot"
     plotData.Permissions = plotData.Permissions or {}
-    plotData.Permissions[player.UserId] = Formex.Permissions.Owner
+    plotData.Permissions[player.UserId] = Formex.Permission.Owner
     plotData.LevelsUnlocked = 1
     plotData.SegmentsUnlocked = segmentIndex and Formex.Segments.Bit(segmentIndex) or 0
     plotData.Levels = {}
@@ -143,7 +145,7 @@ function FormexPlot.UnlockSegment(player: Player, segmentIndex: number): (boolea
     local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
     if not plotData then return false, "No current plot" end
     if plotData.SaveId == 0 then return false, "Load or create a save first." end
-    if permission ~= Formex.Permissions.Owner and permission ~= Formex.Permissions.Manager then
+    if permission ~= Formex.Permission.Owner and permission ~= Formex.Permission.Manager then
         return false, "Permission denied"
     end
     local index = tonumber(segmentIndex)
@@ -169,13 +171,13 @@ function FormexPlot.SetPermission(player: Player, targetUserId: number, permissi
     local plotData, playerPermission = FormexSystem.GetPlayerCurrentPlot(player)
     if not plotData then return false, "No current plot" end
 
-    if playerPermission ~= Formex.Permissions.Owner then error("Permission denied") end
+    if playerPermission ~= Formex.Permission.Owner then error("Permission denied") end
     if not targetUserId or targetUserId <= 0 then return error("Invalid target") end
     if targetUserId == plotData.UserId then return error("Cannot change owner permission") end
-    if not Formex.Permissions[permission] then return error("Invalid permission") end
+    if not Formex.Permission[permission] then return error("Invalid permission") end
 
     plotData.Permissions = plotData.Permissions or {}
-    if permission == Formex.Permissions.Guest then
+    if permission == Formex.Permission.Guest then
         plotData.Permissions[targetUserId] = nil
     else
         plotData.Permissions[targetUserId] = permission

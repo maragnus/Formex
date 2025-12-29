@@ -26,7 +26,7 @@ function FormexSystem.GetPlayerCurrentPlot(player: Player) : (Formex.PlotData?, 
     end
 
     local plotData = FormexSystem.PlotData[plotId]
-    return plotData, plotData.Permissions[player.UserId] or Formex.Permissions.Guest
+    return plotData, plotData.Permissions[player.UserId] or Formex.Permission.Guest
 end
 
 function FormexSystem.UpdatePlotAttributes(plotId: number)
@@ -66,6 +66,48 @@ function FormexSystem.UpdatePlotAttributes(plotId: number)
                 plotPart:SetAttribute(key, nil)
             end
         end
+    end
+end
+
+local function ensureFolder(parent: Instance, name: string): Folder
+    local existing = parent:FindFirstChild(name)
+    if existing and existing:IsA("Folder") then
+        return existing
+    end
+
+    local folder = Instance.new("Folder")
+    folder.Name = name
+    folder.Parent = parent
+    return folder
+end
+
+local function configureLevelPart(levelPart: BasePart, plotPart: BasePart, levelIndex: number)
+    levelPart.Anchored = true
+    levelPart.CanCollide = false
+    levelPart.CanTouch = false
+    levelPart.CanQuery = false
+    levelPart.CastShadow = false
+    levelPart.Transparency = 1
+    levelPart.Material = Enum.Material.Air
+    levelPart.Position = plotPart.Position + Vector3.new(0, Formex.LevelHeight * (levelIndex - 1), 0)
+    levelPart.Size = Vector3.new(plotPart.Size.X, Formex.LevelHeight, plotPart.Size.Z)
+end
+
+function FormexSystem.CreateLevelPlaceholders(plotPart: BasePart)
+    local totalLevels = Formex.MaxPlotSize.Levels + 1
+    for levelIndex = 1, totalLevels do
+        local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
+        if not (levelPart and levelPart:IsA("BasePart")) then
+            levelPart = Instance.new("Part")
+            levelPart.Name = tostring(levelIndex)
+            levelPart.Parent = plotPart
+        end
+
+        configureLevelPart(levelPart, plotPart, levelIndex)
+
+        ensureFolder(levelPart, "Floors")
+        ensureFolder(levelPart, "Walls")
+        ensureFolder(levelPart, "Objects")
     end
 end
 
@@ -131,6 +173,11 @@ function FormexSystem.AssignPlotToPlayer(player: Player, plotId: number)
     plotData.SegmentsUnlocked = 0
     plotData.Permissions = {}
     FormexSystem.UpdatePlotAttributes(plotId)
+
+    local plotPart = FormexSystem.Plots[plotId]
+    if plotPart then
+        FormexSystem.CreateLevelPlaceholders(plotPart)
+    end
     
     return true
 end
@@ -143,6 +190,14 @@ end
 function FormexSystem.RegisterPlot(plotPart: Part)
     local plotId = #FormexSystem.Plots + 1
     FormexSystem.Plots[plotId] = plotPart
+    plotPart.Transparency = 1
+    plotPart.Anchored = true
+    plotPart.Size = Vector3.new(Formex.MaxPlotSize.X, 1, Formex.MaxPlotSize.Z)
+    plotPart.CanCollide = false
+    plotPart.CanTouch = false
+    plotPart.CanQuery = false
+    plotPart.Material = Enum.Material.Air
+    plotPart.CastShadow = false
 
     CollectionService:AddTag(plotPart, "FormexPlot")
 
@@ -188,19 +243,33 @@ function FormexSystem.SavePlot(plotId: number)
     end
     plotData.SegmentsUnlocked = segmentsMask
 
+    -- Ensure owner is in permissions
+    plotData.Permissions[userId] = Formex.Permission.Owner
+
+    -- Associate editors with the save data metadata
+    local userMetaData = {}
+    for userId, permission in plotData.Permissions do
+        if permission == Formex.Permission.Manager or permission == Formex.Permission.Owner then
+            table.insert(userMetaData, userId)
+        end
+    end
+
     local key = tostring(userId) .. ":" .. tostring(plotData.SaveId)
-    local success, err = pcall(function()        
+    local success, err = pcall(function()
+        -- Save main plot data
         FormexSystem.PlotDataStore:SetAsync(key, {
             PlotId = plotId,
             UserId = userId,
             SaveId = plotData.SaveId,
             Name = plotData.Name,
             LastPlayed = plotData.LastPlayed,
-            Levels = plotData.Levels,
             LevelsUnlocked = plotData.LevelsUnlocked or 1,
             SegmentsUnlocked = plotData.SegmentsUnlocked or 0,
             Permissions = plotData.Permissions,
-        })
+        }, {plotData.UserId})
+
+        -- Save level data separately
+        FormexSystem.PlotDataStore:SetAsync(key .. ":data", plotData.Levels, userMetaData)
     end)
 
     if not success then
@@ -210,6 +279,8 @@ function FormexSystem.SavePlot(plotId: number)
 
     saveQueue[plotId] = nil
     FormexSystem.UpdatePlotAttributes(plotId)
+
+    print("Saved plot", plotId, "for user", userId)
 
     return true
 end

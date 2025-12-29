@@ -211,7 +211,7 @@ function FormexPrompts.PlotPermissions()
                 UserId = player.UserId,
                 Name = name,
                 Avatar = avatar,
-                Permission = Formex.Permissions.Guest,
+                Permission = Formex.Permission.Guest,
                 InPermissions = false,
             })
         end
