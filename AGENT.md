@@ -6,6 +6,11 @@ Do not use `pcall`. While developing, errors need to propogate normally to find 
 
 ## Requirements
 
+- Luau requires that a `local function` is always defined before it's first usage. Make sure this is always the case when adding a new `local function` by resolving in one of these ways:
+    - Make the function a `function module.*`
+    - Move the usage below the declaration
+    - Move the function and it's dependencies up
+
 - World has predefined `Part` instances named "PlotPlaceholder" created in the `Workspace/Formex/Plots` Folder to define the **Plots** that a player can claim.
 - Players can claim only one **Plot** on a server
 - A **Plot** requires that the player selects a **Save Slot** before a building can be created.

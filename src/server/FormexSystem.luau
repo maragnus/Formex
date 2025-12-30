@@ -248,11 +248,15 @@ function FormexSystem.SavePlot(plotId: number)
 
     -- Associate editors with the save data metadata
     local userMetaData = {}
-    for userId, permission in plotData.Permissions do
-        if permission == Formex.Permission.Manager or permission == Formex.Permission.Owner then
-            table.insert(userMetaData, userId)
+    for id, permission in plotData.Permissions do
+        local idNumber = tonumber(id)
+        if idNumber and (permission == Formex.Permission.Manager or permission == Formex.Permission.Owner) then
+            table.insert(userMetaData, idNumber)
         end
     end
+
+    local levelData = Formex.SerializeLevelData(plotData.Levels)
+    print(levelData)
 
     local key = tostring(userId) .. ":" .. tostring(plotData.SaveId)
     local success, err = pcall(function()
@@ -266,10 +270,13 @@ function FormexSystem.SavePlot(plotId: number)
             LevelsUnlocked = plotData.LevelsUnlocked or 1,
             SegmentsUnlocked = plotData.SegmentsUnlocked or 0,
             Permissions = plotData.Permissions,
-        }, {plotData.UserId})
+        }, userMetaData)
 
+        print("Saving " .. tostring(#levelData) .. " bytes of level data for plot", plotId)
         -- Save level data separately
-        FormexSystem.PlotDataStore:SetAsync(key .. ":data", plotData.Levels, userMetaData)
+        FormexSystem.PlotDataStore:SetAsync(key .. ":data",
+            levelData,
+            userMetaData)
     end)
 
     if not success then
@@ -283,6 +290,215 @@ function FormexSystem.SavePlot(plotId: number)
     print("Saved plot", plotId, "for user", userId)
 
     return true
+end
+
+local function fixNumbericDictionary(data: {[string]: any} | nil): {[number]: any}
+    if not data then return {} end
+    local fixedData: {[number]: any} = {}
+    for key, value in data do
+        local keyNumber = tonumber(key)
+        if keyNumber then
+            fixedData[keyNumber] = value
+        end
+    end
+    return fixedData
+end
+
+function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
+    if not FormexSystem.PlotData[plotId] then error("Invalid plotId") end
+    if not saveId or saveId == 0 then error("Invalid save selected") end
+
+    local userId = FormexSystem.PlotToPlayer[plotId]
+    if not userId or userId == 0 then error("Plot not claimed") end
+
+    local plotPart = FormexSystem.Plots[plotId]
+    if not plotPart then error("Invalid plot") end
+
+    local key = tostring(userId) .. ":" .. tostring(saveId)
+    local saveData: Formex.PlotData = FormexSystem.PlotDataStore:GetAsync(key)
+    if not saveData then error("Save not found") end
+
+    local levelData = (FormexSystem.PlotDataStore:GetAsync(key .. ":data") or {}) :: Formex.LevelData
+
+    local plotData = FormexSystem.PlotData[plotId]
+    if not plotData then error("Invalid plot") end
+
+    plotData.SaveId = saveData.SaveId or saveId
+    plotData.Name = saveData.Name or (Players:GetNameFromUserIdAsync(userId) .. "'s Plot")
+    plotData.LastPlayed = os.time()
+    plotData.Levels = saveData.Levels or {}
+    plotData.LevelsUnlocked = math.max(saveData.LevelsUnlocked or 1, 1)
+    local segmentsUnlocked = saveData.SegmentsUnlocked
+    if segmentsUnlocked == nil then
+        segmentsUnlocked = Formex.Segments.Bit(Formex.Segments.DefaultIndex)
+    end
+    plotData.SegmentsUnlocked = segmentsUnlocked
+    plotData.Permissions = fixNumbericDictionary(saveData.Permissions or {})
+
+    print(levelData)
+
+    if type(levelData) == "string" then
+        plotData.Levels = Formex.DeserializeLevelData(levelData)
+    else
+        warn("No level data found for plot", plotId, "save", saveId)
+        plotData.Levels = plotData.Levels or {}
+    end
+
+    FormexSystem.UpdatePlotAttributes(plotId)
+
+    FormexSystem.ClearPlot(plotPart)
+
+    FormexSystem.RenderPlot(plotId)
+
+    print(pcall(FormexSystem.SavePlot, plotId))
+    -- FormexSystem.SavePlot(plotId)
+
+    return true
+end
+
+function FormexSystem.EnsureLevelData(plotData: Formex.PlotData, levelIndex: number): Formex.LevelData
+	plotData.Levels = plotData.Levels or {} :: {number: Formex.LevelData}
+	local levelData = plotData.Levels[levelIndex]
+
+	if not levelData then
+		levelData = {
+			Walls = {} :: {number: Formex.WallData},
+			Floors = {} :: {[number]: number},
+			Ceilings = {} :: {[number]: number},
+			Objects = {} :: {number: Formex.ObjectData},
+		}
+		plotData.Levels[levelIndex] = levelData
+	end
+
+	return levelData
+end
+
+type RenderState = {
+    PlotPart: BasePart,
+    PlotData: Formex.PlotData,
+    LevelIndex: number,
+    LevelData: Formex.LevelData,
+    LevelPart: BasePart,
+    FloorFolder: Folder,
+    WallFolder: Folder,
+    ObjectFolder: Folder
+}
+
+local function renderFloorCeiling(data: RenderState)
+    local parent = data.FloorFolder
+
+    local floors = data.LevelData.Floors
+    local ceilings = data.LevelData.Ceilings
+
+    for _, child in parent:GetChildren() do
+        local index = tonumber(child.Name)
+        if index and not floors[index] and not ceilings[index] then
+            child:Destroy()
+        end
+    end
+
+    local floorData = {
+        FloorId = 0,
+        LevelIndex = data.LevelIndex,
+        Type = Formex.FloorType.Square,
+    } :: Formex.FloorData
+
+    for index in floors do
+        local floorMaterial = floors[index]
+        local ceilingMaterial = ceilings[index]
+        if not floorMaterial and not ceilingMaterial then
+            continue
+        end
+
+        floorData.FloorId = index
+        floorData.Tile = Formex.IndexToXY(index)
+        floorData.Type = Formex.FloorType.Square
+        floorData.FloorMaterial = floorMaterial
+        floorData.CeilingMaterial = ceilingMaterial
+        floorData.Part = parent:FindFirstChild(tostring(index)) :: Part
+
+        Formex.UpdateFloor(data.PlotPart, floorData, floorData.Part)
+    end
+end
+
+local function renderWalls(data: RenderState)
+    local parent = data.WallFolder
+    for wallId, wallData in data.LevelData.Walls do
+        if not wallData.Part then
+            local part = Formex.CreateWall(wallData, data.PlotPart)
+            if part then
+                part.Parent = parent
+            end
+        else
+            Formex.EditWall(wallData)
+        end
+    end
+end
+
+local function renderFurniture(data: RenderState)
+    local parent = data.RenderFurniture
+    for objectId, objectData in data.LevelData.Objects do
+        if not objectData.Part then
+            Formex.CreateObject(parent, objectData)
+        else
+            Formex.EditObject(objectData)
+        end
+    end
+end
+
+local function renderLevel(data: RenderState, levelIndex: number, filterPartType: Formex.PartType?)
+    data.LevelIndex = levelIndex
+    data.LevelData = FormexSystem.EnsureLevelData(data.PlotData, levelIndex)
+
+    local levelPart = data.PlotPart:FindFirstChild(tostring(data.LevelIndex))
+    if not levelPart then
+        levelPart = Instance.new("Part", data.PlotPart)
+        levelPart.Name = tostring(data.LevelIndex)
+    
+        levelPart.Anchored = true
+        levelPart.CanCollide = false
+        levelPart.CanTouch = false
+        levelPart.CanQuery = false
+        levelPart.CastShadow = false
+        levelPart.Transparency = 1
+        levelPart.Material = Enum.Material.Air
+        -- Level part represents the entire level volume, invisible and non-collidable
+        levelPart.Position = data.PlotPart.Position + Vector3.new(0, Formex.LevelHeight * (levelIndex - 1) + Formex.LevelHeight / 2, 0)
+        levelPart.Size = Vector3.new(data.PlotPart.Size.X, Formex.LevelHeight, data.PlotPart.Size.Z)
+    end
+
+    data.LevelPart = levelPart :: BasePart
+    data.FloorFolder = Formex.EnsureFolder("Floors", levelPart)
+    data.WallFolder = Formex.EnsureFolder("Walls", levelPart)
+    data.ObjectFolder = Formex.EnsureFolder("Objects", levelPart)
+
+    if filterPartType == "Wall" then
+        renderWalls(data)
+    elseif filterPartType == "Floor" or filterPartType == "Ceiling" then
+        renderFloorCeiling(data)
+    elseif filterPartType == "Object" then
+        renderFurniture(data)
+    else
+        renderFloorCeiling(data)
+        renderWalls(data)
+        renderFurniture(data)
+    end
+end
+
+function FormexSystem.RenderPlot(plotId: number, filterLevelIndex: number?, filterPartType: Formex.PartType?): Model
+    local data = {
+        PlotPart = FormexSystem.Plots[plotId],
+        PlotData = FormexSystem.PlotData[plotId],
+    }
+
+    if filterLevelIndex then
+        renderLevel(data :: RenderState, filterLevelIndex, filterPartType)
+        return
+    end
+
+    for level = 1, Formex.MaxPlotSize.Levels, 1 do
+        renderLevel(data, level)
+    end
 end
 
 -- Ensure defaults when players join

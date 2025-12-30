@@ -77,43 +77,8 @@ function FormexPlot.ListSaves(player: Player): {[number]: Formex.PlotSaveInfo}
 end
 
 function FormexPlot.LoadSave(player: Player, saveId: number): boolean
-    if not saveId or saveId == 0 then error("Invalid save selected") end
-
     local userId = player.UserId
-    local plotId = FormexSystem.PlayerToPlot[userId]
-    if not plotId or plotId == 0 then error("No claimed plot") end
-
-    local plotPart = FormexSystem.Plots[plotId]
-    if not plotPart then error("Invalid plot") end
-
-    local key = tostring(userId) .. ":" .. tostring(saveId)
-    local saveData: Formex.PlotData = FormexSystem.PlotDataStore:GetAsync(key)
-    if not saveData then error("Save not found") end
-
-    saveData.Levels = (FormexSystem.PlotDataStore:GetAsync(key .. ":data") or {}) :: Formex.LevelData
-
-    local plotData = FormexSystem.PlotData[plotId]
-    if not plotData then error("Invalid plot") end
-
-    plotData.SaveId = saveData.SaveId or saveId
-    plotData.Name = saveData.Name or (player.Name .. "'s Plot")
-    plotData.LastPlayed = os.time()
-    plotData.Levels = saveData.Levels or {}
-    plotData.LevelsUnlocked = math.max(saveData.LevelsUnlocked or 1, 1)
-    local segmentsUnlocked = saveData.SegmentsUnlocked
-    if segmentsUnlocked == nil then
-        segmentsUnlocked = Formex.Segments.Bit(Formex.Segments.DefaultIndex)
-    end
-    plotData.SegmentsUnlocked = segmentsUnlocked
-    plotData.Permissions = saveData.Permissions or {}
-    FormexSystem.UpdatePlotAttributes(plotId)
-
-    FormexSystem.ClearPlot(plotPart)
-    FormexBuild.RenderPlot(plotPart, FormexSystem.PlotData[plotId])
-
-    FormexSystem.SavePlot(plotId)
-
-    return true
+    return FormexSystem.LoadPlot(FormexSystem.PlayerToPlot[userId], saveId)
 end
 
 function FormexPlot.NewSave(player: Player, startingSegment: number?): boolean

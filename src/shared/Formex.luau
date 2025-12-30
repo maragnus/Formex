@@ -7,6 +7,11 @@
 -- \/   \___/|_|  |_| |_| |_|\___/_/\_\
 -- Formex by NexArc Solutions <roblox@nexarc.dev>
 
+local DATA_VERSION: number = 1
+local INITIAL_BUFFER_SIZE: number = 1024
+
+local Buffer = require(script.Parent.Buffer)
+
 -- Type constants
 
 export type SurfaceType = "Square" | "Sliced"
@@ -40,8 +45,8 @@ export type PlotData = {
 
 export type LevelData = {
 	Walls: {[number]: WallData}, -- [WallId: WallData]
-	Floors: {[number]: number | nil}, -- [x + y * Formex.SegmentSize / Formex.LayoutGridSize * Formex.MaxPlotSize.Height]: Formex.Materials[index] | nil (none)
-	Ceilings: {[number]: number | nil}, -- [x + y * Formex.SegmentSize / Formex.LayoutGridSize * Formex.MaxPlotSize.Height]: Formex.Materials[index] | nil (none)
+	Floors: {[number]: number | nil}, -- [Formex.XYToIndex(x, y)]: Formex.Materials[index] | nil
+	Ceilings: {[number]: number | nil}, -- [Formex.XYToIndex(x, y)]: Formex.Materials[index] | nil
 	Objects: {[number]: ObjectData}, -- [ObjectId: ObjectData]
 	Part: Part?
 }
@@ -98,8 +103,8 @@ Formex.LayoutGridSize = 4 -- studs
 Formex.MaxSaveSlots = 3
 Formex.ProximityBorder = 25 -- studs
 Formex.InterfloorHeight = 2  -- studs (thickness of floor on upper levels)
-Formex.FoundationHeight = 10 -- studs (thickness of foundation floor)
-Formex.LevelHeight = 16 -- studs (top of floor to top of floor)
+Formex.FoundationHeight = 8 -- studs (thickness of foundation floor)
+Formex.LevelHeight = 12 -- studs (top of floor to top of floor)
 Formex.WallThickness = 0.5 -- studs
 Formex.SegmenteSize = 64 -- studs (square)
 Formex.WallTopMaterial = 1
@@ -287,16 +292,19 @@ local function isPointInUnlockedSegments(point: Vector2, mask: number?): boolean
 	return false
 end
 
-local function isLineWithinUnlockedSegments(startPoint: Vector2, endPoint: Vector2, mask: number?): boolean
+local function isLineWithinUnlockedSegments(startPoint: Vector2 | Vector2int16, endPoint: Vector2 | Vector2int16, mask: number?): boolean
 	if not isPointInUnlockedSegments(startPoint, mask) or not isPointInUnlockedSegments(endPoint, mask) then
 		return false
 	end
 
-	local direction = endPoint - startPoint
-	local length = direction.Magnitude
-	if length <= EPSILON then
-		return false
+	if typeof(startPoint) ~= "Vector2" or typeof(endPoint) ~= "Vector2" then
+		startPoint = Vector2.new(startPoint.X, startPoint.Y)
+		endPoint = Vector2.new(endPoint.X, endPoint.Y)
 	end
+
+	local direction: Vector2 = endPoint - startPoint
+	local length = direction.Magnitude
+	if length <= EPSILON then return false end
 
 	local step = math.max(Formex.GridSize, 1)
 	local steps = math.floor(length / step)
@@ -843,6 +851,167 @@ function Formex.GetFloorData(plotPart: BasePart, levelIndex: number, tile: Vecto
 	data.CeilingMaterial = getMaterialIdFromTexture(data.Part:FindFirstChild("Ceiling"))
 
 	return data
+end
+
+function Formex.SerializeLevelData(levels: {[number]: LevelData}): string
+	local writer = Buffer.new(INITIAL_BUFFER_SIZE)
+	writer:WriteU16(DATA_VERSION)
+
+	-- Serialize levels
+	for levelIndex = 1, Formex.MaxPlotSize.Levels do
+		local levelData = levels[levelIndex] :: LevelData
+
+		print("levelIndex", levelIndex, levelData)
+
+		if levelData then
+			writer:WriteU8(levelIndex)
+
+			print("walls")
+
+			-- Walls
+			for wallId, wall in levelData.Walls do
+				writer:WriteU16(wallId)
+				writer:WriteI16(wall.Start.X)
+				writer:WriteI16(wall.Start.Y)
+				writer:WriteI16(wall.End.X)
+				writer:WriteI16(wall.End.Y)
+				writer:WriteU8(wall.FrontMaterial or 0)
+				writer:WriteU8(wall.BackMaterial or 0)
+				writer:WriteU8(wall.StartMaterial or 0)
+				writer:WriteU8(wall.EndMaterial or 0)
+			end
+			writer:WriteU16(0)
+
+			print("floors")
+
+			-- Floors and Ceilings
+			for index, materialId in levelData.Floors do
+				writer:WriteU16(index)
+				writer:WriteU8(materialId or 0)
+			end
+			writer:WriteU16(0)
+
+			for index, materialId in levelData.Ceilings do
+				writer:WriteU16(index)
+				writer:WriteU8(materialId or 0)
+			end
+			writer:WriteU16(0)
+
+			print("objects")
+			-- Objects
+			for objectId, object in levelData.Objects do
+				writer:WriteU16(objectId)
+				writer:WriteF32(object.Position.X)
+				writer:WriteF32(object.Position.Y)
+				writer:WriteF32(object.Position.Z)
+				writer:WriteF32(object.Rotation.X)
+				writer:WriteF32(object.Rotation.Y)
+				writer:WriteF32(object.Rotation.Z)
+				writer:WriteU16(object.WallId or 0)
+				for designIndex, value in object.Design do
+					writer:WriteU16(designIndex)
+					writer:WriteString(value)
+				end
+				writer:WriteU16(0)
+			end
+			writer:WriteU16(0)
+
+		else
+			writer:WriteU8(0) -- levelIndex
+			writer:WriteU16(0) -- walls terminator
+			writer:WriteU16(0) -- floors terminator
+			writer:WriteU16(0) -- ceilings terminator
+			writer:WriteU16(0) -- objects terminator
+		end
+	end
+
+	return writer:ToString()
+end
+
+local function deserializeLevelDataV1(reader): {[number]: LevelData}
+	local result = {} :: {[number]: LevelData}
+
+	for i = 1, Formex.MaxPlotSize.Levels do
+		local levelData: LevelData = {
+			Walls = {},
+			Floors = {},
+			Ceilings = {},
+			Objects = {},
+		}
+
+		local levelIndex = reader:ReadU8()
+		if levelIndex ~= 0 then
+			result[levelIndex] = levelData
+		end
+
+		-- Walls
+		while true do
+			local wallId = reader:ReadU16()
+			if wallId == 0 then break end
+
+			local wall: WallData = {
+				WallId = wallId,
+				Level = levelIndex,
+				Start = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
+				End = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
+				FrontMaterial = reader:ReadU8(),
+				BackMaterial = reader:ReadU8(),
+				StartMaterial = reader:ReadU8(),
+				EndMaterial = reader:ReadU8(),
+			}
+			levelData.Walls[wallId] = wall
+		end
+
+		-- Floors
+		while true do
+			local index = reader:ReadU16()
+			if index == 0 then break end
+			levelData.Floors[index] = reader:ReadU8()
+		end
+
+		-- Ceilings
+		while true do
+			local index = reader:ReadU16()
+			if index == 0 then break end
+			levelData.Ceilings[index] = reader:ReadU8()
+		end
+
+		-- Objects
+		while true do
+			local objectId = reader:ReadU16()
+			if objectId == 0 then break end
+			local obj = {
+				ObjectId = tostring(objectId),
+				Level = levelIndex,
+				Position = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
+				Rotation = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
+				WallId = reader:ReadU16(),
+				Design = {},
+				Properties = {},
+			}
+
+			while true do
+				local designIndex = reader:ReadU16()
+				if designIndex == 0 then break end
+				obj.Design[designIndex] = reader:ReadString()
+			end
+
+			levelData.Objects[objectId] = obj
+		end
+	end
+
+	return result
+end
+
+function Formex.DeserializeLevelData(dataString: string): {[number]: LevelData}
+	local reader = Buffer.read(dataString)
+	local version = reader:ReadU16()
+
+	if version == 1 then
+		return deserializeLevelDataV1(reader)
+	else
+		error("Unsupported data version: " .. tostring(version))
+	end
 end
 
 return Formex

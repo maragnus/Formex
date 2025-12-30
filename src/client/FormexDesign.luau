@@ -16,8 +16,6 @@ local PlayerGui: ScreenGui = localPlayer:WaitForChild("PlayerGui")
 local formexWorkspace = Workspace:WaitForChild("Formex")
 local overlayFolder = Formex.EnsureFolder("FormexDesignOverlays", formexWorkspace)
 
-local HOLD_THRESHOLD = 1.5 -- seconds to consider as hold instead of a click
-
 local FormexDesign = {}
 
 export type WallMode = "Full" | "Half" | "Hidden"
@@ -97,16 +95,36 @@ local ghostActive = false
 local ghostIsValid = false
 local floorMaterialId = Formex.DefaultFloorMaterial
 local actionHeld = false
-local actionHeldTime = 0
 local altHeld, alt1Held, alt2Held, alt3Held = false, false, false, false
-local lastFloorPaintTile: Vector2? = nil
+local lastFloorPaintTile: Vector2int16? = nil
 local lastFloorPaintMaterial: number? = nil
 local selectionType: SelectionType = FormexDesign.SelectionType.None
 local selectionData: SelectionData = nil
 local selectionPart: BasePart? = nil
 local selectionHighlight: Highlight? = nil
-local wallStart: Vector2? = nil
+local wallStart: Vector2int16? = nil
 local lastPreviewPoint: Vector2? = nil
+local floorDragActive = false
+
+type SelectedWall = {
+	WallId: number,
+	Level: number,
+	Start: Vector2int16,
+	End: Vector2int16,
+	Part: BasePart,
+}
+
+type WallHandleType = "Start" | "End" | "Center"
+
+local selectedWall: SelectedWall? = nil
+local wallHandleStart: BasePart? = nil
+local wallHandleEnd: BasePart? = nil
+local wallHandleCenter: BasePart? = nil
+local activeWallHandle: WallHandleType? = nil
+local moveWallOriginal: SelectedWall? = nil
+local movePreviewStart: Vector2int16? = nil
+local movePreviewEnd: Vector2int16? = nil
+local moveDragOriginLocal: Vector2? = nil
 
 local selectionColor = Color3.fromRGB(255, 201, 107)
 local ghostValidColor = Color3.fromRGB(84, 140, 255)
@@ -148,11 +166,11 @@ end
 
 function FormexDesign.SetFloorMaterial(materialId: number)
 	floorMaterialId = materialId
-	local plotInfo = FormexClient.CurrentPlot
-	if ghostActive and ghostType == Formex.PartType.Floor and ghostFloorData and plotInfo and plotInfo.PlotPart then
+	if ghostActive
+	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
+	and ghostFloorData then
 		ghostFloorData.FloorMaterial = materialId
 		ghostFloorData.CeilingMaterial = materialId
-		ghost = Formex.EditFloor(ghostFloorData, plotInfo.PlotPart)
 	end
 	notifyDesignModeChange()
 end
@@ -426,10 +444,27 @@ local function updateHighlightTarget()
 	highlight.Enabled = false
 end
 
+local function destroyHandle(handle: BasePart?)
+	if handle and handle.Parent then
+		handle:Destroy()
+	end
+end
+
+local function clearWallHandles()
+	destroyHandle(wallHandleStart)
+	destroyHandle(wallHandleEnd)
+	destroyHandle(wallHandleCenter)
+	wallHandleStart = nil
+	wallHandleEnd = nil
+	wallHandleCenter = nil
+end
+
 function FormexDesign.ClearSelection()
 	selectionType = FormexDesign.SelectionType.None
 	selectionData = nil
 	selectionPart = nil
+	selectedWall = nil
+	clearWallHandles()
 	updateHighlightTarget()
 	notifyDesignModeChange()
 end
@@ -452,7 +487,35 @@ local function getLayoutTile(plotPart: BasePart, worldPosition: Vector3): Vector
 	return Vector2int16.new(x, y)
 end
 
-local function snapWallEndPoint(startPoint: Vector2, rawEndPoint: Vector2): Vector2
+local function toSnappedVector2int16(point: Vector2): Vector2int16
+	return Vector2int16.new(snapToGrid(point.X), snapToGrid(point.Y))
+end
+
+local function getLocalXZ(plotPart: BasePart, worldPosition: Vector3): Vector2
+	local localPosition = plotPart.CFrame:PointToObjectSpace(worldPosition)
+	return Vector2.new(localPosition.X, localPosition.Z)
+end
+
+local function getWallEndpoints(plotPart: BasePart, wallPart: BasePart): (Vector2int16, Vector2int16)
+	local midLocal = plotPart.CFrame:PointToObjectSpace(wallPart.Position)
+	local dirLocal = plotPart.CFrame:VectorToObjectSpace(wallPart.CFrame.LookVector)
+	dirLocal = Vector3.new(dirLocal.X, 0, dirLocal.Z)
+	if dirLocal.Magnitude <= 1e-4 then
+		dirLocal = Vector3.new(0, 0, 1)
+	else
+		dirLocal = dirLocal.Unit
+	end
+
+	local halfLength = wallPart.Size.Z / 2
+	local startLocal = midLocal - dirLocal * halfLength
+	local endLocal = midLocal + dirLocal * halfLength
+
+	local startPoint = Vector2int16.new(snapToGrid(startLocal.X), snapToGrid(startLocal.Z))
+	local endPoint = Vector2int16.new(snapToGrid(endLocal.X), snapToGrid(endLocal.Z))
+	return startPoint, endPoint
+end
+
+local function snapWallEndPoint(startPoint: Vector2 | Vector2int16, rawEndPoint: Vector2): Vector2int16
 	local dx = rawEndPoint.X - startPoint.X
 	local dz = rawEndPoint.Y - startPoint.Y
 	local length = math.sqrt(dx * dx + dz * dz)
@@ -471,7 +534,7 @@ local function snapWallEndPoint(startPoint: Vector2, rawEndPoint: Vector2): Vect
 	snappedDx = snapToGrid(snappedDx)
 	snappedDz = snapToGrid(snappedDz)
 
-	return Vector2.new(startPoint.X + snappedDx, startPoint.Y + snappedDz)
+	return Vector2int16.new(startPoint.X + snappedDx, startPoint.Y + snappedDz)
 end
 
 local function isPointInOwnedSegments(plotInfo: FormexClient.PlotInfo, point: Vector2): boolean
@@ -612,6 +675,18 @@ local function buildWallData(startPoint: Vector2int16, endPoint: Vector2int16): 
 	}
 end
 
+local function buildFloorGhostData(levelIndex: number, tile: Vector2int16): Formex.FloorData
+	return {
+		FloorId = Formex.XYToIndex(tile.X, tile.Y),
+		LevelIndex = levelIndex,
+		Tile = tile,
+		Type = Formex.FloorType.Square,
+		FloorMaterial = floorMaterialId,
+		CeilingMaterial = floorMaterialId,
+		Part = ghost
+	}
+end
+
 local function ensureWallGhost(plotPart: BasePart, startPoint: Vector2, endPoint: Vector2)
 	if ghostType ~= Formex.PartType.Wall then
 		if ghost then
@@ -644,6 +719,46 @@ local function ensureWallGhost(plotPart: BasePart, startPoint: Vector2, endPoint
 	updateHighlightTarget()
 end
 
+local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Vector2int16, partType: Formex.PartType)
+	if ghostType ~= partType then
+		if ghost then
+			ghost:Destroy()
+		end
+		ghost = nil
+		ghostWallData = nil
+		ghostFloorData = nil
+		ghostType = partType
+	end
+
+	if not ghost then
+		ghost = Instance.new("Part")
+		ghost.Anchored = true
+		ghost.Parent = overlayFolder
+		applyGhostAppearance(ghost)
+		ghost.Transparency = 1
+	end
+
+	if not ghostFloorData then
+		ghostFloorData = buildFloorGhostData(levelIndex, tile)
+		ghostFloorData.Part = ghost
+	else
+		ghostFloorData.LevelIndex = levelIndex
+		ghostFloorData.Tile = tile
+		ghostFloorData.FloorId = Formex.XYToIndex(tile.X, tile.Y)
+		ghostFloorData.FloorMaterial = floorMaterialId
+		ghostFloorData.CeilingMaterial = floorMaterialId
+		ghostFloorData.Part = ghost
+	end
+
+	local localCFrame, size = Formex.GetFloorPositionSize(ghostFloorData)
+	ghost.Size = size
+	ghost.CFrame = plotPart.CFrame * localCFrame
+	ghost.Transparency = 1
+
+	ghostActive = true
+	updateHighlightTarget()
+end
+
 local function updateWallGhost(plotInfo: FormexClient.PlotInfo, plotPart: BasePart)
 	if not wallStart then
 		return
@@ -664,7 +779,7 @@ local function updateWallGhost(plotInfo: FormexClient.PlotInfo, plotPart: BasePa
 	ensureWallGhost(plotPart, wallStart, snappedEndPoint)
 
 	local previewData = buildWallData(wallStart, snappedEndPoint)
-	local valid = Formex.IsWallValid(plotInfo :: any, previewData)
+	local valid = Formex.IsWallValid(plotInfo :: any, previewData) -- PlotInfo is not PlotData, but shares SegmentsUnlocked
 	updateGhostValidity(valid)
 end
 
@@ -682,6 +797,45 @@ local function updateWallStartGhost(plotInfo: FormexClient.PlotInfo, plotPart: B
 
 	ensureWallGhost(plotPart, startPoint, startPoint)
 	updateGhostValidity(isPointInOwnedSegments(plotInfo, startPoint))
+end
+
+local function updateFloorGhost(input: InputInfo)
+	if not input.LayoutTile or not input.PlotInfo.PlotPart then
+		clearGhost()
+		return
+	end
+
+	local partType = if designMode == FormexDesign.DesignMode.Ceiling then Formex.PartType.Ceiling else Formex.PartType.Floor
+	ensureFloorGhost(input.PlotInfo.PlotPart, input.LevelIndex, input.LayoutTile, partType)
+
+	local valid = Formex.IsFloorValid(input.PlotInfo :: any, ghostFloorData :: any)
+	updateGhostValidity(valid)
+end
+
+local function createWallHandle(name: string, color: Color3): BasePart
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Shape = Enum.PartType.Ball
+	part.Size = Vector3.new(1.2, 1.2, 1.2)
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanTouch = false
+	part.CanQuery = true
+	part.CastShadow = false
+	part.Material = Enum.Material.Neon
+	part.Color = color
+	part.Parent = overlayFolder
+	return part
+end
+
+local function setWallHandlesVisible(visible: boolean)
+	local transparency = visible and 0 or 1
+	for _, handle in ipairs({ wallHandleStart, wallHandleEnd, wallHandleCenter }) do
+		if handle then
+			handle.Transparency = transparency
+			handle.CanQuery = visible
+		end
+	end
 end
 
 local folderNames = { Walls = "Wall", Floors = "Floor", Objects = "Object" } :: {string: SelectionType}
@@ -715,6 +869,104 @@ local function getSelectionInfoFromInstance(part: Instance?): (SelectionType?, n
 	return nil, nil, nil
 end
 
+local function updateWallHandles(plotInfo: FormexClient.PlotInfo)
+	if designMode ~= FormexDesign.DesignMode.Wall
+	or actionType ~= FormexDesign.ActionType.Select
+	or selectionType ~= FormexDesign.SelectionType.Wall
+	or not selectionPart
+	or not plotInfo
+	or not plotInfo.PlotPart then
+		clearWallHandles()
+		selectedWall = nil
+		return
+	end
+
+	local selectionKind, partId, level = getSelectionInfoFromInstance(selectionPart)
+	if not selectionKind or selectionKind ~= FormexDesign.SelectionType.Wall or not level then
+		clearWallHandles()
+		selectedWall = nil
+		return
+	end
+
+	local wallPart = selectionPart :: BasePart
+	local startPoint, endPoint = getWallEndpoints(plotInfo.PlotPart, wallPart)
+	local wallId = partId or tonumber(wallPart.Name) or 0
+	selectedWall = {
+		WallId = wallId,
+		Level = level,
+		Start = startPoint,
+		End = endPoint,
+		Part = wallPart,
+	}
+
+	if not wallHandleStart then
+		wallHandleStart = createWallHandle("WallHandleStart", selectionColor)
+	end
+	if not wallHandleEnd then
+		wallHandleEnd = createWallHandle("WallHandleEnd", selectionColor)
+	end
+	if not wallHandleCenter then
+		wallHandleCenter = createWallHandle("WallHandleCenter", ghostValidColor)
+	end
+
+	local centerY = plotInfo.PlotPart.Size.Y / 2 + (level - 1) * Formex.LevelHeight + Formex.LevelHeight / 2
+	local function toWorld(point: Vector2)
+		return plotInfo.PlotPart.CFrame:PointToWorldSpace(Vector3.new(point.X, centerY, point.Y))
+	end
+
+	wallHandleStart.Position = toWorld(Vector2.new(startPoint.X, startPoint.Y))
+	wallHandleEnd.Position = toWorld(Vector2.new(endPoint.X, endPoint.Y))
+	local midPoint = Vector2.new((startPoint.X + endPoint.X) / 2, (startPoint.Y + endPoint.Y) / 2)
+	wallHandleCenter.Position = toWorld(midPoint)
+	setWallHandlesVisible(true)
+end
+
+local function getWallHandleHit(): WallHandleType?
+	if not wallHandleStart and not wallHandleEnd and not wallHandleCenter then
+		return nil
+	end
+
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return nil
+	end
+
+	local mousePosition = UserInputService:GetMouseLocation()
+	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.IgnoreWater = true
+
+	local handles = {}
+	if wallHandleStart then
+		table.insert(handles, wallHandleStart)
+	end
+	if wallHandleEnd then
+		table.insert(handles, wallHandleEnd)
+	end
+	if wallHandleCenter then
+		table.insert(handles, wallHandleCenter)
+	end
+
+	params.FilterDescendantsInstances = handles
+	local result = Workspace:Raycast(ray.Origin, ray.Direction * 2048, params)
+	if not result then
+		return nil
+	end
+
+	if result.Instance == wallHandleStart then
+		return "Start"
+	end
+	if result.Instance == wallHandleEnd then
+		return "End"
+	end
+	if result.Instance == wallHandleCenter then
+		return "Center"
+	end
+
+	return nil
+end
+
 function FormexDesign.GetSelectionInfo(): (SelectionType, number?, number?)
 	if not selectionPart then
 		return selectionType, nil, nil
@@ -746,6 +998,10 @@ function FormexDesign.Select(part: Instance)
 		currentLevel = level
 		notifyDesignModeChange()
 		updateHighlightTarget()
+		local plotInfo = FormexClient.CurrentPlot
+		if plotInfo and plotInfo.IsValid then
+			updateWallHandles(plotInfo)
+		end
 		return true
 	end
 
@@ -753,7 +1009,27 @@ function FormexDesign.Select(part: Instance)
 	return false
 end
 
-function FormexDesign.StartWall(startPosition: Vector3?)
+local function beginWallAtPosition(plotInfo: FormexClient.PlotInfo, startPosition: Vector3)
+	if not plotInfo.PlotPart then
+		return
+	end
+
+	local startPoint = getSnappedPoint(plotInfo.PlotPart, startPosition)
+	if not isPointInOwnedSegments(plotInfo, startPoint) then
+		updateGhostValidity(false)
+		return
+	end
+
+	clearGhost()
+	FormexDesign.ClearSelection()
+	wallStart = startPoint
+	actionType = FormexDesign.ActionType.Step
+	lastPreviewPoint = nil
+	ensureWallGhost(plotInfo.PlotPart, startPoint, startPoint)
+	notifyDesignModeChange()
+end
+
+function FormexDesign.StartWall()
 	if actionType ~= FormexDesign.ActionType.Select then
 		FormexDesign.CancelAction()
 	end
@@ -764,26 +1040,10 @@ function FormexDesign.StartWall(startPosition: Vector3?)
 	end
 
 	actionType = FormexDesign.ActionType.Start
+	wallStart = nil
 	lastPreviewPoint = nil
-	notifyDesignModeChange()
-	if not startPosition then
-		return
-	end
-
-	local startPoint = getSnappedPoint(plotInfo.PlotPart, startPosition)
-	if not isPointInOwnedSegments(plotInfo, startPoint) then
-		actionType = FormexDesign.ActionType.Select
-		FormexDesign.ClearSelection()
-		notifyDesignModeChange()
-		return
-	end
-
 	clearGhost()
 	FormexDesign.ClearSelection()
-	wallStart = startPoint
-	actionType = FormexDesign.ActionType.Step
-	lastPreviewPoint = nil
-	ensureWallGhost(plotInfo.PlotPart, startPoint, startPoint)
 	notifyDesignModeChange()
 end
 
@@ -838,6 +1098,14 @@ function FormexDesign.StartFloor()
 	notifyDesignModeChange()
 end
 
+local function resetMoveState()
+	activeWallHandle = nil
+	moveWallOriginal = nil
+	movePreviewStart = nil
+	movePreviewEnd = nil
+	moveDragOriginLocal = nil
+end
+
 function FormexDesign.CancelAction()
 	if actionType == FormexDesign.ActionType.Select then return end
 
@@ -847,7 +1115,12 @@ function FormexDesign.CancelAction()
 	floorDragActive = false
 	lastFloorPaintTile = nil
 	lastFloorPaintMaterial = nil
+	resetMoveState()
 	actionType = FormexDesign.ActionType.Select
+	local plotInfo = FormexClient.CurrentPlot
+	if plotInfo and plotInfo.IsValid then
+		updateWallHandles(plotInfo)
+	end
 	notifyDesignModeChange()
 end
 
@@ -890,14 +1163,151 @@ local function finalizeWall(plotInfo: FormexClient.PlotInfo, endPosition: Vector
 	end
 end
 
-local function handleWallUpdate(input: InputInfo)
+local function beginWallMove(handleType: WallHandleType, input: InputInfo)
+	if not selectedWall or not input.PlotInfo.PlotPart then
+		return
+	end
 
+	activeWallHandle = handleType
+	moveWallOriginal = {
+		WallId = selectedWall.WallId,
+		Level = selectedWall.Level,
+		Start = selectedWall.Start,
+		End = selectedWall.End,
+		Part = selectedWall.Part,
+	}
+	movePreviewStart = selectedWall.Start
+	movePreviewEnd = selectedWall.End
+	moveDragOriginLocal = nil
+
+	if handleType == "Center" and input.HitPosition then
+		moveDragOriginLocal = getLocalXZ(input.PlotInfo.PlotPart, input.HitPosition)
+	end
+
+	actionType = FormexDesign.ActionType.Move
+	lastPreviewPoint = nil
+	setWallHandlesVisible(false)
+	ensureWallGhost(input.PlotInfo.PlotPart, Vector2.new(selectedWall.Start.X, selectedWall.Start.Y), Vector2.new(selectedWall.End.X, selectedWall.End.Y))
+	updateGhostValidity(true)
+	notifyDesignModeChange()
+end
+
+local function updateWallMoveGhost(input: InputInfo)
+	if not moveWallOriginal or not input.PlotInfo.PlotPart then
+		return
+	end
+
+	local startPoint = moveWallOriginal.Start
+	local endPoint = moveWallOriginal.End
+	local newStart = startPoint
+	local newEnd = endPoint
+
+	if activeWallHandle == "Center" then
+		if not input.HitPosition or not moveDragOriginLocal then
+			return
+		end
+		local currentLocal = getLocalXZ(input.PlotInfo.PlotPart, input.HitPosition)
+		local delta = currentLocal - moveDragOriginLocal
+		local startRaw = Vector2.new(startPoint.X + delta.X, startPoint.Y + delta.Y)
+		local endRaw = Vector2.new(endPoint.X + delta.X, endPoint.Y + delta.Y)
+		newStart = toSnappedVector2int16(startRaw)
+		newEnd = toSnappedVector2int16(endRaw)
+	else
+		if not input.SnapPoint then
+			return
+		end
+		local rawPoint = Vector2.new(input.SnapPoint.X, input.SnapPoint.Y)
+		if activeWallHandle == "Start" then
+			local snapped = snapWallEndPoint(Vector2.new(endPoint.X, endPoint.Y), rawPoint)
+			newStart = toSnappedVector2int16(snapped)
+			newEnd = endPoint
+		elseif activeWallHandle == "End" then
+			local snapped = snapWallEndPoint(Vector2.new(startPoint.X, startPoint.Y), rawPoint)
+			newStart = startPoint
+			newEnd = toSnappedVector2int16(snapped)
+		end
+	end
+
+	movePreviewStart = newStart
+	movePreviewEnd = newEnd
+
+	ensureWallGhost(input.PlotInfo.PlotPart, Vector2.new(newStart.X, newStart.Y), Vector2.new(newEnd.X, newEnd.Y))
+
+	local previewData = buildWallData(newStart, newEnd)
+	local valid = Formex.IsWallValid(input.PlotInfo :: any, previewData)
+	updateGhostValidity(valid)
+end
+
+local function finalizeWallMove(plotInfo: FormexClient.PlotInfo)
+	if not moveWallOriginal or not movePreviewStart or not movePreviewEnd then
+		return
+	end
+
+	local editData = {
+		WallId = moveWallOriginal.WallId,
+		Level = moveWallOriginal.Level,
+		Start = movePreviewStart,
+		End = movePreviewEnd,
+	} :: any
+
+	local valid = Formex.IsWallValid(plotInfo :: any, editData)
+	if not valid then
+		updateGhostValidity(false)
+		resetMoveState()
+		actionType = FormexDesign.ActionType.Select
+		clearGhost()
+		updateWallHandles(plotInfo)
+		notifyDesignModeChange()
+		return
+	end
+
+	FormexClient.BuildWall(editData :: Formex.WallData, Formex.BuildAction.Edit)
+	selectedWall = {
+		WallId = moveWallOriginal.WallId,
+		Level = moveWallOriginal.Level,
+		Start = movePreviewStart,
+		End = movePreviewEnd,
+		Part = moveWallOriginal.Part,
+	}
+	resetMoveState()
+	actionType = FormexDesign.ActionType.Select
+	clearGhost()
+	updateWallHandles(plotInfo)
+	notifyDesignModeChange()
+end
+
+local function handleWallUpdate(input: InputInfo)
+	if not input.PlotInfo.PlotPart then
+		return
+	end
+
+	if actionType == FormexDesign.ActionType.Start then
+		updateWallStartGhost(input.PlotInfo, input.PlotInfo.PlotPart)
+	elseif actionType == FormexDesign.ActionType.Step then
+		updateWallGhost(input.PlotInfo, input.PlotInfo.PlotPart)
+	elseif actionType == FormexDesign.ActionType.Move then
+		updateWallMoveGhost(input)
+	elseif ghostActive and ghostType == Formex.PartType.Wall then
+		clearGhost()
+	end
 end
 
 local function handleFloorUpdate(input: InputInfo)
+	updateFloorGhost(input)
+
+	floorDragActive = input.ActionHeld
 	if not input.ActionHeld or not input.LayoutTile then return end
+	if not ghostIsValid then return end
 
 	local materialId = input.AltHeld and nil or floorMaterialId
+	if lastFloorPaintTile
+	and lastFloorPaintMaterial == materialId
+	and input.LayoutTile == lastFloorPaintTile then
+		return
+	end
+
+	lastFloorPaintTile = input.LayoutTile
+	lastFloorPaintMaterial = materialId
 	setFloorTile(input.PlotInfo, input.LevelIndex, input.LayoutTile, input.AltHeld, materialId)
 end
 
@@ -906,6 +1316,9 @@ local function handleUpdate()
 	if not input then return end
 
 	if designMode == FormexDesign.DesignMode.Wall then
+		if actionType == FormexDesign.ActionType.Select then
+			updateWallHandles(input.PlotInfo)
+		end
 		handleWallUpdate(input)
 	elseif designMode == FormexDesign.DesignMode.Floor or designMode == FormexDesign.DesignMode.Ceiling then
 		handleFloorUpdate(input)
@@ -917,13 +1330,38 @@ local function handlePrimaryRelease()
 	if not input then return end
 
 	if designMode == FormexDesign.DesignMode.Wall
-	and actionType == FormexDesign.ActionType.End
-	and time() - actionHeldTime > HOLD_THRESHOLD then
-		finalizeWall(input.PlotInfo, input.HitPosition or Vector3.new())
+	and actionType == FormexDesign.ActionType.Step
+	and input.HitPosition then
+		finalizeWall(input.PlotInfo, input.HitPosition)
+	end
+
+	if designMode == FormexDesign.DesignMode.Wall
+	and actionType == FormexDesign.ActionType.Move then
+		finalizeWallMove(input.PlotInfo)
+	end
+
+	if designMode == FormexDesign.DesignMode.Floor
+	or designMode == FormexDesign.DesignMode.Ceiling then
+		floorDragActive = false
+		lastFloorPaintTile = nil
+		lastFloorPaintMaterial = nil
 	end
 end
 
 local function handlePrimaryClick()
+	if designMode == FormexDesign.DesignMode.Wall
+	and actionType == FormexDesign.ActionType.Select
+	and selectionType == FormexDesign.SelectionType.Wall then
+		local handleType = getWallHandleHit()
+		if handleType then
+			local input = getInputInfo()
+			if input then
+				beginWallMove(handleType, input)
+			end
+			return
+		end
+	end
+
 	local input = getInputInfo()
 	if not input then return end
 
@@ -960,15 +1398,15 @@ local function handlePrimaryClick()
 	end
 
 	if actionType == FormexDesign.ActionType.Start then
-		if designMode == FormexDesign.DesignMode.Wall then
-			FormexDesign.StartWall(input.HitPosition)
+		if designMode == FormexDesign.DesignMode.Wall and input.HitPosition then
+			beginWallAtPosition(input.PlotInfo, input.HitPosition)
 		end
 		return
 	end
 
 	if actionType == FormexDesign.ActionType.Step then
 		if designMode == FormexDesign.DesignMode.Wall then
-			finalizeWall(input.PlotInfo, input.HitPosition)
+			return
 		elseif designMode == FormexDesign.DesignMode.Floor
 		or designMode == FormexDesign.DesignMode.Ceiling then
 			handleFloorUpdate(input)
@@ -1013,7 +1451,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if input.UserInputType == Enum.UserInputType.MouseButton1
 	or input.UserInputType == Enum.UserInputType.Touch then
 		actionHeld = true
-		actionHeldTime = time()
 		handlePrimaryClick()
 		return
 	end
