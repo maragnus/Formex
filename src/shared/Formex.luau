@@ -413,9 +413,8 @@ local function getPlotPartFromInstance(instance: Instance): BasePart?
 	return nil
 end
 
-local function getLevelOffset(plotPart: BasePart, level: number): number
-	local plotBase = plotPart.Size.Y / 2
-	return plotBase + (math.max(level, 1) - 1) * Formex.SegmentSize.Height
+local function getLevelOffset(_plotPart: BasePart, level: number): number
+	return (math.max(level, 1) - 1) * Formex.SegmentSize.Height
 end
 
 local function resolveMaterial(materialName: string?): Enum.Material
@@ -444,7 +443,7 @@ function Formex.IsWallValid(plot: PlotData, wall: WallData)
 		return false
 	end
 
-	if not isPointGridSnapped(wall.Start) or not isPointGridSnapped(wall.End) then
+	if not isPointLayoutGridSnapped(wall.Start) or not isPointLayoutGridSnapped(wall.End) then
 		return false
 	end
 
@@ -530,10 +529,10 @@ function Formex.EditWall(wall: WallData, plotPartOverride: BasePart?)
 	local startMaterial = wall.StartMaterial or frontMaterial
 	local endMaterial = wall.EndMaterial or frontMaterial
 
-	local frontTexture = ensureTexture(part, "Front", Enum.NormalId.Front)
-	local backTexture = ensureTexture(part, "Back", Enum.NormalId.Back)
-	local startTexture = ensureTexture(part, "Start", Enum.NormalId.Left)
-	local endTexture = ensureTexture(part, "End", Enum.NormalId.Right)
+	local frontTexture = ensureTexture(part, "Front", Enum.NormalId.Left)
+	local backTexture = ensureTexture(part, "Back", Enum.NormalId.Right)
+	local startTexture = ensureTexture(part, "Start", Enum.NormalId.Back)
+	local endTexture = ensureTexture(part, "End", Enum.NormalId.Front)
 	local topTexture = ensureTexture(part, "Top", Enum.NormalId.Top)
 
 	Formex.UpdateTexture(part, frontTexture, frontMaterial)

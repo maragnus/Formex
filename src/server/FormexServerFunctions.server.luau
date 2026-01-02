@@ -50,7 +50,7 @@ local remoteFunctions = {
         return FormexBuild.BuildCeiling(player, level, x, y, material, material2)
     end,
     [Formex.Function.BuildObject] = function(player, objectData, action)
-        return FormexBuild.BuildObjet(player, objectData, action)
+        return FormexBuild.BuildObject(player, objectData, action)
     end,
 }
 
