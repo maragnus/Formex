@@ -255,12 +255,8 @@ function FormexClient.BuildWall(wall: Formex.WallData | {Formex.WallData}, actio
     return FormexFunctions:InvokeServer(Formex.Function.BuildWall, wall, action)
 end
 
-function FormexClient.BuildFloor(level: number, x: number, y: number, material: number, material2: number): boolean
-    return FormexFunctions:InvokeServer(Formex.Function.BuildFloor, level, x, y, material, material2)
-end
-
-function FormexClient.BuildCeiling(level: number, x: number, y: number, material: number, material2: number): boolean
-    return FormexFunctions:InvokeServer(Formex.Function.BuildCeiling, level, x, y, material, material2)
+function FormexClient.BuildFloor(floor: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction): Formex.FloorData | {Formex.FloorData}
+    return FormexFunctions:InvokeServer(Formex.Function.BuildFloor, floor, action)
 end
 
 function FormexClient.BuildObject(wall: Formex.ObjectData, action: Formex.BuildAction): Formex.ObjectData

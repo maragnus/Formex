@@ -351,8 +351,7 @@ function FormexSystem.EnsureLevelData(plotData: Formex.PlotData, levelIndex: num
 	if not levelData then
 		levelData = {
 			Walls = {} :: {number: Formex.WallData},
-			Floors = {} :: {[number]: number},
-			Ceilings = {} :: {[number]: number},
+			Floors = {} :: {[number]: Formex.FloorData},
 			Objects = {} :: {number: Formex.ObjectData},
 		}
 		plotData.Levels[levelIndex] = levelData
@@ -372,40 +371,30 @@ type RenderState = {
     ObjectFolder: Folder
 }
 
-local function renderFloorCeiling(data: RenderState)
+local function renderFloors(data: RenderState)
     local parent = data.FloorFolder
 
     local floors = data.LevelData.Floors
-    local ceilings = data.LevelData.Ceilings
 
     for _, child in parent:GetChildren() do
-        local index = tonumber(child.Name)
-        if index and not floors[index] and not ceilings[index] then
+        local floorId = tonumber(child.Name)
+        if floorId and not floors[floorId] then
             child:Destroy()
         end
     end
 
-    local floorData = {
-        FloorId = 0,
-        LevelIndex = data.LevelIndex,
-        Type = Formex.FloorType.Square,
-    } :: Formex.FloorData
-
-    for index in floors do
-        local floorMaterial = floors[index]
-        local ceilingMaterial = ceilings[index]
-        if not floorMaterial and not ceilingMaterial then
-            continue
+    for floorId, floorData in floors do
+        if floorData.Model and floorData.Model.Parent then
+            floorData.Model:Destroy()
+            floorData.Model = nil
         end
 
-        floorData.FloorId = index
-        floorData.Tile = Formex.IndexToXY(index)
-        floorData.Type = Formex.FloorType.Square
-        floorData.FloorMaterial = floorMaterial
-        floorData.CeilingMaterial = ceilingMaterial
-        floorData.Part = parent:FindFirstChild(tostring(index)) :: Part
-
-        Formex.UpdateFloor(data.PlotPart, floorData, floorData.Part)
+        floorData.LevelIndex = data.LevelIndex
+        local model = Formex.CreateFloor(floorData, data.PlotPart, parent)
+        if model then
+            model.Parent = parent
+            floorData.Model = model
+        end
     end
 end
 
@@ -472,11 +461,11 @@ local function renderLevel(data: RenderState, levelIndex: number, filterPartType
     if filterPartType == "Wall" then
         renderWalls(data)
     elseif filterPartType == "Floor" or filterPartType == "Ceiling" then
-        renderFloorCeiling(data)
+        renderFloors(data)
     elseif filterPartType == "Object" then
         renderFurniture(data)
     else
-        renderFloorCeiling(data)
+        renderFloors(data)
         renderWalls(data)
         renderFurniture(data)
     end

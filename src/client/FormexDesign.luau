@@ -634,6 +634,9 @@ function FormexDesign.ClearSelection()
 	if Walls then
 		Walls.ClearSelection()
 	end
+	if Floors then
+		Floors.ClearSelection()
+	end
 	updateHighlightTarget()
 	notifyDesignModeChange()
 end
@@ -834,14 +837,23 @@ local function buildWallData(startPoint: Vector2int16, endPoint: Vector2int16): 
 end
 
 local function buildFloorGhostData(levelIndex: number, tile: Vector2int16): Formex.FloorData
+	local tileSize = Formex.LayoutGridSize
+	local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
+	local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
 	return {
 		FloorId = Formex.XYToIndex(tile.X, tile.Y),
 		LevelIndex = levelIndex,
-		Tile = tile,
-		Type = Formex.FloorType.Square,
+		Points = {
+			Vector2int16.new(x0, z0),
+			Vector2int16.new(x0 + tileSize, z0),
+			Vector2int16.new(x0 + tileSize, z0 + tileSize),
+			Vector2int16.new(x0, z0 + tileSize),
+		},
 		FloorMaterial = floorMaterialId,
 		CeilingMaterial = floorMaterialId,
-		Part = ghost
+		FloorParts = {},
+		CeilingParts = {},
+		Model = nil,
 	}
 end
 
@@ -898,19 +910,22 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 
 	if not ghostFloorData then
 		ghostFloorData = buildFloorGhostData(levelIndex, tile)
-		ghostFloorData.Part = ghost
 	else
 		ghostFloorData.LevelIndex = levelIndex
-		ghostFloorData.Tile = tile
 		ghostFloorData.FloorId = Formex.XYToIndex(tile.X, tile.Y)
 		ghostFloorData.FloorMaterial = floorMaterialId
 		ghostFloorData.CeilingMaterial = floorMaterialId
-		ghostFloorData.Part = ghost
 	end
 
-	local localCFrame, size = Formex.GetFloorPositionSize(ghostFloorData)
-	ghost.Size = size
-	ghost.CFrame = plotPart.CFrame * localCFrame
+	local tileSize = Formex.LayoutGridSize
+	local xOffset = (tile.X + 0.5) * tileSize - (Formex.Dimensions.Width / 2)
+	local zOffset = (tile.Y + 0.5) * tileSize - (Formex.Dimensions.Depth / 2)
+	local thickness = levelIndex == 1 and Formex.SegmentSize.Foundation or Formex.SegmentSize.Interfloor
+	local levelTop = Formex.LevelHeight * (levelIndex - 1)
+	local centerY = levelTop - (thickness / 2)
+
+	ghost.Size = Vector3.new(tileSize, thickness, tileSize)
+	ghost.CFrame = plotPart.CFrame * CFrame.new(xOffset, centerY, zOffset)
 	ghost.Transparency = 1
 
 	ghostActive = true
@@ -942,6 +957,22 @@ local function getSelectionInfoFromInstance(part: Instance?): (SelectionType?, n
 
 		if partId and level and selectionKind and parent:IsA("Folder") then
 			return selectionKind, partId, level
+		end
+
+		if parent.Name == "Floors" and parent:IsA("Folder") then
+			local floorId = tonumber(currentPart.Name)
+			local floorLevel = tonumber(parent.Parent.Name)
+			if floorId and floorLevel then
+				return FormexDesign.SelectionType.Floor, floorId, floorLevel
+			end
+		end
+
+		if parent.Parent and parent.Parent:IsA("Folder") and parent.Parent.Name == "Floors" then
+			local floorId = tonumber(parent.Name)
+			local floorLevel = tonumber(parent.Parent.Parent.Name)
+			if floorId and floorLevel then
+				return FormexDesign.SelectionType.Floor, floorId, floorLevel
+			end
 		end
 
 		currentPart = parent
@@ -988,6 +1019,9 @@ function FormexDesign.Select(part: Instance)
 			if Walls then
 				Walls.UpdateHandles(plotInfo)
 			end
+			if Floors then
+				Floors.UpdateHandles(plotInfo)
+			end
 		end
 		return true
 	end
@@ -1027,6 +1061,9 @@ function FormexDesign.CancelAction()
 	if plotInfo and plotInfo.IsValid then
 		if Walls then
 			Walls.UpdateHandles(plotInfo)
+		end
+		if Floors then
+			Floors.UpdateHandles(plotInfo)
 		end
 	end
 	notifyDesignModeChange()
