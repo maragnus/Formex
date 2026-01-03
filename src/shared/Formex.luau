@@ -94,7 +94,16 @@ export type MaterialInfo = {
 	AssetId: number,
 	Material: Enum.Material,
 	StudsPerTile: number,
-	Categories: {string}
+	Categories: {PartType}
+}
+
+export type ObjectInfo = {
+	Name: string,
+	IconAssetId: number,
+	PrefabName: string,
+	Size: Vector3,
+	Categories: {string},
+	Properties: {[string]: any}?,
 }
 
 -- Module constants
@@ -176,6 +185,48 @@ Formex.Materials = {
 	}
 } :: {number: MaterialInfo}
 
+Formex.Icons = { -- Content.fromAssetId(...)
+    Menu = 114484129436279,
+    Refresh = 123101975679190,
+    AddItem = 128647721275129,
+    MoveItem = 83970836971222,
+    ResizeItem = 78551851583998,
+    DeleteItem = 91738865172085,
+    WallExtend = 128647721275129,
+    WallDivide = 116931266034105,
+    WallDisconnect = 70397467113579,
+    PlotExpand = 88488799504419,
+    PlotRename = 74166756362476,
+    PlotClaim = 85199762467908,
+    PlotRelease = 137711830774408,
+    PlotPermissions = 83277863761797,
+    DesignStart = 78727585562674,
+    DesignFurniture = 120639802680464,
+    DesignCeilings = 86944909652185,
+    DesignFloors = 136537860205120,
+    DesignWalls =  105416010695180,
+    DesignPaint = 92885878760720,
+    Undo = 0,
+    Redo = 0,
+    ChevronDown = 0,
+    ChevronUp = 0,
+    AlertPrimary = 103853485477063,
+    AlertSecondary = 115719232269249,
+    AlertInfo = 119134101744939,
+    AlertWarn = 111518129231234,
+    AlertDanger = 73134495809587,
+    CircleBackground = 114484129436279,
+} :: {[string]: number}
+
+Formex.Furniture = {
+	{
+		Name = "Modern Chair",
+		IconAssetId = 128201486227303,
+		PrefabName = "Chairs/ModernChair",
+		Size = Vector3.new(4, 6, 4),
+		Categories = { "Seating", "Indoors" },
+	},
+} :: {ObjectInfo}
 
 local TileColumns = Formex.LayoutGrid.Columns
 function Formex.IndexToXY(index: number): Vector2int16
@@ -193,10 +244,10 @@ function Formex.UpdateTexture(part: BasePart, texture: Texture, materialId: numb
 	local materialInfo = Formex.Materials[materialId]
 	if not materialInfo then
 		-- part.Material = Enum.Material.Air
-		texture.TextureContent = Content.fromAssetId(0)
+		texture.ColorMapContent = Content.fromAssetId(0)
 	else
 		part.Material = materialInfo.Material or Enum.Material.SmoothPlastic
-		texture.TextureContent = Content.fromAssetId(materialInfo.AssetId)
+		texture.ColorMapContent = Content.fromAssetId(materialInfo.AssetId)
 		texture.StudsPerTileU = materialInfo.StudsPerTile
 		texture.StudsPerTileV = materialInfo.StudsPerTile
 	end

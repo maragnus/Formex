@@ -2,8 +2,10 @@
 local DEBUG = true
 
 local BlurController = require(script.Parent:WaitForChild("BlurController"))
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
+local Formex = require(ReplicatedStorage:WaitForChild("Formex"):WaitForChild("Formex"))
 local screenGui: ScreenGui = Instance.new("ScreenGui", localPlayer:WaitForChild("PlayerGui"))
 screenGui.Name = "FormexUI"
 screenGui.ResetOnSpawn = false
@@ -458,6 +460,241 @@ function FormexUI.CreateTextInput(options: TextInputOptions, onChanged: ((value:
     setFocusState(false)
 
     return input
+end
+
+type MaterialPartType = "Wall" | "Floor" | "Ceiling" | "Object" | nil
+type MaterialInfo = {
+    Name: string,
+    AssetId: number,
+    Categories: {string}?
+}
+
+export type MaterialSelectOptions = {
+    Parent: Instance,
+    Label: string?,
+    PartType: MaterialPartType?,
+    SelectedMaterial: number?,
+} | CommonOptions
+
+export type MaterialSelectHandle = {
+    Frame: ImageButton,
+    SetSelected: (materialId: number?) -> nil,
+    GetSelected: () -> number?,
+}
+
+local function materialMatchesPart(materialInfo: MaterialInfo, partType: MaterialPartType?): boolean
+    if partType == nil then
+        return true
+    end
+    local categories = materialInfo.Categories
+    if not categories then
+        return false
+    end
+    return table.find(categories, partType) ~= nil
+end
+
+function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((materialId: number?) -> nil)?): MaterialSelectHandle
+    local selectedMaterialId = options.SelectedMaterial or 0
+    local name = options.Name or options.Label or "MaterialSelect"
+
+    local container = Instance.new("ImageButton", options.Parent)
+    container.Name = name
+    container.AutoButtonColor = false
+    container.BackgroundColor3 = Color3.fromRGB(246, 248, 255)
+    container.BackgroundTransparency = 0
+    container.BorderSizePixel = 0
+    container.Size = options.Size or UDim2.new(1, 0, 0, 64)
+    container.Visible = options.Visible ~= nil and options.Visible or true
+    if options.Position ~= nil then container.Position = options.Position end
+    if options.LayoutOrder ~= nil then container.LayoutOrder = options.LayoutOrder end
+    if options.Selectable ~= nil then container.Selectable = options.Selectable end
+    if options.AutomaticSize ~= nil then container.AutomaticSize = options.AutomaticSize end
+
+    local corner = Instance.new("UICorner", container)
+    corner.CornerRadius = UDim.new(0, 10)
+
+    local stroke = Instance.new("UIStroke", container)
+    stroke.Color = Color3.fromRGB(205, 210, 230)
+    stroke.Thickness = 1.8
+
+    local padding = Instance.new("UIPadding", container)
+    padding.PaddingTop = UDim.new(0, 8)
+    padding.PaddingBottom = UDim.new(0, 8)
+    padding.PaddingLeft = UDim.new(0, 12)
+    padding.PaddingRight = UDim.new(0, 12)
+
+    local layout = Instance.new("UIListLayout", container)
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 4)
+
+    local labelText = Instance.new("TextLabel", container)
+    labelText.Name = "Label"
+    labelText.BackgroundTransparency = 1
+    labelText.Size = UDim2.new(1, 0, 0, 16)
+    labelText.Font = Enum.Font.GothamMedium
+    labelText.Text = options.Label or "Material"
+    labelText.TextColor3 = Color3.fromRGB(90, 100, 130)
+    labelText.TextSize = 13
+    labelText.TextXAlignment = Enum.TextXAlignment.Left
+
+    local row = Instance.new("Frame", container)
+    row.Name = "Selected"
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, 28)
+
+    local rowLayout = Instance.new("UIListLayout", row)
+    rowLayout.FillDirection = Enum.FillDirection.Horizontal
+    rowLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    rowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    rowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    rowLayout.Padding = UDim.new(0, 8)
+
+    local preview = Instance.new("ImageLabel", row)
+    preview.Name = "Preview"
+    preview.BackgroundTransparency = 1
+    preview.Size = UDim2.new(0, 24, 0, 24)
+    preview.ScaleType = Enum.ScaleType.Fit
+
+    local selectedLabel = Instance.new("TextLabel", row)
+    selectedLabel.Name = "SelectedLabel"
+    selectedLabel.BackgroundTransparency = 1
+    selectedLabel.Size = UDim2.new(1, -60, 1, 0)
+    selectedLabel.Font = Enum.Font.Gotham
+    selectedLabel.Text = "None"
+    selectedLabel.TextSize = 16
+    selectedLabel.TextColor3 = Color3.fromRGB(40, 45, 70)
+    selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
+    selectedLabel.TextYAlignment = Enum.TextYAlignment.Center
+
+    local chevron = Instance.new("ImageLabel", row)
+    chevron.Name = "Chevron"
+    chevron.BackgroundTransparency = 1
+    chevron.Size = UDim2.new(0, 14, 0, 14)
+    chevron.Image = normalizeAsset(tostring(Formex.Icons.ChevronDown or 0))
+    chevron.ImageColor3 = Color3.fromRGB(120, 130, 160)
+    chevron.LayoutOrder = 3
+
+    local function applySelected(materialId: number?)
+        selectedMaterialId = materialId or 0
+        local materialInfo = Formex.Materials[selectedMaterialId]
+        if materialInfo then
+            selectedLabel.Text = materialInfo.Name
+            preview.Image = normalizeAsset(tostring(materialInfo.AssetId))
+        else
+            selectedLabel.Text = "None"
+            preview.Image = normalizeAsset("0")
+        end
+    end
+
+    applySelected(selectedMaterialId)
+
+    local function openDialog()
+        local chosen = FormexUI.Dialog({
+            Name = name .. "Dialog",
+            Title = options.Label or "Select Material",
+            Size = "Large",
+            Scrolling = Enum.ScrollingDirection.Y,
+            Buttons = {
+                { Text = "Cancel", Result = nil, Type = FormexUI.ButtonTypes.Secondary, Style = FormexUI.ButtonStyles.Outline }
+            }
+        }, function(dialog)
+            local gridFrame = Instance.new("Frame", dialog.ContentFrame)
+            gridFrame.Name = "MaterialGrid"
+            gridFrame.BackgroundTransparency = 1
+            gridFrame.Size = UDim2.new(1, 0, 0, 0)
+            gridFrame.AutomaticSize = Enum.AutomaticSize.Y
+
+            local gridLayout = Instance.new("UIGridLayout", gridFrame)
+            gridLayout.CellSize = UDim2.new(0, 120, 0, 120)
+            gridLayout.CellPadding = UDim2.new(0, 8, 0, 8)
+            gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            gridLayout.FillDirectionMaxCells = 4
+
+            gridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                gridFrame.Size = UDim2.new(1, 0, 0, gridLayout.AbsoluteContentSize.Y)
+            end)
+
+            for materialId, materialInfo in Formex.Materials do
+                if not materialMatchesPart(materialInfo, options.PartType) then
+                    continue
+                end
+
+                local tile = Instance.new("ImageButton", gridFrame)
+                tile.Name = "Material_" .. tostring(materialId)
+                tile.AutoButtonColor = false
+                tile.BackgroundColor3 = Color3.fromRGB(245, 248, 255)
+                tile.BorderSizePixel = 0
+                tile.Size = UDim2.new(0, 120, 0, 120)
+
+                local tileCorner = Instance.new("UICorner", tile)
+                tileCorner.CornerRadius = UDim.new(0, 12)
+
+                local tileStroke = Instance.new("UIStroke", tile)
+                tileStroke.Color = Color3.fromRGB(210, 216, 235)
+                tileStroke.Thickness = 1.4
+
+                local tileLayout = Instance.new("UIListLayout", tile)
+                tileLayout.FillDirection = Enum.FillDirection.Vertical
+                tileLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                tileLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                tileLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                tileLayout.Padding = UDim.new(0, 6)
+
+                local image = Instance.new("ImageLabel", tile)
+                image.Name = "Preview"
+                image.BackgroundTransparency = 1
+                image.Size = UDim2.new(0, 64, 0, 64)
+                image.Image = normalizeAsset(tostring(materialInfo.AssetId))
+                image.ScaleType = Enum.ScaleType.Fit
+
+                local nameLabel = Instance.new("TextLabel", tile)
+                nameLabel.Name = "Name"
+                nameLabel.BackgroundTransparency = 1
+                nameLabel.Size = UDim2.new(1, -8, 0, 24)
+                nameLabel.Font = Enum.Font.GothamMedium
+                nameLabel.Text = materialInfo.Name
+                nameLabel.TextSize = 14
+                nameLabel.TextColor3 = Color3.fromRGB(60, 70, 100)
+                nameLabel.TextWrapped = true
+
+                tile.Activated:Connect(function()
+                    dialog.Close(materialId)
+                end)
+            end
+        end)
+
+        if chosen ~= nil then
+            applySelected(chosen)
+            if onChanged then
+                onChanged(chosen)
+            end
+        end
+    end
+
+    local function setFocusState(isFocused: boolean)
+        stroke.Color = isFocused and Color3.fromRGB(120, 170, 255) or Color3.fromRGB(205, 210, 230)
+        stroke.Thickness = isFocused and 3 or 1.8
+        labelText.TextColor3 = isFocused and Color3.fromRGB(60, 80, 140) or Color3.fromRGB(90, 100, 130)
+    end
+
+    container.MouseEnter:Connect(function()
+        setFocusState(true)
+    end)
+
+    container.MouseLeave:Connect(function()
+        setFocusState(false)
+    end)
+
+    container.Activated:Connect(openDialog)
+
+    return {
+        Frame = container,
+        SetSelected = applySelected,
+        GetSelected = function()
+            return selectedMaterialId
+        end
+    }
 end
 
 function FormexUI.Corner(parent: GuiObject, radius: number)

@@ -99,6 +99,8 @@ local function subscribeToPlot(plotPart: Part)
         IsMine = ownerUserId == localPlayer.UserId,
         LevelsUnlocked = plotPart:GetAttribute("LevelsUnlocked") or 0,
         SegmentsUnlocked = plotPart:GetAttribute("SegmentsUnlocked") or 0,
+        CanUndo = plotPart:GetAttribute("CanUndo") or false,
+        CanRedo = plotPart:GetAttribute("CanRedo") or false,
         Properties = {}
     }
     FormexClient.Plots[plotId] = info
@@ -142,6 +144,16 @@ local function subscribeToPlot(plotPart: Part)
 
     plotPart:GetAttributeChangedSignal("SegmentsUnlocked"):Connect(function()
         info.SegmentsUnlocked = plotPart:GetAttribute("SegmentsUnlocked") or 0
+        notifyPlotChange(plotId)
+    end)
+
+    plotPart:GetAttributeChangedSignal("CanUndo"):Connect(function()
+        info.CanUndo = plotPart:GetAttribute("CanUndo") or false
+        notifyPlotChange(plotId)
+    end)
+
+    plotPart:GetAttributeChangedSignal("CanRedo"):Connect(function()
+        info.CanRedo = plotPart:GetAttribute("CanRedo") or false
         notifyPlotChange(plotId)
     end)
 
