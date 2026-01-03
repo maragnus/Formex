@@ -239,7 +239,7 @@ function FormexClient.GetSavePermissions(): {[number]: Formex.Permission}
     return FormexFunctions:InvokeServer(Formex.Function.GetPermissions)
 end
 
-function FormexClient.BuildWall(wall: Formex.WallData, action: Formex.BuildAction): Formex.WallData
+function FormexClient.BuildWall(wall: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction): Formex.WallData | {Formex.WallData}
     return FormexFunctions:InvokeServer(Formex.Function.BuildWall, wall, action)
 end
 
@@ -253,6 +253,30 @@ end
 
 function FormexClient.BuildObject(wall: Formex.ObjectData, action: Formex.BuildAction): Formex.ObjectData
     return FormexFunctions:InvokeServer(Formex.Function.BuildObject, wall, action)
+end
+
+function FormexClient.CanUndo(): boolean
+    return FormexFunctions:InvokeServer(Formex.Function.CanUndo)
+end
+
+function FormexClient.CanRedo(): boolean
+    return FormexFunctions:InvokeServer(Formex.Function.CanRedo)
+end
+
+function FormexClient.Undo(): (boolean, string?)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.Undo)
+    if result == false then
+        warn("Undo failed:", message)
+    end
+    return result, message
+end
+
+function FormexClient.Redo(): (boolean, string?)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.Redo)
+    if result == false then
+        warn("Redo failed:", message)
+    end
+    return result, message
 end
 
 

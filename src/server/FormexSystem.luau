@@ -423,11 +423,20 @@ end
 
 local function renderWalls(data: RenderState)
     local parent = data.WallFolder
+    for _, child in parent:GetChildren() do
+        local wallId = tonumber(child.Name)
+        if wallId and not data.LevelData.Walls[wallId] then
+            child:Destroy()
+        end
+    end
+
     for wallId, wallData in data.LevelData.Walls do
-        if not wallData.Part then
-            local part = Formex.CreateWall(wallData, data.PlotPart)
-            if part then
-                part.Parent = parent
+        local part = wallData.Part
+        if not part or not part.Parent then
+            wallData.Part = nil
+            local newPart = Formex.CreateWall(wallData, data.PlotPart)
+            if newPart then
+                newPart.Parent = parent
             end
         else
             Formex.EditWall(wallData)

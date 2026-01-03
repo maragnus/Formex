@@ -52,6 +52,18 @@ local remoteFunctions = {
     [Formex.Function.BuildObject] = function(player, objectData, action)
         return FormexBuild.BuildObject(player, objectData, action)
     end,
+    [Formex.Function.CanUndo] = function(player)
+        return FormexBuild.CanUndo(player)
+    end,
+    [Formex.Function.CanRedo] = function(player)
+        return FormexBuild.CanRedo(player)
+    end,
+    [Formex.Function.Undo] = function(player)
+        return FormexBuild.Undo(player)
+    end,
+    [Formex.Function.Redo] = function(player)
+        return FormexBuild.Redo(player)
+    end,
 }
 
 FormexFunctions.OnServerInvoke = function(player, functionName, ...)

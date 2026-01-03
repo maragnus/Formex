@@ -9,6 +9,7 @@
 
 local DATA_VERSION: number = 1
 local INITIAL_BUFFER_SIZE: number = 1024
+local SNAP_WALLS_TO_45_DEGREES: boolean = false
 
 local Buffer = require(script.Parent.Buffer)
 
@@ -29,6 +30,8 @@ export type PlotSaveInfo = {
 	Properties: {[string]: any}?
 }
 
+export type LevelArray = {[number]: LevelData}
+
 -- Stored representation
 export type PlotData = {
 	PlotId: number,
@@ -37,7 +40,7 @@ export type PlotData = {
 	Name: string,
 	LastPlayed: number,
 	FoundationMaterial: number,
-	Levels: {[number]: LevelData},
+	Levels: LevelArray,
 	LevelsUnlocked: number,
 	SegmentsUnlocked: number,
 	Permissions: {[number]: Permission},
@@ -112,6 +115,7 @@ Formex.DefaultFloorMaterial = 2
 Formex.DefaultCeilingMaterial = 2
 Formex.DefaultWallMaterial = 2
 Formex.DefaultFoundationMaterial = 2 -- Exterior of Level 1 floor
+Formex.SnapWallsTo45Degrees = false
 
 Formex.CollisionGroup = {
 	Grid = "FormexGrids",
@@ -214,6 +218,10 @@ Formex.Function = table.freeze({
 	BuildFloor = "BuildFloor",
 	BuildCeiling = "BuildCeiling",
 	BuildObject = "BuildObject",
+	CanUndo = "CanUndo",
+	CanRedo = "CanRedo",
+	Undo = "Undo",
+	Redo = "Redo",
 }) :: {Function: string}
 
 Formex.Permission = table.freeze({
@@ -454,10 +462,10 @@ function Formex.IsWallValid(plot: PlotData, wall: WallData)
 		return false
 	end
 
-	if math.abs(dx) > EPSILON and math.abs(dz) > EPSILON
-	and math.abs(math.abs(dx) - math.abs(dz)) > EPSILON then
-		return false
-	end
+	-- if math.abs(dx) > EPSILON and math.abs(dz) > EPSILON
+	-- and math.abs(math.abs(dx) - math.abs(dz)) > EPSILON then
+	-- 	return false
+	-- end
 
 	if not isLineWithinUnlockedSegments(wall.Start, wall.End, plot.SegmentsUnlocked) then
 		return false
@@ -852,7 +860,7 @@ function Formex.GetFloorData(plotPart: BasePart, levelIndex: number, tile: Vecto
 	return data
 end
 
-function Formex.SerializeLevelData(levels: {[number]: LevelData}): string
+function Formex.SerializeLevelData(levels: LevelArray): string
 	local writer = Buffer.new(INITIAL_BUFFER_SIZE)
 	writer:WriteU16(DATA_VERSION)
 
@@ -927,8 +935,8 @@ function Formex.SerializeLevelData(levels: {[number]: LevelData}): string
 	return writer:ToString()
 end
 
-local function deserializeLevelDataV1(reader): {[number]: LevelData}
-	local result = {} :: {[number]: LevelData}
+local function deserializeLevelDataV1(reader): LevelArray
+	local result = {} :: LevelArray
 
 	for i = 1, Formex.MaxPlotSize.Levels do
 		local levelData: LevelData = {
@@ -1002,7 +1010,7 @@ local function deserializeLevelDataV1(reader): {[number]: LevelData}
 	return result
 end
 
-function Formex.DeserializeLevelData(dataString: string): {[number]: LevelData}
+function Formex.DeserializeLevelData(dataString: string): LevelArray
 	local reader = Buffer.read(dataString)
 	local version = reader:ReadU16()
 

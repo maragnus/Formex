@@ -13,9 +13,12 @@ local localPlayer = Players.LocalPlayer
 local formexWorkspace = Workspace:WaitForChild("Formex")
 local overlayFolder = Formex.EnsureFolder("FormexDesignOverlays", formexWorkspace)
 
-local HANDLE_OFFSET = 4
+local HANDLE_OFFSET = 5
+local HANDLE_SIZE = 3
+local HANDLE_ICON_SIZE = 48
 local EPSILON = 1e-4
-local SNAP_WALLS_TO_45_DEGREES = false
+local HANDLE_HOVER_SCALE = 1.2
+local HANDLE_HOVER_TINT = 0.35
 
 local FormexDesign = {}
 
@@ -97,6 +100,9 @@ local designMode: DesignMode = FormexDesign.DesignMode.Play
 local actionType: ActionType = FormexDesign.ActionType.Select
 local currentLevel: number = 1
 local viewSettings: ViewSettings = playViewSettings
+local designSessionActive = false
+local designSessionPendingFocus = false
+local lastPlotPart: BasePart? = nil
 local ghost: BasePart? = nil
 local ghostWallData: Formex.WallData? = nil
 local ghostFloorData: Formex.FloorData? = nil
@@ -113,6 +119,7 @@ local selectionData: SelectionData = nil
 local selectionPart: BasePart? = nil
 local selectionHighlight: Highlight? = nil
 local wallStart: Vector2int16? = nil
+local wallBuildMode: "Pending" | "Click" | "Drag" | nil = nil
 local lastPreviewPoint: Vector2? = nil
 local floorDragActive = false
 
@@ -137,7 +144,7 @@ type ConnectedWall = {
 	EndType: "Start" | "End",
 }
 
-type WallHandleType = "Start" | "End" | "Center" | "StartSolo" | "EndSolo" | "Delete"
+type WallHandleType = "Start" | "End" | "Center" | "StartSolo" | "EndSolo" | "ExtendStart" | "ExtendEnd" | "Delete"
 
 local selectedWall: SelectedWall? = nil
 local wallHandleStart: BasePart? = nil
@@ -145,8 +152,11 @@ local wallHandleEnd: BasePart? = nil
 local wallHandleCenter: BasePart? = nil
 local wallHandleStartSolo: BasePart? = nil
 local wallHandleEndSolo: BasePart? = nil
+local wallHandleExtendStart: BasePart? = nil
+local wallHandleExtendEnd: BasePart? = nil
 local wallHandleDelete: BasePart? = nil
 local activeWallHandle: WallHandleType? = nil
+local hoveredWallHandle: WallHandleType? = nil
 local moveWallOriginal: SelectedWall? = nil
 local moveWallOriginals: {[number]: WallInfo} = {}
 local moveWallConnections = {
@@ -166,6 +176,9 @@ local handleIconMoveEnd = "rbxassetid://78551851583998"
 local handleIconMoveWall = "rbxassetid://83970836971222"
 local handleIconDeleteWall = "rbxassetid://91738865172085"
 local handleIconDisconnectWall = "rbxassetid://70397467113579"
+local handleIconExtendWall = "rbxassetid://128647721275129"
+local handleIconDivideWall = "rbxassetid://116931266034105"
+local handleIconBackground = "rbxassetid://114484129436279"
 
 local function notifyDesignModeChange()
 	FormexClient.FireEvent("DesignModeChanged")
@@ -212,11 +225,63 @@ function FormexDesign.SetFloorMaterial(materialId: number)
 	notifyDesignModeChange()
 end
 
+function FormexDesign.CanUndo(): boolean
+	return FormexClient.CanUndo()
+end
+
+function FormexDesign.CanRedo(): boolean
+	return FormexClient.CanRedo()
+end
+
+function FormexDesign.Undo(): boolean
+	FormexDesign.CancelAction()
+	local ok = FormexClient.Undo()
+	if ok ~= true then
+		return false
+	end
+	FormexDesign.ClearSelection()
+	return true
+end
+
+function FormexDesign.Redo(): boolean
+	FormexDesign.CancelAction()
+	local ok = FormexClient.Redo()
+	if ok ~= true then
+		return false
+	end
+	FormexDesign.ClearSelection()
+	return true
+end
+
+local function getPlayerFocusPosition(): Vector3?
+	local character = localPlayer.Character
+	if not character then
+		return nil
+	end
+
+	local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+	if root and root:IsA("BasePart") then
+		return root.Position
+	end
+	return nil
+end
+
+function FormexDesign.MoveCameraToPlayer()
+	if viewSettings.CameraMode ~= FormexCamera.CameraMode.TopDown then
+		return
+	end
+
+	local focusPosition = getPlayerFocusPosition()
+	if focusPosition then
+		FormexCamera.Focus(focusPosition)
+	end
+end
+
 local designModeViewSettings: {DesignMode: ViewSettings} = {
 	Play = playViewSettings,
 	Design = playViewSettings,
 	Expand = {
-		HandleLocation = FormexDesign.HandleLocation.Top,
+		HandleLocation = FormexDesign.HandleLocation.Bottom,
 		CameraMode = FormexCamera.CameraMode.TopDown,
 		WallMode = FormexDesign.WallMode.Half,
 		ShowSegments = true,
@@ -224,7 +289,7 @@ local designModeViewSettings: {DesignMode: ViewSettings} = {
 		ShowOtherLevels = false
 	},
 	Wall = {
-		HandleLocation = FormexDesign.HandleLocation.Top,
+		HandleLocation = FormexDesign.HandleLocation.Bottom,
 		CameraMode = FormexCamera.CameraMode.TopDown,
 		WallMode = FormexDesign.WallMode.Full,
 		ShowSegments = false,
@@ -232,7 +297,7 @@ local designModeViewSettings: {DesignMode: ViewSettings} = {
 		ShowOtherLevels = false
 	},
 	Floor = {
-		HandleLocation = FormexDesign.HandleLocation.Top,
+		HandleLocation = FormexDesign.HandleLocation.Bottom,
 		CameraMode = FormexCamera.CameraMode.TopDown,
 		WallMode = FormexDesign.WallMode.Half,
 		ShowSegments = false,
@@ -402,6 +467,97 @@ local function renderGridOverlays(plotInfo: FormexClient.PlotInfo)
 	end
 end
 
+local function getPlotCameraBounds(plotInfo: FormexClient.PlotInfo, useFullPlot: boolean?): (Vector3?, Vector3?)
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
+		return nil, nil
+	end
+
+	local plotPart = plotInfo.PlotPart
+	local minX, maxX, minZ, maxZ
+	local function trackPoint(point: Vector3)
+		if minX == nil then
+			minX, maxX = point.X, point.X
+			minZ, maxZ = point.Z, point.Z
+		else
+			minX = math.min(minX, point.X)
+			maxX = math.max(maxX, point.X)
+			minZ = math.min(minZ, point.Z)
+			maxZ = math.max(maxZ, point.Z)
+		end
+	end
+
+	if useFullPlot then
+		local halfWidth = Formex.Dimensions.Width / 2
+		local halfDepth = Formex.Dimensions.Depth / 2
+		local offsets = {
+			Vector3.new(-halfWidth, 0, -halfDepth),
+			Vector3.new(-halfWidth, 0, halfDepth),
+			Vector3.new(halfWidth, 0, -halfDepth),
+			Vector3.new(halfWidth, 0, halfDepth),
+		}
+		for _, offset in ipairs(offsets) do
+			trackPoint(plotPart.CFrame:PointToWorldSpace(offset))
+		end
+	else
+		local unlocked = Formex.Segments.GetAllUnlocked(plotInfo.SegmentsUnlocked)
+		if #unlocked == 0 then
+			unlocked = {Formex.Segments.DefaultIndex}
+		end
+
+		for _, index in ipairs(unlocked) do
+			local bounds = Formex.Segments.GetBounds(plotPart, index, plotInfo.LevelsUnlocked)
+			local extents = bounds.Extents
+			local offsets = {
+				Vector3.new(-extents.X, 0, -extents.Z),
+				Vector3.new(-extents.X, 0, extents.Z),
+				Vector3.new(extents.X, 0, -extents.Z),
+				Vector3.new(extents.X, 0, extents.Z),
+			}
+			for _, offset in ipairs(offsets) do
+				trackPoint(bounds.CFrame:PointToWorldSpace(offset))
+			end
+		end
+	end
+
+	if not minX then
+		return nil, nil
+	end
+
+	local center = plotPart.Position
+	local boundMin = Vector3.new(minX - center.X, 0, minZ - center.Z)
+	local boundMax = Vector3.new(maxX - center.X, 0, maxZ - center.Z)
+	return boundMin, boundMax
+end
+
+local function getPlotFitDistance(): number?
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return nil
+	end
+
+	local viewport = camera.ViewportSize
+	if viewport.Y <= 0 then
+		return nil
+	end
+
+	local aspect = viewport.X / viewport.Y
+	if aspect <= 0 then
+		return nil
+	end
+
+	local halfWidth = Formex.Dimensions.Width / 2
+	local halfDepth = Formex.Dimensions.Depth / 2
+	local halfFov = math.rad(camera.FieldOfView) * 0.5
+	local tanHalfFov = math.tan(halfFov)
+	if tanHalfFov <= 0 then
+		return nil
+	end
+
+	local distanceForDepth = halfDepth / tanHalfFov
+	local distanceForWidth = halfWidth / (tanHalfFov * aspect)
+	return math.max(distanceForDepth, distanceForWidth)
+end
+
 local function refresh()
 	clearOverlays()
 	FormexDesign.ClearSelection()
@@ -409,7 +565,45 @@ local function refresh()
 	local plotInfo = FormexClient.CurrentPlot
 	if not plotInfo or not plotInfo.IsValid then return	end
 
-	FormexCamera.SetCameraMode(viewSettings.CameraMode, plotInfo.PlotPart.Position, nil, nil)
+	local plotPart = plotInfo.PlotPart
+	if not plotPart then
+		return
+	end
+
+	local plotChanged = plotPart ~= lastPlotPart
+	if plotChanged then
+		lastPlotPart = plotPart
+	end
+
+	local boundsMin, boundsMax
+	local topDirection
+	local isTopDown = viewSettings.CameraMode == FormexCamera.CameraMode.TopDown
+	local isExpandMode = designMode == FormexDesign.DesignMode.Expand
+	if isTopDown then
+		boundsMin, boundsMax = getPlotCameraBounds(plotInfo, isExpandMode)
+		topDirection = -plotPart.CFrame.LookVector
+	end
+
+	FormexCamera.SetCameraMode(viewSettings.CameraMode, plotPart.Position, boundsMin, boundsMax, topDirection)
+
+	if isTopDown then
+		if plotChanged then
+			FormexCamera.SetCameraCenter(plotPart.Position)
+			designSessionPendingFocus = true
+		end
+
+		FormexCamera.SetCameraBounds(boundsMin, boundsMax)
+		if isExpandMode then
+			FormexCamera.SetZoomLimits(nil, getPlotFitDistance())
+		else
+			FormexCamera.SetZoomLimits(nil, nil)
+		end
+
+		if designSessionPendingFocus then
+			FormexDesign.MoveCameraToPlayer()
+			designSessionPendingFocus = false
+		end
+	end
 
 	-- Determine how to display half walls client-side
 
@@ -499,13 +693,18 @@ local function clearWallHandles()
 	destroyHandle(wallHandleCenter)
 	destroyHandle(wallHandleStartSolo)
 	destroyHandle(wallHandleEndSolo)
+	destroyHandle(wallHandleExtendStart)
+	destroyHandle(wallHandleExtendEnd)
 	destroyHandle(wallHandleDelete)
 	wallHandleStart = nil
 	wallHandleEnd = nil
 	wallHandleCenter = nil
 	wallHandleStartSolo = nil
 	wallHandleEndSolo = nil
+	wallHandleExtendStart = nil
+	wallHandleExtendEnd = nil
 	wallHandleDelete = nil
+	hoveredWallHandle = nil
 end
 
 function FormexDesign.ClearSelection()
@@ -574,7 +773,7 @@ local function snapWallEndPoint(startPoint: Vector2 | Vector2int16, rawEndPoint:
 
 	local snappedDx = dx
 	local snappedDz = dz
-	if SNAP_WALLS_TO_45_DEGREES then
+	if Formex.SnapWallsTo45Degrees then
 		local angle = math.atan2(dz, dx)
 		local step = math.pi / 4
 		local snappedAngle = math.round(angle / step) * step
@@ -614,7 +813,7 @@ local function isPointInOwnedSegments(plotInfo: FormexClient.PlotInfo, point: Ve
 	return false
 end
 
-local function getPointerHit(): (Vector3?, Instance?)
+local function getPointerHit(forceGridCollision: boolean?): (Vector3?, Instance?)
 	local camera = Workspace.CurrentCamera
 	if not camera then
 		return nil, nil
@@ -626,7 +825,9 @@ local function getPointerHit(): (Vector3?, Instance?)
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.IgnoreWater = true
 
-	if actionType == FormexDesign.ActionType.Select then
+	if forceGridCollision then
+		params.CollisionGroup = Formex.CollisionGroup.Grid
+	elseif actionType == FormexDesign.ActionType.Select then
 		local filter = { overlayFolder }
 		if localPlayer.Character then
 			table.insert(filter, localPlayer.Character)
@@ -650,7 +851,7 @@ local function getPointerHit(): (Vector3?, Instance?)
 	return result.Position, result.Instance
 end
 
-local function getInputInfo() : InputInfo | nil
+local function getInputInfo(forceGridCollision: boolean?): InputInfo | nil
 	if designMode == FormexDesign.DesignMode.Play then
 		return nil
 	end
@@ -660,7 +861,7 @@ local function getInputInfo() : InputInfo | nil
 		return nil
 	end
 
-	local hitPosition, target = getPointerHit()
+	local hitPosition, target = getPointerHit(forceGridCollision)
 	local snapPoint = hitPosition and getSnappedPoint(plotInfo.PlotPart, hitPosition) or nil
 	local layoutTile = hitPosition and getLayoutTile(plotInfo.PlotPart, hitPosition) or nil
 
@@ -825,6 +1026,10 @@ local function updateWallGhost(plotInfo: FormexClient.PlotInfo, plotPart: BasePa
 
 	local endPoint = getSnappedPoint(plotPart, hitPosition)
 	local snappedEndPoint = snapWallEndPoint(wallStart, endPoint)
+	if actionHeld
+	and (snappedEndPoint.X ~= wallStart.X or snappedEndPoint.Y ~= wallStart.Y) then
+		wallBuildMode = "Drag"
+	end
 	if lastPreviewPoint and snappedEndPoint == lastPreviewPoint then
 		return
 	end
@@ -867,35 +1072,46 @@ local function updateFloorGhost(input: InputInfo)
 end
 
 local function createWallHandle(name: string, color: Color3, iconAsset: string): BasePart
-	local part = Instance.new("Part")
+	local part = Instance.new("Part", overlayFolder)
 	part.Name = name
 	part.Shape = Enum.PartType.Ball
-	part.Size = Vector3.new(1.2, 1.2, 1.2)
+	part.Size = Vector3.new(HANDLE_SIZE, HANDLE_SIZE, HANDLE_SIZE)
 	part.Anchored = true
 	part.CanCollide = false
 	part.CanTouch = false
 	part.CanQuery = true
 	part.CastShadow = false
-	part.Material = Enum.Material.Neon
+	part.Material = Enum.Material.ForceField
 	part.Color = color
-	part.Parent = overlayFolder
+	part.CollisionGroup = Formex.CollisionGroup.Grid
+	part:SetAttribute("BaseColor", color)
 
-	local billboard = Instance.new("BillboardGui")
+	local billboard = Instance.new("BillboardGui", part)
 	billboard.Name = "HandleBillboard"
-	billboard.Size = UDim2.new(0, 32, 0, 32)
+	billboard.Size = UDim2.new(0, HANDLE_ICON_SIZE, 0, HANDLE_ICON_SIZE)
 	billboard.StudsOffsetWorldSpace = Vector3.new(0, 0.6, 0)
 	billboard.LightInfluence = 0
 	billboard.AlwaysOnTop = true
 	billboard.Adornee = part
-	billboard.Parent = part
 
-	local icon = Instance.new("ImageLabel")
+	local icon = Instance.new("ImageLabel", billboard)
 	icon.Name = "Icon"
-	icon.Size = UDim2.fromScale(1, 1)
+	icon.AnchorPoint = Vector2.new(0.5, 0.5)
+	icon.Position = UDim2.fromScale(0.5, 0.5)
+	icon.Size = UDim2.fromScale(0.75, 0.75)
 	icon.BackgroundTransparency = 1
 	icon.Image = iconAsset
 	icon.ImageColor3 = color
-	icon.Parent = billboard
+	icon.ZIndex = 2
+
+	local icon = Instance.new("ImageLabel", billboard)
+	icon.Name = "Background"
+	icon.Size = UDim2.fromScale(1, 1)
+	icon.BackgroundTransparency = 1
+	icon.Image = handleIconBackground
+	icon.ImageColor3 = Color3.fromRGB(0, 0, 0) -- color
+	icon.ImageTransparency = 0.5
+	icon.ZIndex = 1
 
 	return part
 end
@@ -922,10 +1138,130 @@ local function setWallHandlesVisible(visible: boolean)
 		wallHandleCenter,
 		wallHandleStartSolo,
 		wallHandleEndSolo,
+		wallHandleExtendStart,
+		wallHandleExtendEnd,
 		wallHandleDelete,
 	}) do
 		setHandleVisible(handle, visible)
 	end
+end
+
+local function getHandleBillboard(handle: BasePart): BillboardGui?
+	local billboard = handle:FindFirstChild("HandleBillboard")
+	if billboard and billboard:IsA("BillboardGui") then
+		return billboard
+	end
+	return nil
+end
+
+local function getHandleIcon(handle: BasePart): ImageLabel?
+	local billboard = getHandleBillboard(handle)
+	if not billboard then
+		return nil
+	end
+	local icon = billboard:FindFirstChild("Icon")
+	if icon and icon:IsA("ImageLabel") then
+		return icon
+	end
+	return nil
+end
+
+local function getHandleBackground(handle: BasePart): ImageLabel?
+	local billboard = getHandleBillboard(handle)
+	if not billboard then
+		return nil
+	end
+	local background = billboard:FindFirstChild("Background")
+	if background and background:IsA("ImageLabel") then
+		return background
+	end
+	return nil
+end
+
+local function getHandleBaseColor(handle: BasePart): Color3
+	local baseColor = handle:GetAttribute("BaseColor")
+	if typeof(baseColor) == "Color3" then
+		return baseColor
+	end
+	return handle.Color
+end
+
+local function setHandleHover(handle: BasePart?, hovered: boolean)
+	if not handle then
+		return
+	end
+
+	local baseColor = getHandleBaseColor(handle)
+	local targetColor = hovered and baseColor:Lerp(Color3.new(1, 1, 1), HANDLE_HOVER_TINT) or baseColor
+	local scale = hovered and HANDLE_HOVER_SCALE or 1
+
+	handle.Size = Vector3.new(HANDLE_SIZE * scale, HANDLE_SIZE * scale, HANDLE_SIZE * scale)
+	handle.Color = targetColor
+
+	local billboard = getHandleBillboard(handle)
+	if billboard then
+		billboard.Size = UDim2.new(0, HANDLE_ICON_SIZE * scale, 0, HANDLE_ICON_SIZE * scale)
+	end
+
+	local icon = getHandleIcon(handle)
+	if icon then
+		icon.ImageColor3 = targetColor
+	end
+
+	local background = getHandleBackground(handle)
+	if background then
+		background.ImageTransparency = hovered and 0.2 or 0.5
+	end
+end
+
+local function getHandleByType(handleType: WallHandleType?): BasePart?
+	if handleType == "Start" then
+		return wallHandleStart
+	end
+	if handleType == "End" then
+		return wallHandleEnd
+	end
+	if handleType == "Center" then
+		return wallHandleCenter
+	end
+	if handleType == "StartSolo" then
+		return wallHandleStartSolo
+	end
+	if handleType == "EndSolo" then
+		return wallHandleEndSolo
+	end
+	if handleType == "ExtendStart" then
+		return wallHandleExtendStart
+	end
+	if handleType == "ExtendEnd" then
+		return wallHandleExtendEnd
+	end
+	if handleType == "Delete" then
+		return wallHandleDelete
+	end
+	return nil
+end
+
+local function setWallHandleHover(handleType: WallHandleType?)
+	if hoveredWallHandle == handleType then
+		return
+	end
+
+	local previousHandle = getHandleByType(hoveredWallHandle)
+	if previousHandle then
+		setHandleHover(previousHandle, false)
+	end
+
+	hoveredWallHandle = handleType
+
+	local nextHandle = getHandleByType(handleType)
+	if nextHandle then
+		setHandleHover(nextHandle, true)
+	end
+end
+
+local function clearWallHandleHover()
+	setWallHandleHover(nil)
 end
 
 local folderNames = { Walls = "Wall", Floors = "Floor", Objects = "Object" } :: {string: SelectionType}
@@ -1055,7 +1391,7 @@ local function isZeroLength(startPoint: Vector2int16, endPoint: Vector2int16): b
 	return startPoint.X == endPoint.X and startPoint.Y == endPoint.Y
 end
 
-local function safeBuildWall(wallData: Formex.WallData, action: Formex.BuildAction): (boolean, any)
+local function safeBuildWall(wallData: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction): (boolean, any)
 	local ok, result = pcall(FormexClient.BuildWall, wallData, action)
 	if not ok then
 		warn("FormexClient.BuildWall failed:", result)
@@ -1078,21 +1414,15 @@ local function createWallPreview(plotPart: BasePart, wallData: Formex.WallData):
 end
 
 local function getMaterialIdFromTexture(texture: Texture?): number?
-	if not texture then
-		return nil
-	end
-	local content = texture.TextureContent
-	if not content or content == "" then
-		content = texture.Texture
-	end
-	if not content then
-		return nil
-	end
+	if not texture then return nil end
+	
+	local content: string? = texture.ColorMapContent and texture.ColorMapContent.Uri or nil
+	if not content then return nil end
+	
 	local assetId = tonumber(string.match(content, "rbxassetid://(%d+)"))
-	if not assetId then
-		return nil
-	end
-	for index, materialInfo in ipairs(Formex.Materials) do
+	if not assetId then	return nil end
+	
+	for index, materialInfo in Formex.Materials do
 		if materialInfo.AssetId == assetId then
 			return index
 		end
@@ -1260,6 +1590,12 @@ local function updateWallHandles(plotInfo: FormexClient.PlotInfo)
 	if not wallHandleEndSolo then
 		wallHandleEndSolo = createWallHandle("WallHandleEndSolo", selectionColor, handleIconDisconnectWall)
 	end
+	if not wallHandleExtendStart then
+		wallHandleExtendStart = createWallHandle("WallHandleExtendStart", ghostValidColor, handleIconExtendWall)
+	end
+	if not wallHandleExtendEnd then
+		wallHandleExtendEnd = createWallHandle("WallHandleExtendEnd", ghostValidColor, handleIconExtendWall)
+	end
 	if not wallHandleDelete then
 		wallHandleDelete = createWallHandle("WallHandleDelete", ghostInvalidColor, handleIconDeleteWall)
 	end
@@ -1270,6 +1606,7 @@ local function updateWallHandles(plotInfo: FormexClient.PlotInfo)
 	end
 
 	local offset = getPerpOffset(startPoint, endPoint, HANDLE_OFFSET)
+	local extendOffset = Vector2.new(-offset.X, -offset.Y)
 	local startPoint2 = Vector2.new(startPoint.X, startPoint.Y)
 	local endPoint2 = Vector2.new(endPoint.X, endPoint.Y)
 	local midPoint = Vector2.new((startPoint.X + endPoint.X) / 2, (startPoint.Y + endPoint.Y) / 2)
@@ -1279,7 +1616,9 @@ local function updateWallHandles(plotInfo: FormexClient.PlotInfo)
 	wallHandleCenter.Position = toWorld(midPoint)
 	wallHandleStartSolo.Position = toWorld(startPoint2 + offset)
 	wallHandleEndSolo.Position = toWorld(endPoint2 + offset)
-	wallHandleDelete.Position = toWorld(midPoint + offset)
+	wallHandleExtendStart.Position = toWorld(startPoint2 + extendOffset)
+	wallHandleExtendEnd.Position = toWorld(endPoint2 + extendOffset)
+	wallHandleDelete.Position = toWorld(midPoint + offset * 2.5)
 
 	setWallHandlesVisible(true)
 
@@ -1296,6 +1635,8 @@ local function getWallHandleHit(): WallHandleType?
 	and not wallHandleCenter
 	and not wallHandleStartSolo
 	and not wallHandleEndSolo
+	and not wallHandleExtendStart
+	and not wallHandleExtendEnd
 	and not wallHandleDelete then
 		return nil
 	end
@@ -1327,6 +1668,12 @@ local function getWallHandleHit(): WallHandleType?
 	if wallHandleEndSolo then
 		table.insert(handles, wallHandleEndSolo)
 	end
+	if wallHandleExtendStart then
+		table.insert(handles, wallHandleExtendStart)
+	end
+	if wallHandleExtendEnd then
+		table.insert(handles, wallHandleExtendEnd)
+	end
 	if wallHandleDelete then
 		table.insert(handles, wallHandleDelete)
 	end
@@ -1352,11 +1699,27 @@ local function getWallHandleHit(): WallHandleType?
 	if result.Instance == wallHandleEndSolo then
 		return "EndSolo"
 	end
+	if result.Instance == wallHandleExtendStart then
+		return "ExtendStart"
+	end
+	if result.Instance == wallHandleExtendEnd then
+		return "ExtendEnd"
+	end
 	if result.Instance == wallHandleDelete then
 		return "Delete"
 	end
 
 	return nil
+end
+
+local function updateWallHandleHover()
+	if designMode ~= FormexDesign.DesignMode.Wall or actionType ~= FormexDesign.ActionType.Select then
+		clearWallHandleHover()
+		return
+	end
+
+	local handleType = getWallHandleHit()
+	setWallHandleHover(handleType)
 end
 
 function FormexDesign.GetSelectionInfo(): (SelectionType, number?, number?)
@@ -1401,6 +1764,26 @@ function FormexDesign.Select(part: Instance)
 	return false
 end
 
+local function beginWallFromPoint(plotInfo: FormexClient.PlotInfo, startPoint: Vector2int16)
+	if not plotInfo.PlotPart then
+		return
+	end
+
+	if not isPointInOwnedSegments(plotInfo, Vector2.new(startPoint.X, startPoint.Y)) then
+		updateGhostValidity(false)
+		return
+	end
+
+	clearGhost()
+	FormexDesign.ClearSelection()
+	wallStart = startPoint
+	wallBuildMode = "Pending"
+	actionType = FormexDesign.ActionType.Step
+	lastPreviewPoint = nil
+	ensureWallGhost(plotInfo.PlotPart, startPoint, startPoint)
+	notifyDesignModeChange()
+end
+
 local function beginWallAtPosition(plotInfo: FormexClient.PlotInfo, startPosition: Vector3)
 	if not plotInfo.PlotPart then
 		return
@@ -1415,6 +1798,7 @@ local function beginWallAtPosition(plotInfo: FormexClient.PlotInfo, startPositio
 	clearGhost()
 	FormexDesign.ClearSelection()
 	wallStart = startPoint
+	wallBuildMode = "Pending"
 	actionType = FormexDesign.ActionType.Step
 	lastPreviewPoint = nil
 	ensureWallGhost(plotInfo.PlotPart, startPoint, startPoint)
@@ -1433,6 +1817,7 @@ function FormexDesign.StartWall()
 
 	actionType = FormexDesign.ActionType.Start
 	wallStart = nil
+	wallBuildMode = nil
 	lastPreviewPoint = nil
 	clearGhost()
 	FormexDesign.ClearSelection()
@@ -1524,6 +1909,7 @@ function FormexDesign.CancelAction()
 
 	clearGhost()
 	wallStart = nil
+	wallBuildMode = nil
 	lastPreviewPoint = nil
 	floorDragActive = false
 	lastFloorPaintTile = nil
@@ -1597,6 +1983,7 @@ local function beginWallMove(handleType: WallHandleType, input: InputInfo)
 	end
 
 	activeWallHandle = handleType
+	wallBuildMode = nil
 	moveWallOriginal = {
 		WallId = selectedWall.WallId,
 		Level = selectedWall.Level,
@@ -1802,6 +2189,8 @@ local function finalizeWallMove(plotInfo: FormexClient.PlotInfo)
 	end
 
 	local selectedDeleted = false
+	local deletedWalls = {}
+	local wallBatch = {} :: {Formex.WallData}
 	for _, wall in pairs(updates) do
 		local data = {
 			WallId = wall.WallId,
@@ -1810,25 +2199,30 @@ local function finalizeWallMove(plotInfo: FormexClient.PlotInfo)
 			End = wall.End,
 			Part = nil,
 		} :: Formex.WallData
+		table.insert(wallBatch, data)
 
 		if isZeroLength(wall.Start, wall.End) then
 			if wall.WallId == moveWallOriginal.WallId then
 				selectedDeleted = true
 			end
-			local ok = safeBuildWall(data, Formex.BuildAction.Delete)
-			if not ok then
-				FormexDesign.CancelAction()
-				return
-			end
-			if wall.Part and wall.Part.Parent then
-				wall.Part:Destroy()
-			end
-		else
-			local ok = safeBuildWall(data, Formex.BuildAction.Edit)
-			if not ok then
-				FormexDesign.CancelAction()
-				return
-			end
+			table.insert(deletedWalls, wall)
+		end
+	end
+
+	if #wallBatch == 0 then
+		FormexDesign.CancelAction()
+		return
+	end
+
+	local ok = safeBuildWall(wallBatch, Formex.BuildAction.Edit)
+	if not ok then
+		FormexDesign.CancelAction()
+		return
+	end
+
+	for _, wall in ipairs(deletedWalls) do
+		if wall.Part and wall.Part.Parent then
+			wall.Part:Destroy()
 		end
 	end
 
@@ -1904,6 +2298,7 @@ local function handleUpdate()
 			updateWallHandles(input.PlotInfo)
 		end
 		handleWallUpdate(input)
+		updateWallHandleHover()
 	elseif designMode == FormexDesign.DesignMode.Floor or designMode == FormexDesign.DesignMode.Ceiling then
 		handleFloorUpdate(input)
 	end
@@ -1916,6 +2311,10 @@ local function handlePrimaryRelease()
 	if designMode == FormexDesign.DesignMode.Wall
 	and actionType == FormexDesign.ActionType.Step
 	and input.HitPosition then
+		if wallBuildMode == "Pending" then
+			wallBuildMode = "Click"
+			return
+		end
 		finalizeWall(input.PlotInfo, input.HitPosition)
 	end
 
@@ -1962,10 +2361,15 @@ local function handlePrimaryClick()
 	and selectionType == FormexDesign.SelectionType.Wall then
 		local handleType = getWallHandleHit()
 		if handleType then
-			local input = getInputInfo()
+			local input = getInputInfo(true)
 			if input then
 				if handleType == "Delete" then
 					deleteSelectedWall(input.PlotInfo)
+				elseif handleType == "ExtendStart" or handleType == "ExtendEnd" then
+					if selectedWall then
+						local startPoint = if handleType == "ExtendStart" then selectedWall.Start else selectedWall.End
+						beginWallFromPoint(input.PlotInfo, startPoint)
+					end
 				else
 					beginWallMove(handleType, input)
 				end
@@ -2035,9 +2439,13 @@ function FormexDesign.SetDesignMode(mode: DesignMode?)
 		FormexDesign.CancelAction()
 	end
 
-	if mode ~= FormexDesign.DesignMode.Play
-	and lastMode == FormexDesign.DesignMode.Play then
+	local wasInSession = designSessionActive
+	designSessionActive = mode ~= FormexDesign.DesignMode.Play
+	if designSessionActive and not wasInSession then
 		currentLevel = getLevel()
+		designSessionPendingFocus = true
+	elseif not designSessionActive and wasInSession then
+		designSessionPendingFocus = false
 	end
 
 	designMode = mode
