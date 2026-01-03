@@ -17,7 +17,6 @@ local Buffer = require(script.Parent.Buffer)
 
 export type SurfaceType = "Square" | "Sliced"
 export type Permission = "Guest" | "Banned" | "VIP" | "Manager" | "Owner"
-export type FloorType = "Square" | "SlicedCW" | "SlicedCCW"
 export type PartType = "Wall" | "Floor" | "Ceiling" | "Object" | nil
 export type BuildAction = "Add" | "Delete" | "Edit"
 export type CollisionGroup = "Grid" | "Wall" | "Object"
@@ -46,11 +45,33 @@ export type PlotData = {
 	Permissions: {[number]: Permission},
 }
 
+--[[ Old LevelData and FloorData format
+export type FloorType = "Square" | "SlicedCW" | "SlicedCCW"
+
 export type LevelData = {
 	Walls: {[number]: WallData}, -- [WallId: WallData]
 	Floors: {[number]: number | nil}, -- [Formex.XYToIndex(x, y)]: Formex.Materials[index] | nil
 	Ceilings: {[number]: number | nil}, -- [Formex.XYToIndex(x, y)]: Formex.Materials[index] | nil
 	Objects: {[number]: ObjectData}, -- [ObjectId: ObjectData]
+	Part: Part?
+
+export type FloorData = {
+	FloorId: number,
+	LevelIndex: number,
+	Tile: Vector2int16,
+	Type: FloorType,
+	FloorMaterial: number?,
+	CeilingMaterial: number?,
+	FloorMaterial2: number?,
+	CeilingMaterial2: number?,
+	Part: Part?
+}
+]]
+
+export type LevelData = {
+	Walls: {[number]: WallData}, -- {[WallId]: WallData}
+	Floors: {[number]: FloorData}, -- {[FloorId]: FloorData}
+	Objects: {[number]: ObjectData}, -- {[ObjectId]: ObjectData}
 	Part: Part?
 }
 
@@ -69,13 +90,11 @@ export type WallData = {
 export type FloorData = {
 	FloorId: number,
 	LevelIndex: number,
-	Tile: Vector2int16,
-	Type: FloorType,
-	FloorMaterial: number?,
-	CeilingMaterial: number?,
-	FloorMaterial2: number?,
-	CeilingMaterial2: number?,
-	Part: Part?
+	Points: {Vector2int16},
+	FloorMaterial: number,
+	CeilingMaterial: number,
+	FloorParts: {Part},
+	CeilingParts: {Part},
 }
 
 export type ObjectData = {
