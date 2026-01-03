@@ -160,8 +160,8 @@ function FormexPrompts.PlotRename()
         Name = "RenamePlotDialog",
         Title = "Rename your plot",
         Buttons = {
-            { Text = "OK", Result = nil, Type = FormexUI.ButtonTypes.Primary },
-            { Text = "Cancel", Result = false, Type = FormexUI.ButtonTypes.Secondary, Style = FormexUI.ButtonStyles.Outline }
+            { Text = "OK", Result = nil, Type = FormexUI.ButtonType.Primary },
+            { Text = "Cancel", Result = false, Type = FormexUI.ButtonType.Secondary, Style = FormexUI.ButtonStyle.Outline }
         }
     }, function(dialog)
         FormexUI.CreateTextInput({
@@ -275,7 +275,7 @@ function FormexPrompts.PlotPermissions()
         Size = "Large",
         Scrolling = Enum.ScrollingDirection.Y,
         Buttons = {
-            { Text = "Done", Type = FormexUI.ButtonTypes.Primary },
+            { Text = "Done", Type = FormexUI.ButtonType.Primary },
         }
     }, function(dialog)
         local refresh

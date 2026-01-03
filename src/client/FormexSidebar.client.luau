@@ -46,6 +46,12 @@ local function canDesign(plot: FormexClient.PlotInfo): boolean
         and (plot.MyPermission == Formex.Permission.Owner or plot.MyPermission == Formex.Permission.Manager)
 end
 
+local function canManage(plot: FormexClient.PlotInfo): boolean
+    return plot.IsValid and plot.SaveId ~= 0
+        and (plot.MyPermission == Formex.Permission.Owner)
+end
+
+
 local function createSection(parent: Instance, name: string, titleText: string?): (Frame, Frame)
     local card = Instance.new("Frame", parent)
     card.Name = name
@@ -389,6 +395,10 @@ local function buildSidebar()
     content.ScrollingDirection = Enum.ScrollingDirection.Y
     content.LayoutOrder = 2
 
+    local contentPadding = Instance.new("UIPadding", content)
+    contentPadding.PaddingLeft = UDim.new(0, 2)
+    contentPadding.PaddingRight = UDim.new(0, 2)
+
     local contentLayout = Instance.new("UIListLayout", content)
     contentLayout.FillDirection = Enum.FillDirection.Vertical
     contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -475,21 +485,34 @@ local function buildSidebar()
     end)
 
     local expandButton = createIconButton(ownerActionsRow, "Expand", Formex.Icons.PlotExpand, function()
-        if canDesign(FormexClient.CurrentPlot) then
+        if not canManage(FormexClient.CurrentPlot) then return end
+        
+        local mode = FormexDesign.GetDesignMode()
+        if mode ~= FormexDesign.DesignMode.Expand then
             FormexDesign.SetDesignMode(FormexDesign.DesignMode.Expand)
+        else
+            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Play)
         end
     end)
 
     local permissionsButton = createIconButton(ownerActionsRow, "Permissions", Formex.Icons.PlotPermissions, function()
         FormexPrompts.PlotPermissions()
     end)
+
     local designButton = createIconButton(ownerActionsRow, "DesignMode", Formex.Icons.DesignStart, function()
+        if not canDesign(FormexClient.CurrentPlot) then return end
         local mode = FormexDesign.GetDesignMode()
         if mode == FormexDesign.DesignMode.Play then
             FormexDesign.SetDesignMode(FormexDesign.DesignMode.Design)
         else
             FormexDesign.SetDesignMode(FormexDesign.DesignMode.Play)
         end
+    end)
+    
+    local unclaimButton = createIconButton(ownerActionsRow, "Unclaim", Formex.Icons.PlotRelease, function()
+        local response = FormexUI.Alert("Unclaim Plot", "Are you sure you want to unclaim this plot?", FormexUI.ButtonType.Danger, FormexUI.AlertType.YesNo)
+        if response ~= true then return end
+        FormexClient.ReleasePlot()
     end)
 
     local designSection, designContent = createSection(content, "DesignControls", nil)
@@ -779,6 +802,7 @@ local function buildSidebar()
         Expand = expandButton,
         Permissions = permissionsButton,
         Design = designButton,
+        Unclaim = unclaimButton
     }
     ui.DesignSection = designSection
     ui.DesignControls = designControls
@@ -821,7 +845,8 @@ local function refreshUI()
 
     local allowDesign = canDesign(plot)
     local designMode = FormexDesign.GetDesignMode()
-    local inDesign = designMode ~= FormexDesign.DesignMode.Play
+    local inExpand = designMode == FormexDesign.DesignMode.Expand
+    local inDesign = designMode ~= FormexDesign.DesignMode.Play and not inExpand
 
     if inDesign and not allowDesign then
         FormexDesign.SetDesignMode(FormexDesign.DesignMode.Play)
@@ -844,8 +869,10 @@ local function refreshUI()
     ui.ActionButtons.Permissions.Button.Visible = showManage
     ui.ActionButtons.Expand.Button.Visible = showExpand
     ui.ActionButtons.Design.Button.Visible = showDesign
-    setIconButtonActive(ui.ActionButtons.Design, inDesign)
+    ui.ActionButtons.Unclaim.Button.Visible = plot.IsValid and plot.IsClaimed and isOwner
     ui.DesignSection.Visible = inDesign
+    setIconButtonActive(ui.ActionButtons.Design, inDesign)
+    setIconButtonActive(ui.ActionButtons.Expand, inExpand)
 
     if inDesign then
         setDesignExpanded(designExpanded)

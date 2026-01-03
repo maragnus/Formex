@@ -167,24 +167,24 @@ function FormexUI.CreateColumn(options: FlexOptions)
 end
 
 export type ButtonType = "Primary" | "Secondary" | "Success" | "Info" | "Warn" | "Danger"
-FormexUI.ButtonTypes = {
+FormexUI.ButtonType = table.freeze({
     Primary = "Primary",
     Secondary = "Secondary",
     Success = "Success",
     Info = "Info",
     Warn = "Warn",
     Danger = "Danger",
-} :: {[ButtonType]: ButtonType}
+}) :: {[ButtonType]: ButtonType}
 
 function FormexUI.GetButtonPalette(buttonType: ButtonType)
     return buttonPalette[buttonType] or buttonPalette.Primary
 end
 
 export type ButtonStyle = "Solid" | "Outline"
-FormexUI.ButtonStyles = {
+FormexUI.ButtonStyle = table.freeze({
     Solid = "Solid",
     Outline = "Outline"
-} :: {[ButtonStyle]: ButtonStyle}
+}) :: {[ButtonStyle]: ButtonStyle}
 
 export type ButtonOptions = {
     Parent: Instance,
@@ -596,7 +596,7 @@ function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((ma
             Size = "Large",
             Scrolling = Enum.ScrollingDirection.Y,
             Buttons = {
-                { Text = "Cancel", Result = nil, Type = FormexUI.ButtonTypes.Secondary, Style = FormexUI.ButtonStyles.Outline }
+                { Text = "Cancel", Result = nil, Type = FormexUI.ButtonType.Secondary, Style = FormexUI.ButtonStyle.Outline }
             }
         }, function(dialog)
             local gridFrame = Instance.new("Frame", dialog.ContentFrame)
@@ -971,19 +971,19 @@ export type AlertOptions = {
 }
 
 export type AlertType = "OkOnly" | "OkCancel" | "YesNo" | "YesNoCancel" | "RetryCancel"
-FormexUI.AlertTypes = {
+FormexUI.AlertType = table.freeze({
     OkOnly = "OkOnly",
     OkCancel = "OkCancel",
     YesNo = "YesNo",
     YesNoCancel = "YesNoCancel",
     RetryCancel = "RetryCancel"
-}
+})
 
-local okButton = { Text = "OK", Result = true, Type = FormexUI.ButtonTypes.Primary } :: ButtonInfo
-local yesButton = { Text = "Yes", Result = true, Type = FormexUI.ButtonTypes.Primary } :: ButtonInfo
-local noButton = { Text = "No", Result = false, Type = FormexUI.ButtonTypes.Error } :: ButtonInfo
-local retryButton = { Text = "Retry", Result = true, Type = FormexUI.ButtonTypes.Primary } :: ButtonInfo
-local cancelButton = { Text = "Cancel", Result = nil, Type = FormexUI.ButtonTypes.Secondary, Style = FormexUI.ButtonStyles.Outline } :: ButtonInfo
+local okButton = { Text = "OK", Result = true, Type = FormexUI.ButtonType.Primary } :: ButtonInfo
+local yesButton = { Text = "Yes", Result = true, Type = FormexUI.ButtonType.Primary } :: ButtonInfo
+local noButton = { Text = "No", Result = false, Type = FormexUI.ButtonType.Error } :: ButtonInfo
+local retryButton = { Text = "Retry", Result = true, Type = FormexUI.ButtonType.Primary } :: ButtonInfo
+local cancelButton = { Text = "Cancel", Result = nil, Type = FormexUI.ButtonType.Secondary, Style = FormexUI.ButtonStyle.Outline } :: ButtonInfo
 FormexUI.ButtonGroups = {
     OkOnly = {okButton},
     OkCancel = {okButton, cancelButton},

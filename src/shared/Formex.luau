@@ -186,10 +186,11 @@ Formex.Materials = {
 } :: {number: MaterialInfo}
 
 Formex.Icons = { -- Content.fromAssetId(...)
-    Menu = 114484129436279,
+    Menu = 123614418099512,
     Refresh = 123101975679190,
     AddItem = 128647721275129,
     MoveItem = 83970836971222,
+	RotateItem = 101431557821612,
     ResizeItem = 78551851583998,
     DeleteItem = 91738865172085,
     WallExtend = 128647721275129,
@@ -206,15 +207,19 @@ Formex.Icons = { -- Content.fromAssetId(...)
     DesignFloors = 136537860205120,
     DesignWalls =  105416010695180,
     DesignPaint = 92885878760720,
-    Undo = 0,
-    Redo = 0,
-    ChevronDown = 0,
-    ChevronUp = 0,
+    Undo = 118863163301402,
+    Redo = 118241293985419,
+    ChevronDown = 84853982697443,
+    ChevronUp = 125753605575669,
     AlertPrimary = 103853485477063,
     AlertSecondary = 115719232269249,
     AlertInfo = 119134101744939,
     AlertWarn = 111518129231234,
     AlertDanger = 73134495809587,
+	SecurityLock = 71709652798579,
+	SecurityUnlock = 95498189643385,
+	SecurityKey = 115917399534136,
+	Camera = 70772215979759,
     CircleBackground = 114484129436279,
 } :: {[string]: number}
 
@@ -919,12 +924,8 @@ function Formex.SerializeLevelData(levels: LevelArray): string
 	for levelIndex = 1, Formex.MaxPlotSize.Levels do
 		local levelData = levels[levelIndex] :: LevelData
 
-		print("levelIndex", levelIndex, levelData)
-
 		if levelData then
 			writer:WriteU8(levelIndex)
-
-			print("walls")
 
 			-- Walls
 			for wallId, wall in levelData.Walls do
@@ -940,8 +941,6 @@ function Formex.SerializeLevelData(levels: LevelArray): string
 			end
 			writer:WriteU16(0)
 
-			print("floors")
-
 			-- Floors and Ceilings
 			for index, materialId in levelData.Floors do
 				writer:WriteU16(index)
@@ -955,7 +954,6 @@ function Formex.SerializeLevelData(levels: LevelArray): string
 			end
 			writer:WriteU16(0)
 
-			print("objects")
 			-- Objects
 			for objectId, object in levelData.Objects do
 				writer:WriteU16(objectId)

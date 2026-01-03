@@ -120,8 +120,6 @@ function FormexSystem.UnassignPlotToPlayer(player: Player)
     local plotId = FormexSystem.PlayerToPlot[userId] or 0
     if plotId == 0 then return end
 
-    print(player.Name .. " unclaims plot " .. tostring(plotId))
-
     FormexSystem.SavePlot(plotId)
 
     FormexSystem.ClearPlot(FormexSystem.Plots[plotId])
@@ -153,8 +151,6 @@ function FormexSystem.AssignPlotToPlayer(player: Player, plotId: number)
 
     plotId = plotId or 0
     if plotId == 0 then return end
-
-    print(player.Name .. " claims plot " .. tostring(plotId))
 
     local userId = player.UserId
     local plotName = player.Name .. "'s Plot"
@@ -216,8 +212,6 @@ function FormexSystem.RegisterPlot(plotPart: Part)
         Permissions = {},
     }
     FormexSystem.UpdatePlotAttributes(plotId)
-
-    print("Registering plot with PlotId:", plotId)
 end
 
 local saveQueue = {} :: {[number]: number}
@@ -256,7 +250,6 @@ function FormexSystem.SavePlot(plotId: number)
     end
 
     local levelData = Formex.SerializeLevelData(plotData.Levels)
-    print(levelData)
 
     local key = tostring(userId) .. ":" .. tostring(plotData.SaveId)
     local success, err = pcall(function()
@@ -335,8 +328,6 @@ function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
     plotData.SegmentsUnlocked = segmentsUnlocked
     plotData.Permissions = fixNumbericDictionary(saveData.Permissions or {})
 
-    print(levelData)
-
     if type(levelData) == "string" then
         plotData.Levels = Formex.DeserializeLevelData(levelData)
     else
@@ -349,9 +340,6 @@ function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
     FormexSystem.ClearPlot(plotPart)
 
     FormexSystem.RenderPlot(plotId)
-
-    print(pcall(FormexSystem.SavePlot, plotId))
-    -- FormexSystem.SavePlot(plotId)
 
     return true
 end

@@ -1,3 +1,5 @@
+if true then return end -- disable file
+
 local Players = game:GetService("Players")
 local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
 local Formex = FormexClient.Formex
@@ -94,7 +96,7 @@ end)
 
 createButton("Home", "Go Home", nil, function()
     print("Teleport Home")
-    FormexUI.Alert("Teleport", "You can't teleport because it hasn't been implemented yet. You should die.", FormexUI.ButtonTypes.Danger, FormexUI.AlertTypes.RetryCancel)
+    FormexUI.Alert("Teleport", "You can't teleport because it hasn't been implemented yet. You should die.", FormexUI.ButtonType.Danger, FormexUI.AlertType.RetryCancel)
 end)
 
 createButton("Rename", "Rename", "74166756362476", function()
