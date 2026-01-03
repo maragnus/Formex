@@ -43,11 +43,8 @@ local remoteFunctions = {
     [Formex.Function.BuildWall] = function(player, wallData, action)
         return FormexBuild.BuildWall(player, wallData, action)
     end,
-    [Formex.Function.BuildFloor] = function(player, level, x, y, material, material2)
-        return FormexBuild.BuildFloor(player, level, x, y, material, material2)
-    end,
-    [Formex.Function.BuildCeiling] = function(player, level, x, y, material, material2)
-        return FormexBuild.BuildCeiling(player, level, x, y, material, material2)
+    [Formex.Function.BuildFloor] = function(player, floorData, action)
+        return FormexBuild.BuildFloor(player, floorData, action)
     end,
     [Formex.Function.BuildObject] = function(player, objectData, action)
         return FormexBuild.BuildObject(player, objectData, action)

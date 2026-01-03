@@ -7,7 +7,7 @@
 -- \/   \___/|_|  |_| |_| |_|\___/_/\_\
 -- Formex by NexArc Solutions <roblox@nexarc.dev>
 
-local DATA_VERSION: number = 1
+local DATA_VERSION: number = 2
 local INITIAL_BUFFER_SIZE: number = 1024
 local SNAP_WALLS_TO_45_DEGREES: boolean = false
 
@@ -46,8 +46,6 @@ export type PlotData = {
 }
 
 --[[ Old LevelData and FloorData format
-export type FloorType = "Square" | "SlicedCW" | "SlicedCCW"
-
 export type LevelData = {
 	Walls: {[number]: WallData}, -- [WallId: WallData]
 	Floors: {[number]: number | nil}, -- [Formex.XYToIndex(x, y)]: Formex.Materials[index] | nil
@@ -95,6 +93,7 @@ export type FloorData = {
 	CeilingMaterial: number,
 	FloorParts: {Part},
 	CeilingParts: {Part},
+	Model: Model?,
 }
 
 export type ObjectData = {
@@ -277,6 +276,34 @@ function Formex.UpdateTexture(part: BasePart, texture: Texture, materialId: numb
 	end
 end
 
+function Formex.EncodeFloorPoints(points: {Vector2int16}): string
+	local encoded = {}
+	for _, point in ipairs(points) do
+		table.insert(encoded, string.format("%d,%d", point.X, point.Y))
+	end
+	return table.concat(encoded, ";")
+end
+
+function Formex.DecodeFloorPoints(value: string?): {Vector2int16}
+	local points = {}
+	if not value or value == "" then
+		return points
+	end
+
+	for entry in string.gmatch(value, "([^;]+)") do
+		local xStr, yStr = string.match(entry, "([^,]+),([^,]+)")
+		if xStr and yStr then
+			local x = tonumber(xStr)
+			local y = tonumber(yStr)
+			if x and y then
+				table.insert(points, Vector2int16.new(x, y))
+			end
+		end
+	end
+
+	return points
+end
+
 
 -- Network function names
 Formex.Function = table.freeze({
@@ -291,7 +318,6 @@ Formex.Function = table.freeze({
 	UnlockSegment = "UnlockSegment",
 	BuildWall = "BuildWall",
 	BuildFloor = "BuildFloor",
-	BuildCeiling = "BuildCeiling",
 	BuildObject = "BuildObject",
 	CanUndo = "CanUndo",
 	CanRedo = "CanRedo",
@@ -320,12 +346,6 @@ Formex.PartType = table.freeze({
 	Object = "Object",
 	All = nil,
 }) :: {PartType: PartType}
-
-Formex.FloorType = table.freeze({
-	Square = "Square",
-	SlicedCW = "SlicedCW",
-	SlicedCCW = "SlicedCCW",
-}) :: {FloorType: FloorType}
 
 local EPSILON = 1e-4
 
@@ -629,133 +649,279 @@ function Formex.DivideWall(wall: WallData, distance: number): {WallData}
 	-- TODO returns two new walls split at `distance` from `wall.Start`
 end
 
+local function toVector2(point: Vector2 | Vector2int16): Vector2
+	if typeof(point) == "Vector2" then
+		return point
+	end
+	return Vector2.new(point.X, point.Y)
+end
+
+local function polygonArea(points: {Vector2}): number
+	local total = 0
+	for i = 1, #points do
+		local a = points[i]
+		local b = points[(i % #points) + 1]
+		total += (a.X * b.Y) - (b.X * a.Y)
+	end
+	return total / 2
+end
+
+local function isConvex(a: Vector2, b: Vector2, c: Vector2, isCCW: boolean): boolean
+	local cross = (b.X - a.X) * (c.Y - b.Y) - (b.Y - a.Y) * (c.X - b.X)
+	return isCCW and cross > EPSILON or not isCCW and cross < -EPSILON
+end
+
+local function isPointInTriangle(point: Vector2, a: Vector2, b: Vector2, c: Vector2): boolean
+	local v0 = c - a
+	local v1 = b - a
+	local v2 = point - a
+
+	local dot00 = v0:Dot(v0)
+	local dot01 = v0:Dot(v1)
+	local dot02 = v0:Dot(v2)
+	local dot11 = v1:Dot(v1)
+	local dot12 = v1:Dot(v2)
+
+	local denom = dot00 * dot11 - dot01 * dot01
+	if math.abs(denom) <= EPSILON then
+		return false
+	end
+
+	local invDenom = 1 / denom
+	local u = (dot11 * dot02 - dot01 * dot12) * invDenom
+	local v = (dot00 * dot12 - dot01 * dot02) * invDenom
+
+	return u >= -EPSILON and v >= -EPSILON and (u + v) <= 1 + EPSILON
+end
+
+local function triangulatePolygon(points: {Vector2}): {{Vector2}}
+	local triangles = {}
+	local count = #points
+	if count < 3 then
+		return triangles
+	end
+
+	local indices = {}
+	for i = 1, count do
+		indices[i] = i
+	end
+
+	local isCCW = polygonArea(points) > 0
+	local guard = 0
+	while #indices >= 3 and guard < 2048 do
+		local earFound = false
+		for i = 1, #indices do
+			local prevIndex = indices[((i - 2) % #indices) + 1]
+			local currIndex = indices[i]
+			local nextIndex = indices[(i % #indices) + 1]
+
+			local prev = points[prevIndex]
+			local curr = points[currIndex]
+			local next = points[nextIndex]
+
+			if isConvex(prev, curr, next, isCCW) then
+				local hasPointInside = false
+				for _, testIndex in ipairs(indices) do
+					if testIndex ~= prevIndex and testIndex ~= currIndex and testIndex ~= nextIndex then
+						if isPointInTriangle(points[testIndex], prev, curr, next) then
+							hasPointInside = true
+							break
+						end
+					end
+				end
+
+				if not hasPointInside then
+					table.insert(triangles, { prev, curr, next })
+					table.remove(indices, i)
+					earFound = true
+					break
+				end
+			end
+		end
+
+		if not earFound then
+			break
+		end
+		guard += 1
+	end
+
+	return triangles
+end
+
+local function getFloorThickness(levelIndex: number): number
+	if levelIndex == 1 then
+		return Formex.SegmentSize.Foundation
+	end
+	return Formex.SegmentSize.Interfloor
+end
+
+local function applyTextureOffset(plotPart: BasePart, part: BasePart, texture: Texture)
+	local localCFrame = plotPart.CFrame:ToObjectSpace(part.CFrame)
+	texture.OffsetStudsU = localCFrame.Position.X + (Formex.Dimensions.Width / 2)
+	texture.OffsetStudsV = localCFrame.Position.Z + (Formex.Dimensions.Depth / 2)
+end
+
+local function createWedgePart(plotPart: BasePart, parent: Instance, origin: Vector2, legA: Vector2, legB: Vector2, levelIndex: number): Part
+	local thickness = getFloorThickness(levelIndex)
+	local levelTop = Formex.LevelHeight * (levelIndex - 1)
+	local centerY = levelTop - (thickness / 2)
+
+	local lengthA = legA.Magnitude
+	local lengthB = legB.Magnitude
+	local axisA = legA.Magnitude > EPSILON and legA.Unit or Vector2.new(1, 0)
+	local axisB = legB.Magnitude > EPSILON and legB.Unit or Vector2.new(0, 1)
+
+	local center = Vector3.new(
+		origin.X + axisA.X * (lengthA / 2) + axisB.X * (lengthB / 2),
+		centerY,
+		origin.Y + axisA.Y * (lengthA / 2) + axisB.Y * (lengthB / 2)
+	)
+
+	local yAxis = Vector3.new(axisA.X, 0, axisA.Y)
+	local zAxis = Vector3.new(axisB.X, 0, axisB.Y)
+	local part = Instance.new("Part")
+	part.Shape = Enum.PartType.Wedge
+	part.Anchored = true
+	part.CollisionGroup = Formex.CollisionGroup.Structure
+	part.Size = Vector3.new(thickness, lengthA, lengthB)
+	part.CFrame = plotPart.CFrame * CFrame.fromMatrix(center, Vector3.yAxis, yAxis, zAxis)
+	part.Parent = parent
+	return part
+end
+
+local function createTriangleWedges(plotPart: BasePart, parent: Instance, a: Vector2, b: Vector2, c: Vector2, levelIndex: number): {Part}
+	local ab = b - a
+	local ac = c - a
+	local bc = c - b
+	if ab.Magnitude <= EPSILON or ac.Magnitude <= EPSILON or bc.Magnitude <= EPSILON then
+		return {}
+	end
+
+	local angleA = math.acos(math.clamp(ab:Dot(ac) / (ab.Magnitude * ac.Magnitude), -1, 1))
+	local angleB = math.acos(math.clamp((-ab):Dot(bc) / (ab.Magnitude * bc.Magnitude), -1, 1))
+	local angleC = math.pi - angleA - angleB
+
+	local rightVertex = a
+	local other1 = b
+	local other2 = c
+
+	if angleB <= angleA and angleB <= angleC then
+		rightVertex = b
+		other1 = a
+		other2 = c
+	elseif angleC <= angleA and angleC <= angleB then
+		rightVertex = c
+		other1 = a
+		other2 = b
+	end
+
+	local baseDir = other2 - other1
+	local baseLength = baseDir.Magnitude
+	if baseLength <= EPSILON then
+		return {}
+	end
+
+	local baseUnit = baseDir / baseLength
+	local projectionLength = math.clamp((rightVertex - other1):Dot(baseUnit), 0, baseLength)
+	local foot = other1 + baseUnit * projectionLength
+
+	local wedges = {}
+	local legA = rightVertex - foot
+	local legB = other1 - foot
+	if legA.Magnitude > EPSILON and legB.Magnitude > EPSILON then
+		table.insert(wedges, createWedgePart(plotPart, parent, foot, legA, legB, levelIndex))
+	end
+	local legC = other2 - foot
+	if legC.Magnitude > EPSILON and legA.Magnitude > EPSILON then
+		table.insert(wedges, createWedgePart(plotPart, parent, foot, legA, legC, levelIndex))
+	end
+
+	return wedges
+end
+
 function Formex.IsFloorValid(plot: PlotData, floor: FloorData)
-	if not floor or not floor.Tile then
+	if not floor or not floor.Points or #floor.Points < 3 then
 		return false
 	end
 
-	local tile = floor.Tile
-	if math.abs(tile.X - math.round(tile.X)) > EPSILON
-	or math.abs(tile.Y - math.round(tile.Y)) > EPSILON then
-		return false
+	local points = floor.Points
+	local polygon = {}
+	for _, point in ipairs(points) do
+		if not isPointLayoutGridSnapped(point) then
+			return false
+		end
+		if not isPointInUnlockedSegments(point, plot.SegmentsUnlocked) then
+			return false
+		end
+		table.insert(polygon, toVector2(point))
 	end
 
-	if tile.X < 0 or tile.Y < 0
-	or tile.X >= Formex.LayoutGrid.Columns
-	or tile.Y >= Formex.LayoutGrid.Rows then
-		return false
-	end
-
-	local halfGrid = Formex.LayoutGridSize / 2
-	local xOffset = (tile.X + 0.5) * Formex.LayoutGridSize - (Formex.Dimensions.Width / 2)
-	local yOffset = (tile.Y + 0.5) * Formex.LayoutGridSize - (Formex.Dimensions.Depth / 2)
-	local center = Vector2.new(xOffset, yOffset)
-	local corners = {
-		Vector2.new(center.X - halfGrid, center.Y - halfGrid),
-		Vector2.new(center.X + halfGrid, center.Y - halfGrid),
-		Vector2.new(center.X - halfGrid, center.Y + halfGrid),
-		Vector2.new(center.X + halfGrid, center.Y + halfGrid),
-	}
-
-	for _, corner in ipairs(corners) do
-		if not isPointInUnlockedSegments(corner, plot.SegmentsUnlocked) then
+	for i = 1, #polygon do
+		local startPoint = polygon[i]
+		local endPoint = polygon[(i % #polygon) + 1]
+		if not isLineWithinUnlockedSegments(startPoint, endPoint, plot.SegmentsUnlocked) then
 			return false
 		end
 	end
 
-	local levels = (plot :: any).Levels
+	local area = math.abs(polygonArea(polygon))
+	if area <= EPSILON then
+		return false
+	end
+
 	return true
 end
 
-function Formex.GetFloorPositionSize(floor: FloorData): (CFrame, Vector3)
-	local tileSize = Formex.LayoutGridSize
-	local xOffset = (floor.Tile.X + 0.5) * tileSize - (Formex.Dimensions.Width / 2)
-	local zOffset = (floor.Tile.Y + 0.5) * tileSize - (Formex.Dimensions.Depth / 2)
-	local thickness = floor.LevelIndex == 1 and Formex.SegmentSize.Foundation or Formex.SegmentSize.Interfloor
-	local levelTop = Formex.LevelHeight * (floor.LevelIndex - 1)
-	local centerY = levelTop - (thickness / 2)
-
-	local position = CFrame.new(xOffset, centerY, zOffset)
-	local size = Vector3.new(tileSize, thickness, tileSize)
-	return position, size
-
-end
-
-function Formex.UpdateFloor(plotPart: BasePart, floor: FloorData, parent: Instance?): Part?
-	if not floor.Tile then
+function Formex.CreateFloor(floor: FloorData, plotPartOverride: BasePart?, parentOverride: Instance?): Model?
+	if not floor or not floor.Points or #floor.Points < 3 then
 		return nil
 	end
 
-	local part = floor.Part
-	local altPart: Part?
-
-	if not part then
-		parent = parent or plotPart:FindFirstChild(tostring(floor.LevelIndex)):FindFirstChild("Floors")
-		part = Instance.new("Part", parent)
-		part.Name = tostring(floor.FloorId)
-		part.Anchored = true
-		part.CollisionGroup = Formex.CollisionGroup.Structure
+	local parent = parentOverride
+	local plotPart = plotPartOverride
+	if not plotPart and parent then
+		plotPart = getPlotPartFromInstance(parent)
+	end
+	if not plotPart then
+		return nil
 	end
 
-	if part.Shape ~= Enum.PartType.Block and floor.Type == Formex.FloorType.Square then
-		part.Shape = Enum.PartType.Block
-		part:FindFirstChildOfClass("Part"):Destroy()
-	elseif part.Shape ~= Enum.PartType.Wedge and floor.Type ~= Formex.FloorType.Square then
-		part.Shape = Enum.PartType.Wedge
-		altPart = part:FindFirstChildOfClass("Part")
-		if not altPart then
-			altPart = Instance.new("Part", part)
-			part.Anchored = true
-			part.CollisionGroup = Formex.CollisionGroup.Structure
-			part.Shape = Enum.PartType.Wedge
+	local model = Instance.new("Model")
+	model.Name = tostring(floor.FloorId)
+	model.Parent = parent
+	floor.Model = model
+
+	floor.FloorParts = {}
+	floor.CeilingParts = {}
+
+	model:SetAttribute("FloorMaterial", floor.FloorMaterial or 0)
+	model:SetAttribute("CeilingMaterial", floor.CeilingMaterial or 0)
+	model:SetAttribute("Points", Formex.EncodeFloorPoints(floor.Points))
+
+	local points = {}
+	for _, point in ipairs(floor.Points) do
+		table.insert(points, toVector2(point))
+	end
+
+	local triangles = triangulatePolygon(points)
+	local floorMaterial = floor.FloorMaterial or 0
+	local ceilingMaterial = floor.CeilingMaterial or 0
+
+	for _, triangle in ipairs(triangles) do
+		local wedges = createTriangleWedges(plotPart, model, triangle[1], triangle[2], triangle[3], floor.LevelIndex)
+		for _, part in ipairs(wedges) do
+			local floorTexture = ensureTexture(part, "Floor", Enum.NormalId.Left)
+			local ceilingTexture = ensureTexture(part, "Ceiling", Enum.NormalId.Right)
+			Formex.UpdateTexture(part, floorTexture, floorMaterial)
+			Formex.UpdateTexture(part, ceilingTexture, ceilingMaterial)
+			applyTextureOffset(plotPart, part, floorTexture)
+			applyTextureOffset(plotPart, part, ceilingTexture)
+			table.insert(floor.FloorParts, part)
+			table.insert(floor.CeilingParts, part)
 		end
 	end
 
-	-- Position and size (if partOverride or new is part)
-	if not floor.Part then
-		floor.Part = part
-
-		local position, size = Formex.GetFloorPositionSize(floor)
-		-- local levelIndex = floor.LevelIndex or 1
-		-- local thickness = levelIndex == 1 and Formex.SegmentSize.Foundation or Formex.SegmentSize.Interfloor
-		-- local tile = floor.Tile or Vector2.new(0, 0)
-		-- local tileSize = Formex.LayoutGridSize
-		-- local plotSize = part.Size
-		-- local xOffset = (tile.X + 0.5) * tileSize - (plotSize.X / 2)
-		-- local zOffset = (tile.Y + 0.5) * tileSize - (plotSize.Z / 2)
-		-- local levelTop = (plotSize.Y / 2) + (Formex.LevelHeight * (levelIndex - 1))
-		-- local centerY = levelTop - (thickness / 2)
-
-		part.CFrame = plotPart.CFrame * position
-		part.Size = size
-		part.Transparency = 0
-		if altPart then
-			altPart.Size = part.Size
-			altPart.CFrame = part.CFrame
-			altPart.Transparency = 0
-
-			-- TODO set orientations based on floor.Type
-			if floor.Type == Formex.FloorType.SlicedCW then
-				part.CFrame = part.CFrame * CFrame.Angles(0, math.rad(90), 0)
-				altPart.CFrame = altPart.CFrame * CFrame.Angles(0, math.rad(-90), 0)
-			elseif floor.Type == Formex.FloorType.SlicedCCW then
-				part.CFrame = part.CFrame * CFrame.Angles(0, math.rad(-90), 0)
-				altPart.CFrame = altPart.CFrame * CFrame.Angles(0, math.rad(90), 0)
-			end
-		end
-	end
-
-	local floorTexture = ensureTexture(floor.Part, "Floor", Enum.NormalId.Top)
-	local ceilingTexture = ensureTexture(floor.Part, "Ceiling", Enum.NormalId.Bottom)
-
-	Formex.UpdateTexture(floor.Part, floorTexture, floor.FloorMaterial or 0)
-	Formex.UpdateTexture(floor.Part, ceilingTexture, floor.CeilingMaterial or 0)
-
-	return part
-end
-
-function Formex.DivideFloor(floor: FloorData, point1: Vector2, point2: Vector2): {FloorData}
-	-- TODO returns two new floors split at line from point1 to point2
+	return model
 end
 
 function Formex.Segments.GetRowColumn(index: number): (number, number)
@@ -875,66 +1041,6 @@ function Formex.EnsureFolder(name: string, parent: Instance): Folder
 	return folder
 end
 
-local function getMaterialIdFromTexture(texture: Texture?): number?
-	if not texture or not texture.ColorMap then	return nil end
-	local assetId = tonumber(string.match(texture.ColorMap, "rbxassetid://(%d+)"))
-	if not assetId then return nil end
-
-	for index, materialInfo in Formex.Materials do
-		if assetId == materialInfo.AssetId then
-			return index
-		end
-	end
-
-	return nil
-end
-
-function Formex.GetFloorData(plotPart: BasePart, levelIndex: number, tile: Vector2int16, floorPart: Part?): FloorData
-	local index = Formex.XYToIndex(tile.X, tile.Y)
-	local data = {
-		FloorId = index,
-		LevelIndex = levelIndex,
-		Tile = tile,
-		Type = Formex.FloorType.Square,
-	} :: FloorData
-
-	if floorPart then
-		data.Part = floorPart
-	else
-		local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
-		if not levelPart then return data end
-
-		local floorsFolder = levelPart:FindFirstChild("Floors")
-		if not floorsFolder then return data end
-
-		local part = floorsFolder:FindFirstChild(tostring(index))
-		if not part then
-			part = nil -- TODO: support performance grouping of floors
-		end
-
-		if not part then return data end
-		data.Part = part
-	end
-
-	if data.Part.Shape == Enum.PartType.Wedge then
-		local splitPart = data.Part:FindFirstChild("Split")
-		if splitPart and splitPart:IsA("Part") then
-			if true then -- TODO: identify clockwise vs counter-clockwise based on orientation
-				data.Type = Formex.FloorType.SlicedCW
-			else
-				data.Type = Formex.FloorType.SlicedCCW
-			end
-			data.FloorMaterial2 = getMaterialIdFromTexture(splitPart:FindFirstChild("Floor"))
-			data.CeilingMaterial2 = getMaterialIdFromTexture(splitPart:FindFirstChild("Ceiling"))
-		end
-	end
-
-	data.FloorMaterial = getMaterialIdFromTexture(data.Part:FindFirstChild("Floor"))
-	data.CeilingMaterial = getMaterialIdFromTexture(data.Part:FindFirstChild("Ceiling"))
-
-	return data
-end
-
 function Formex.SerializeLevelData(levels: LevelArray): string
 	local writer = Buffer.new(INITIAL_BUFFER_SIZE)
 	writer:WriteU16(DATA_VERSION)
@@ -960,16 +1066,17 @@ function Formex.SerializeLevelData(levels: LevelArray): string
 			end
 			writer:WriteU16(0)
 
-			-- Floors and Ceilings
-			for index, materialId in levelData.Floors do
-				writer:WriteU16(index)
-				writer:WriteU8(materialId or 0)
-			end
-			writer:WriteU16(0)
-
-			for index, materialId in levelData.Ceilings do
-				writer:WriteU16(index)
-				writer:WriteU8(materialId or 0)
+			-- Floors
+			for floorId, floor in levelData.Floors do
+				local points = floor.Points or {}
+				writer:WriteU16(floorId)
+				writer:WriteU8(floor.FloorMaterial or 0)
+				writer:WriteU8(floor.CeilingMaterial or 0)
+				writer:WriteU8(#points)
+				for _, point in ipairs(points) do
+					writer:WriteI16(point.X)
+					writer:WriteI16(point.Y)
+				end
 			end
 			writer:WriteU16(0)
 
@@ -995,7 +1102,6 @@ function Formex.SerializeLevelData(levels: LevelArray): string
 			writer:WriteU8(0) -- levelIndex
 			writer:WriteU16(0) -- walls terminator
 			writer:WriteU16(0) -- floors terminator
-			writer:WriteU16(0) -- ceilings terminator
 			writer:WriteU16(0) -- objects terminator
 		end
 	end
@@ -1010,7 +1116,6 @@ local function deserializeLevelDataV1(reader): LevelArray
 		local levelData: LevelData = {
 			Walls = {},
 			Floors = {},
-			Ceilings = {},
 			Objects = {},
 		}
 
@@ -1037,18 +1142,143 @@ local function deserializeLevelDataV1(reader): LevelArray
 			levelData.Walls[wallId] = wall
 		end
 
-		-- Floors
+		local legacyFloors = {}
 		while true do
 			local index = reader:ReadU16()
 			if index == 0 then break end
-			levelData.Floors[index] = reader:ReadU8()
+			legacyFloors[index] = reader:ReadU8()
 		end
 
-		-- Ceilings
+		local legacyCeilings = {}
 		while true do
 			local index = reader:ReadU16()
 			if index == 0 then break end
-			levelData.Ceilings[index] = reader:ReadU8()
+			legacyCeilings[index] = reader:ReadU8()
+		end
+
+		for index, floorMaterial in legacyFloors do
+			local ceilingMaterial = legacyCeilings[index] or floorMaterial
+			local tile = Formex.IndexToXY(index)
+			local tileSize = Formex.LayoutGridSize
+			local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
+			local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
+			levelData.Floors[index] = {
+				FloorId = index,
+				LevelIndex = levelIndex,
+				Points = {
+					Vector2int16.new(x0, z0),
+					Vector2int16.new(x0 + tileSize, z0),
+					Vector2int16.new(x0 + tileSize, z0 + tileSize),
+					Vector2int16.new(x0, z0 + tileSize),
+				},
+				FloorMaterial = floorMaterial,
+				CeilingMaterial = ceilingMaterial,
+				FloorParts = {},
+				CeilingParts = {},
+			}
+		end
+		for index, ceilingMaterial in legacyCeilings do
+			if not legacyFloors[index] then
+				local tile = Formex.IndexToXY(index)
+				local tileSize = Formex.LayoutGridSize
+				local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
+				local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
+				levelData.Floors[index] = {
+					FloorId = index,
+					LevelIndex = levelIndex,
+					Points = {
+						Vector2int16.new(x0, z0),
+						Vector2int16.new(x0 + tileSize, z0),
+						Vector2int16.new(x0 + tileSize, z0 + tileSize),
+						Vector2int16.new(x0, z0 + tileSize),
+					},
+					FloorMaterial = ceilingMaterial,
+					CeilingMaterial = ceilingMaterial,
+					FloorParts = {},
+					CeilingParts = {},
+				}
+			end
+		end
+
+		-- Objects
+		while true do
+			local objectId = reader:ReadU16()
+			if objectId == 0 then break end
+			local obj = {
+				ObjectId = tostring(objectId),
+				Level = levelIndex,
+				Position = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
+				Rotation = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
+				WallId = reader:ReadU16(),
+				Design = {},
+				Properties = {},
+			}
+
+			while true do
+				local designIndex = reader:ReadU16()
+				if designIndex == 0 then break end
+				obj.Design[designIndex] = reader:ReadString()
+			end
+
+			levelData.Objects[objectId] = obj
+		end
+	end
+
+	return result
+end
+
+local function deserializeLevelDataV2(reader): LevelArray
+	local result = {} :: LevelArray
+
+	for i = 1, Formex.MaxPlotSize.Levels do
+		local levelData: LevelData = {
+			Walls = {},
+			Floors = {},
+			Objects = {},
+		}
+
+		local levelIndex = reader:ReadU8()
+		if levelIndex ~= 0 then
+			result[levelIndex] = levelData
+		end
+
+		-- Walls
+		while true do
+			local wallId = reader:ReadU16()
+			if wallId == 0 then break end
+
+			local wall: WallData = {
+				WallId = wallId,
+				Level = levelIndex,
+				Start = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
+				End = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
+				FrontMaterial = reader:ReadU8(),
+				BackMaterial = reader:ReadU8(),
+				StartMaterial = reader:ReadU8(),
+				EndMaterial = reader:ReadU8(),
+			}
+			levelData.Walls[wallId] = wall
+		end
+
+		while true do
+			local floorId = reader:ReadU16()
+			if floorId == 0 then break end
+			local floorMaterial = reader:ReadU8()
+			local ceilingMaterial = reader:ReadU8()
+			local pointCount = reader:ReadU8()
+			local points = {}
+			for _ = 1, pointCount do
+				table.insert(points, Vector2int16.new(reader:ReadI16(), reader:ReadI16()))
+			end
+			levelData.Floors[floorId] = {
+				FloorId = floorId,
+				LevelIndex = levelIndex,
+				Points = points,
+				FloorMaterial = floorMaterial,
+				CeilingMaterial = ceilingMaterial,
+				FloorParts = {},
+				CeilingParts = {},
+			}
 		end
 
 		-- Objects
@@ -1084,6 +1314,8 @@ function Formex.DeserializeLevelData(dataString: string): LevelArray
 
 	if version == 1 then
 		return deserializeLevelDataV1(reader)
+	elseif version == 2 then
+		return deserializeLevelDataV2(reader)
 	else
 		error("Unsupported data version: " .. tostring(version))
 	end

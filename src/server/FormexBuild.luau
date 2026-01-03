@@ -71,6 +71,33 @@ local function normalizeWallList(wallData: Formex.WallData | {Formex.WallData}):
 	return wallList, true
 end
 
+local function normalizeFloorList(floorData: Formex.FloorData | {Formex.FloorData}): ({Formex.FloorData}, boolean)
+	local floorDataAny = floorData :: any
+	if floorDataAny.FloorId ~= nil or floorDataAny.Points ~= nil then
+		return { floorData :: Formex.FloorData }, false
+	end
+
+	local floorList = floorData :: {Formex.FloorData}
+	if #floorList == 0 then
+		error("Invalid floor data")
+	end
+	return floorList, true
+end
+
+local function collectFloorLevels(floors: {Formex.FloorData}): {number}
+	local levels = {}
+	local seen = {}
+	for _, floor in ipairs(floors) do
+		local levelIndex = floor.LevelIndex or 1
+		if not seen[levelIndex] then
+			seen[levelIndex] = true
+			table.insert(levels, levelIndex)
+		end
+	end
+	table.sort(levels)
+	return levels
+end
+
 local function collectWallLevels(walls: {Formex.WallData}): {number}
 	local levels = {}
 	local seen = {}
@@ -96,8 +123,6 @@ local function cloneLevelForSnapshot(snapshot: Formex.LevelArray, levels: Formex
 		levelClone.Walls = table.clone(levelData.Walls)
 	elseif partType == Formex.PartType.Floor then
 		levelClone.Floors = table.clone(levelData.Floors)
-	elseif partType == Formex.PartType.Ceiling then
-		levelClone.Ceilings = table.clone(levelData.Ceilings)
 	elseif partType == Formex.PartType.Object then
 		levelClone.Objects = table.clone(levelData.Objects)
 	end
@@ -304,67 +329,177 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 	return returnWalls[1]
 end
 
-function FormexBuild.BuildFloor(player: Player, level: number, x: number, y: number, material: number, material2: number?)
-    local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
-    if not plotData then error("No current plot") end
-    if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
+function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction)
+	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
+	if not plotData then error("No current plot") end
+	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
 		error("Access denied")
 	end
-
-    -- TODO: is tile within an owned segment and owned level?
-
-	plotData.Levels = plotData.Levels or {}
-    local levelIndex = level or 1
-    local index = Formex.XYToIndex(x, y)
-    material = material or 0
-	local newMaterial = material > 0 and material or nil
-
-	local levelData = plotData.Levels[levelIndex]
-	local currentMaterial = levelData and levelData.Floors[index] or nil
-	if currentMaterial == newMaterial then
-		return
-	end
-
-	local snapshot = createSnapshot(plotData.Levels, levelIndex, Formex.PartType.Floor)
-	levelData = levelData or FormexSystem.EnsureLevelData(plotData, levelIndex)
-
-    -- TODO: handle FloorType.CW and FloorType.CCW
-    levelData.Floors[index] = newMaterial
-
-    FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Floor)
-
-	pushUndo(plotData.PlotId, snapshot)
-    FormexSystem.QueueSave(plotData.PlotId)
-end
-
-function FormexBuild.BuildCeiling(player: Player, level: number, x: number, y: number, material: number, material2: number?)
-    local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
-    if not plotData then error("No current plot") end
-    if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
-        error("Access denied")
-    end
+	if not floorData then error("Invalid floor data") end
 
 	plotData.Levels = plotData.Levels or {}
-    local levelIndex = level or 1
-    local index = Formex.XYToIndex(x, y)
-	material = material or 0
-	local newMaterial = material > 0 and material or nil
+	local floorList, isBatch = normalizeFloorList(floorData)
+	local levelsTouched = collectFloorLevels(floorList)
+	local snapshot = createSnapshotForLevels(plotData.Levels, levelsTouched, Formex.PartType.Floor)
 
-	local levelData = plotData.Levels[levelIndex]
-	local currentMaterial = levelData and levelData.Ceilings[index] or nil
-	if currentMaterial == newMaterial then
-		return
+	local updatedFloors = {} :: {Formex.FloorData}
+	local returnFloors = {} :: {Formex.FloorData}
+	local removedModels = {} :: {Model}
+	local didChange = false
+
+	if action == Formex.BuildAction.Add then
+		for _, entry in ipairs(floorList) do
+			if not entry.Points or #entry.Points < 3 then
+				error("Invalid floor data")
+			end
+
+			local levelIndex = entry.LevelIndex or 1
+			local levelData = FormexSystem.EnsureLevelData(plotData, levelIndex)
+			local newId = getNextId(levelData.Floors)
+
+			local floorMaterial = entry.FloorMaterial or Formex.DefaultFloorMaterial
+			local ceilingMaterial = entry.CeilingMaterial or floorMaterial
+
+			local newFloor = {
+				FloorId = newId,
+				LevelIndex = levelIndex,
+				Points = entry.Points,
+				FloorMaterial = floorMaterial,
+				CeilingMaterial = ceilingMaterial,
+				FloorParts = {},
+				CeilingParts = {},
+				Model = nil,
+			}
+
+			levelData.Floors[newId] = newFloor
+			table.insert(updatedFloors, newFloor)
+			table.insert(returnFloors, {
+				FloorId = newId,
+				LevelIndex = levelIndex,
+				Points = entry.Points,
+				FloorMaterial = floorMaterial,
+				CeilingMaterial = ceilingMaterial,
+				FloorParts = {},
+				CeilingParts = {},
+				Model = nil,
+			})
+		end
+
+		for _, floor in ipairs(updatedFloors) do
+			if not Formex.IsFloorValid(plotData, floor) then
+				plotData.Levels = snapshot
+				error("Invalid floor placement")
+			end
+		end
+		didChange = #updatedFloors > 0
+	elseif action == Formex.BuildAction.Edit then
+		for _, entry in ipairs(floorList) do
+			local levelIndex = entry.LevelIndex or 1
+			local levelData = plotData.Levels[levelIndex]
+			if not levelData then
+				plotData.Levels = snapshot
+				error("Floor not found")
+			end
+
+			local existing = levelData.Floors[entry.FloorId]
+			if not existing then
+				plotData.Levels = snapshot
+				error("Floor not found")
+			end
+
+			local updatedPoints = entry.Points or existing.Points
+			if not updatedPoints or #updatedPoints < 3 then
+				if existing.Model then
+					table.insert(removedModels, existing.Model)
+				end
+				levelData.Floors[entry.FloorId] = nil
+				didChange = true
+			else
+				local floorMaterial = entry.FloorMaterial or existing.FloorMaterial or Formex.DefaultFloorMaterial
+				local ceilingMaterial = entry.CeilingMaterial or existing.CeilingMaterial or floorMaterial
+
+				local updated = {
+					FloorId = existing.FloorId,
+					LevelIndex = levelIndex,
+					Points = updatedPoints,
+					FloorMaterial = floorMaterial,
+					CeilingMaterial = ceilingMaterial,
+					FloorParts = existing.FloorParts or {},
+					CeilingParts = existing.CeilingParts or {},
+					Model = existing.Model,
+				}
+
+				levelData.Floors[existing.FloorId] = updated
+				table.insert(updatedFloors, updated)
+				table.insert(returnFloors, {
+					FloorId = updated.FloorId,
+					LevelIndex = updated.LevelIndex,
+					Points = updated.Points,
+					FloorMaterial = updated.FloorMaterial,
+					CeilingMaterial = updated.CeilingMaterial,
+					FloorParts = {},
+					CeilingParts = {},
+					Model = nil,
+				})
+			end
+		end
+
+		didChange = didChange or #updatedFloors > 0
+		for _, floor in ipairs(updatedFloors) do
+			if not Formex.IsFloorValid(plotData, floor) then
+				plotData.Levels = snapshot
+				error("Invalid floor placement")
+			end
+		end
+	elseif action == Formex.BuildAction.Delete then
+		for _, entry in ipairs(floorList) do
+			local levelIndex = entry.LevelIndex or 1
+			local levelData = plotData.Levels[levelIndex]
+			if levelData then
+				local existing = levelData.Floors[entry.FloorId]
+				if existing then
+					if existing.Model then
+						existing.Model:Destroy()
+					end
+					levelData.Floors[entry.FloorId] = nil
+					didChange = true
+				end
+			end
+		end
+	else
+		error("Invalid floor action")
 	end
 
-	local snapshot = createSnapshot(plotData.Levels, levelIndex, Formex.PartType.Ceiling)
-	levelData = levelData or FormexSystem.EnsureLevelData(plotData, levelIndex)
+	if not didChange then
+		return nil
+	end
 
-    levelData.Ceilings[index] = newMaterial
+	if action ~= Formex.BuildAction.Delete then
+		for _, model in ipairs(removedModels) do
+			if model and model.Parent then
+				model:Destroy()
+			end
+		end
+	end
 
-    FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Ceiling)
+	local plotPart = FormexSystem.Plots[plotData.PlotId]
+	if plotPart then
+		for _, levelIndex in ipairs(levelsTouched) do
+			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Floor)
+		end
+	end
 
 	pushUndo(plotData.PlotId, snapshot)
-    FormexSystem.QueueSave(plotData.PlotId)
+	FormexSystem.QueueSave(plotData.PlotId)
+
+	if action == Formex.BuildAction.Delete then
+		return nil
+	end
+
+	if isBatch then
+		return returnFloors
+	end
+	return returnFloors[1]
 end
 
 function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, action: Formex.BuildAction)
