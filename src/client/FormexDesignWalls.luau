@@ -1,5 +1,6 @@
 --!strict
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
+local PlotClient = require(script.Parent:WaitForChild("PlotClient"))
 
 local Walls = {}
 
@@ -967,7 +968,7 @@ function Walls.StartWall()
 		cancelAction()
 	end
 
-	local plotInfo = FormexClient.CurrentPlot
+	local plotInfo = PlotClient.CurrentPlot
 	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
 		return
 	end
@@ -983,7 +984,7 @@ end
 
 function Walls.CancelAction()
 	if getActionType() == Enums.ActionType.Move then
-		local plotInfo = FormexClient.CurrentPlot
+		local plotInfo = PlotClient.CurrentPlot
 		if plotInfo and plotInfo.IsValid and plotInfo.PlotPart then
 			for _, wall in pairs(moveWallOriginals) do
 				applyWallTransform(plotInfo.PlotPart, wall)

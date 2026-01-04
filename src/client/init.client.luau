@@ -1,24 +1,25 @@
 local Players = game:GetService("Players")
-local FormexClient = require(script:WaitForChild("FormexClient"))
+require(script:WaitForChild("FormexClient"))
+local PlotClient = require(script:WaitForChild("PlotClient"))
 
 local localPlayer = Players.LocalPlayer
 
 -- Listen for server-driven attribute changes
-FormexClient.SetMyPlotId(localPlayer:GetAttribute("MyPlotId") or 0)
+PlotClient.SetMyPlotId(localPlayer:GetAttribute("MyPlotId") or 0)
 localPlayer:GetAttributeChangedSignal("MyPlotId"):Connect(function()
-	FormexClient.SetMyPlotId(localPlayer:GetAttribute("MyPlotId") or 0)
+	PlotClient.SetMyPlotId(localPlayer:GetAttribute("MyPlotId") or 0)
 end)
 
-FormexClient.SetCurrentPlotId(localPlayer:GetAttribute("CurrentPlotId") or 0)
+PlotClient.SetCurrentPlotId(localPlayer:GetAttribute("CurrentPlotId") or 0)
 localPlayer:GetAttributeChangedSignal("CurrentPlotId"):Connect(function()
-	FormexClient.SetCurrentPlotId(localPlayer:GetAttribute("CurrentPlotId") or 0)
+	PlotClient.SetCurrentPlotId(localPlayer:GetAttribute("CurrentPlotId") or 0)
 end)
 
 -- Register all plots
 local plotCollection = workspace:WaitForChild("Formex"):WaitForChild("Plots")
 for _, plotPart in ipairs(plotCollection:GetChildren()) do
-    FormexClient.RegisterPlot(plotPart)
+    PlotClient.RegisterPlot(plotPart)
 end
 plotCollection.ChildAdded:Connect(function(child)
-    FormexClient.RegisterPlot(child)
+    PlotClient.RegisterPlot(child)
 end)

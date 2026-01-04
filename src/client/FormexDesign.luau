@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
+local PlotClient = require(script.Parent:WaitForChild("PlotClient"))
 local FormexCamera = require(script.Parent:WaitForChild("FormexCamera"))
 local FormexDesignContext = require(script.Parent:WaitForChild("FormexDesignContext"))
 local Formex = FormexClient.Formex
@@ -86,7 +87,7 @@ local playViewSettings: ViewSettings = {
 } :: ViewSettings
 
 type InputInfo = {
-	PlotInfo: FormexClient.PlotInfo,
+	PlotInfo: PlotClient.PlotInfo,
 	Ray: Ray?,
 	HitPosition: Vector3?,
 	SnapPoint: Vector2int16?,
@@ -142,7 +143,7 @@ function FormexDesign.SetAlt(held: boolean)
 end
 
 function FormexDesign.GetDesignMode(): DesignMode
-	return designMode
+	return PlotClient.CurrentPlot.DesignMode or FormexDesign.DesignMode.Play
 end
 
 function FormexDesign.GetActionType(): ActionType
@@ -281,7 +282,7 @@ local function clearOverlays()
 		end
 	end
 
-	local plotInfo = FormexClient.CurrentPlot
+	local plotInfo = PlotClient.CurrentPlot
 	Formex.HideGhost(plotInfo and plotInfo.PlotPart or nil)
 end
 
@@ -314,7 +315,7 @@ local function createExpandButton(parent: BasePart, segmentIndex: number)
 	button.ImageColor3 = Color3.fromRGB(84, 140, 255)
 end
 
-local function createSegmentOverlay(bounds: Formex.SegmentBounds, plotInfo: FormexClient.PlotInfo, unlocked: boolean)
+local function createSegmentOverlay(bounds: Formex.SegmentBounds, plotInfo: PlotClient.PlotInfo, unlocked: boolean)
 	local part = Instance.new("Part", overlayFolder)
 	part.Name = "Segment_" .. tostring(bounds.Index)
 	part.Anchored = true
@@ -345,7 +346,7 @@ local function createSegmentOverlay(bounds: Formex.SegmentBounds, plotInfo: Form
 	end
 end
 
-local function renderExpandOverlay(plotInfo: FormexClient.PlotInfo)
+local function renderExpandOverlay(plotInfo: PlotClient.PlotInfo)
 	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
 		return
 	end
@@ -368,7 +369,7 @@ local function applyGridTexture(part: Part, side: Enum.NormalId)
 	texture.Color3 = Color3.fromRGB(200, 200, 200)
 end
 
-local function createGridOverlay(levelIndex: number, bounds: Formex.SegmentBounds, plotInfo: FormexClient.PlotInfo)
+local function createGridOverlay(levelIndex: number, bounds: Formex.SegmentBounds, plotInfo: PlotClient.PlotInfo)
 	local function createGridOverlaySide(side: Enum.NormalId, yOffset: number)
 		local part = Instance.new("Part", overlayFolder)
 		part.Name = "Grid_" .. tostring(bounds.Index)
@@ -395,7 +396,7 @@ local function createGridOverlay(levelIndex: number, bounds: Formex.SegmentBound
 	end
 end
 
-local function renderGridOverlays(plotInfo: FormexClient.PlotInfo)
+local function renderGridOverlays(plotInfo: PlotClient.PlotInfo)
 	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
 		return
 	end
@@ -408,7 +409,7 @@ local function renderGridOverlays(plotInfo: FormexClient.PlotInfo)
 	end
 end
 
-local function getPlotCameraBounds(plotInfo: FormexClient.PlotInfo, useFullPlot: boolean?): (Vector3?, Vector3?)
+local function getPlotCameraBounds(plotInfo: PlotClient.PlotInfo, useFullPlot: boolean?): (Vector3?, Vector3?)
 	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
 		return nil, nil
 	end
@@ -503,7 +504,7 @@ local function refresh()
 	clearOverlays()
 	FormexDesign.ClearSelection()
 
-	local plotInfo = FormexClient.CurrentPlot
+	local plotInfo = PlotClient.CurrentPlot
 	if not plotInfo or not plotInfo.IsValid then return	end
 
 	local plotPart = plotInfo.PlotPart
@@ -572,7 +573,7 @@ local function refresh()
 end
 
 local function getLevel(): number
-	local plotInfo = FormexClient.CurrentPlot
+	local plotInfo = PlotClient.CurrentPlot
 	if not plotInfo or not plotInfo.IsValid then return	1 end
 
 	local head: Instance =
@@ -626,6 +627,10 @@ function FormexDesign.ClearSelection()
 	selectionType = FormexDesign.SelectionType.None
 	selectionData = nil
 	selectionPart = nil
+	local plot = PlotClient.CurrentPlot
+	if plot and plot.IsValid then
+		plot:DeselectAll()
+	end
 	if Walls then
 		Walls.ClearSelection()
 	end
@@ -689,7 +694,7 @@ local function snapWallEndPoint(startPoint: Vector2 | Vector2int16, rawEndPoint:
 	return Vector2int16.new(startPoint.X + snappedDx, startPoint.Y + snappedDz)
 end
 
-local function isPointInOwnedSegments(plotInfo: FormexClient.PlotInfo, point: Vector2): boolean
+local function isPointInOwnedSegments(plotInfo: PlotClient.PlotInfo, point: Vector2): boolean
 	local mask = plotInfo.SegmentsUnlocked
 	if not mask or mask == 0 then
 		return false
@@ -756,7 +761,7 @@ local function getInputInfo(forceGridCollision: boolean?): InputInfo | nil
 		return nil
 	end
 
-	local plotInfo = FormexClient.CurrentPlot
+	local plotInfo = PlotClient.CurrentPlot
 	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
 		return nil
 	end
@@ -812,7 +817,7 @@ function Formex.HideGhost(plotPart: BasePart?)
 end
 
 local function clearGhost()
-	local plotInfo = FormexClient.CurrentPlot
+	local plotInfo = PlotClient.CurrentPlot
 	Formex.HideGhost(plotInfo and plotInfo.PlotPart or nil)
 end
 
@@ -1019,7 +1024,7 @@ function FormexDesign.Select(part: Instance)
 		currentLevel = level
 		notifyDesignModeChange()
 		updateHighlightTarget()
-		local plotInfo = FormexClient.CurrentPlot
+		local plotInfo = PlotClient.CurrentPlot
 		if plotInfo and plotInfo.IsValid then
 			if Walls then
 				Walls.UpdateHandles(plotInfo)
@@ -1062,7 +1067,7 @@ function FormexDesign.CancelAction()
 
 	clearGhost()
 	actionType = FormexDesign.ActionType.Select
-	local plotInfo = FormexClient.CurrentPlot
+	local plotInfo = PlotClient.CurrentPlot
 	if plotInfo and plotInfo.IsValid then
 		if Walls then
 			Walls.UpdateHandles(plotInfo)
@@ -1162,7 +1167,11 @@ function FormexDesign.SetDesignMode(mode: DesignMode?)
 		designSessionPendingFocus = false
 	end
 
-	designMode = mode
+	local plot = PlotClient.CurrentPlot
+	if plot and plot.IsValid then
+		plot:SetDesignMode(mode, currentLevel)
+	end
+	designMode = PlotClient.CurrentPlot.DesignMode or mode
 	viewSettings = designModeViewSettings[mode]
 	actionType = FormexDesign.ActionType.Select
 	FormexDesign.ClearSelection()
@@ -1260,6 +1269,8 @@ Objects.Init()
 FormexClient.ClientEvents:Connect(function(eventName)
 	if eventName == "CurrentPlotChanged" then
 		FormexDesign.CancelAction()
+		designMode = PlotClient.CurrentPlot.DesignMode or FormexDesign.DesignMode.Play
+		viewSettings = designModeViewSettings[designMode]
 		refresh()
 	end
 end)
@@ -1320,7 +1331,7 @@ RunService.RenderStepped:Connect(function()
 		return
 	end
 
-	local plotInfo = FormexClient.CurrentPlot
+	local plotInfo = PlotClient.CurrentPlot
 	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
 		return
 	end

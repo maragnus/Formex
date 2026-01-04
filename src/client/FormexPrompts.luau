@@ -2,6 +2,7 @@
 
 local Players = game:GetService("Players")
 local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
+local PlotClient = require(script.Parent:WaitForChild("PlotClient"))
 local Formex = FormexClient.Formex
 local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
 
@@ -167,17 +168,16 @@ function FormexPrompts.PlotRename()
         FormexUI.CreateTextInput({
             Parent = dialog.ContentFrame,
             Label = "Plot name",
-            Text = FormexClient.CurrentPlot.Name
+            Text = PlotClient.CurrentPlot.Name
          }, function(value) dialog.Result = value end)
     end)
     if newName then
-        FormexClient.RenamePlot(newName)
+        PlotClient.CurrentPlot:SetName(newName)
     end
 end
 
 function FormexPrompts.PlotPermissions()
-     if not FormexClient.CurrentPlot then return end
-    local currentPlot = FormexClient.CurrentPlot
+    if not PlotClient.CurrentPlot.IsValid then return end
 
     local roleOptions = {
         { Name = "Manager", Type = "Primary" },

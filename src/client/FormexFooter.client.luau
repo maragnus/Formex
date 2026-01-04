@@ -2,6 +2,7 @@ if true then return end -- disable file
 
 local Players = game:GetService("Players")
 local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
+local PlotClient = require(script.Parent:WaitForChild("PlotClient"))
 local Formex = FormexClient.Formex
 local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
 local FormexPrompts = require(script.Parent:WaitForChild("FormexPrompts"))
@@ -192,13 +193,13 @@ end
 FormexClient.ClientEvents:Connect(function(eventName)
     if eventName ~= "MyPlotChanged" and eventName ~= "CurrentPlotChanged" and eventName ~= "DesignModeChanged" then return end
 
-    uiSettings.HasHome = FormexClient.MyPlotId ~= 0
-    uiSettings.IsHome = uiSettings.HasHome and FormexClient.CurrentPlotId == FormexClient.MyPlotId
+    uiSettings.HasHome = PlotClient.MyPlotId ~= 0
+    uiSettings.IsHome = uiSettings.HasHome and PlotClient.CurrentPlotId == PlotClient.MyPlotId
 
-    local myPlot = FormexClient.MyPlot
+    local myPlot = PlotClient.MyPlot
     uiSettings.HomeName = myPlot.Name
 
-    local plot = FormexClient.CurrentPlot
+    local plot = PlotClient.CurrentPlot
     uiSettings.IsLoaded = plot.SaveId and plot.SaveId ~= 0
     uiSettings.IsNew = uiSettings.IsLoaded and Formex.Segments.CountUnlocked(plot.SegmentsUnlocked) == 0
     uiSettings.PlotName = plot.Name

@@ -1,5 +1,6 @@
 --!strict
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
+local PlotClient = require(script.Parent:WaitForChild("PlotClient"))
 
 local Floors = {}
 
@@ -90,7 +91,7 @@ local function getFloorModelFromSelection(): Model?
 		return nil
 	end
 
-	local plotInfo = FormexClient.CurrentPlot
+	local plotInfo = PlotClient.CurrentPlot
 	if not plotInfo or not plotInfo.PlotPart then
 		return nil
 	end
@@ -347,7 +348,7 @@ local function createFloorFromTile(plotInfo: any, tile: Vector2int16)
 end
 
 local function onFloorHandleClicked(info: any)
-	local plotInfo = FormexClient.CurrentPlot
+	local plotInfo = PlotClient.CurrentPlot
 	if not plotInfo or not plotInfo.PlotPart then
 		return
 	end

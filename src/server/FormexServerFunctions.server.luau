@@ -8,6 +8,7 @@ local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
 local Formex = require(FormexFolder:WaitForChild("Formex"))
 local FormexPlot = require(script.Parent:WaitForChild("FormexPlot"))
 local FormexBuild = require(script.Parent:WaitForChild("FormexBuild"))
+local PlotServer = require(script.Parent:WaitForChild("PlotServer"))
 
 local FormexFunctions: RemoteFunction = Instance.new("RemoteFunction", FormexFolder)
 FormexFunctions.Name = "FormexFunctions"
@@ -40,6 +41,15 @@ local remoteFunctions = {
     [Formex.Function.UnlockSegment] = function(player, segmentIndex)
         return FormexPlot.UnlockSegment(player, segmentIndex)
     end,
+    ["SetDesignMode"] = function(player, mode, levelIndex)
+        return FormexPlot.SetDesignMode(player, mode, levelIndex)
+    end,
+    ["SelectPart"] = function(player, partId)
+        return FormexPlot.SelectPart(player, partId)
+    end,
+    ["DeselectAll"] = function(player)
+        return FormexPlot.DeselectAll(player)
+    end,
     [Formex.Function.BuildWall] = function(player, wallData, action)
         return FormexBuild.BuildWall(player, wallData, action)
     end,
@@ -63,8 +73,13 @@ local remoteFunctions = {
     end,
 }
 
-FormexFunctions.OnServerInvoke = function(player, functionName, ...)
-    warn(player.Name .. " called " .. functionName)
+FormexFunctions.OnServerInvoke = function(player, plotId, functionName, ...)
+    warn(player.Name .. " called " .. tostring(functionName))
+    local resolvedPlotId = plotId or player:GetAttribute("CurrentPlotId") or 0
+    local plot = PlotServer.GetPlot(resolvedPlotId)
+    if not plot or not plot.IsValid then
+        return false, "Invalid plot"
+    end
     local func = remoteFunctions[functionName]
     if func and type(func) == "function" then
         if DEBUG then
