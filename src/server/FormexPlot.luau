@@ -185,7 +185,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
         if currentPlotId == 0 then
             -- Identify nearest plot
             for _, plotPart in pairs(FormexSystem.Plots) do
-                local near = Formex.IsNearPlot(plotPart.Position, playerPosition, proximityBorder)
+                local near = Formex.Plot.IsPointNear(plotPart.Position, playerPosition, proximityBorder)
                 if not near then continue end
 
                 FormexSystem.SetPlayerCurrentPlot(player, plotPart:GetAttribute("PlotId") or 0)
@@ -194,7 +194,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
         else
             -- Confirm still near current plot
             local plotPart = FormexSystem.Plots[currentPlotId]
-            local near = Formex.IsNearPlot(plotPart.Position, playerPosition, proximityBorder * 1.1)
+            local near = Formex.Plot.IsPointNear(plotPart.Position, playerPosition, proximityBorder * 1.1)
             if not near then
                 FormexSystem.SetPlayerCurrentPlot(player, 0)
             end

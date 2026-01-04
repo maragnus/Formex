@@ -387,7 +387,7 @@ local function renderFloors(data: RenderState)
         end
 
         floorData.LevelIndex = data.LevelIndex
-        local model = Formex.CreateFloor(floorData, data.PlotPart, parent)
+        local model = Formex.Floors.Create(floorData, data.PlotPart, parent)
         if model then
             model.Parent = parent
             floorData.Model = model
@@ -408,12 +408,12 @@ local function renderWalls(data: RenderState)
         local part = wallData.Part
         if not part or not part.Parent then
             wallData.Part = nil
-            local newPart = Formex.CreateWall(wallData, data.PlotPart)
+            local newPart = Formex.Walls.Create(wallData, data.PlotPart)
             if newPart then
                 newPart.Parent = parent
             end
         else
-            Formex.EditWall(wallData)
+            Formex.Walls.Edit(wallData, data.PlotPart)
         end
     end
 end
@@ -451,9 +451,9 @@ local function renderLevel(data: RenderState, levelIndex: number, filterPartType
     end
 
     data.LevelPart = levelPart :: BasePart
-    data.FloorFolder = Formex.EnsureFolder("Floors", levelPart)
-    data.WallFolder = Formex.EnsureFolder("Walls", levelPart)
-    data.ObjectFolder = Formex.EnsureFolder("Objects", levelPart)
+    data.FloorFolder = Formex.Util.EnsureFolder("Floors", levelPart)
+    data.WallFolder = Formex.Util.EnsureFolder("Walls", levelPart)
+    data.ObjectFolder = Formex.Util.EnsureFolder("Objects", levelPart)
 
     if filterPartType == "Wall" then
         renderWalls(data)

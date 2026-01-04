@@ -10,13 +10,13 @@ local Buffer = require(script.Parent.Buffer)
 
 local FormexSerialization = {}
 
-function FormexSerialization.SerializeLevelData(levels: LevelArray): string
+function FormexSerialization.SerializeLevelData(levels: Formex.LevelArray): string
 	local writer = Buffer.new(INITIAL_BUFFER_SIZE)
 	writer:WriteU16(DATA_VERSION)
 
 	-- Serialize levels
 	for levelIndex = 1, MAX_LEVELS do
-		local levelData = levels[levelIndex] :: LevelData
+		local levelData = levels[levelIndex] :: Formex.LevelData
 
 		if levelData then
 			writer:WriteU8(levelIndex)
@@ -78,11 +78,11 @@ function FormexSerialization.SerializeLevelData(levels: LevelArray): string
 	return writer:ToString()
 end
 
-local function deserializeLevelDataV1(reader): LevelArray
-	local result = {} :: LevelArray
+local function deserializeLevelDataV1(reader): Formex.LevelArray
+	local result = {} :: Formex.LevelArray
 
 	for i = 1, Formex.MaxPlotSize.Levels do
-		local levelData: LevelData = {
+		local levelData: Formex.LevelData = {
 			Walls = {},
 			Floors = {},
 			Objects = {},
@@ -98,7 +98,7 @@ local function deserializeLevelDataV1(reader): LevelArray
 			local wallId = reader:ReadU16()
 			if wallId == 0 then break end
 
-			local wall: WallData = {
+			local wall: Formex.WallData = {
 				WallId = wallId,
 				Level = levelIndex,
 				Start = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
@@ -196,11 +196,11 @@ local function deserializeLevelDataV1(reader): LevelArray
 	return result
 end
 
-local function deserializeLevelDataV2(reader): LevelArray
-	local result = {} :: LevelArray
+local function deserializeLevelDataV2(reader): Formex.LevelArray
+	local result = {} :: Formex.LevelArray
 
 	for i = 1, Formex.MaxPlotSize.Levels do
-		local levelData: LevelData = {
+		local levelData: Formex.LevelData = {
 			Walls = {},
 			Floors = {},
 			Objects = {},
@@ -216,7 +216,7 @@ local function deserializeLevelDataV2(reader): LevelArray
 			local wallId = reader:ReadU16()
 			if wallId == 0 then break end
 
-			local wall: WallData = {
+			local wall: Formex.WallData = {
 				WallId = wallId,
 				Level = levelIndex,
 				Start = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
@@ -277,7 +277,7 @@ local function deserializeLevelDataV2(reader): LevelArray
 	return result
 end
 
-function FormexSerialization.DeserializeLevelData(dataString: string): LevelArray
+function FormexSerialization.DeserializeLevelData(dataString: string): Formex.LevelArray
 	local reader = Buffer.read(dataString)
 	local version = reader:ReadU16()
 

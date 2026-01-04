@@ -383,7 +383,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 		end
 
 		for _, floor in ipairs(updatedFloors) do
-			if not Formex.IsFloorValid(plotData, floor) then
+			if not Formex.Floors.IsValid(plotData, floor) then
 				plotData.Levels = snapshot
 				error("Invalid floor placement")
 			end
@@ -443,7 +443,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 
 		didChange = didChange or #updatedFloors > 0
 		for _, floor in ipairs(updatedFloors) do
-			if not Formex.IsFloorValid(plotData, floor) then
+			if not Formex.Floors.IsValid(plotData, floor) then
 				plotData.Levels = snapshot
 				error("Invalid floor placement")
 			end

@@ -3,7 +3,7 @@ local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
 local Formex = FormexClient.Formex
 local Workspace = game:GetService("Workspace")
 local formexWorkspace = Workspace:WaitForChild("Formex")
-local overlayFolder = Formex.EnsureFolder("FormexDesignOverlays", formexWorkspace)
+local overlayFolder = Formex.Util.EnsureFolder("FormexDesignOverlays", formexWorkspace)
 
 local HANDLE_SIZE = 3
 local HANDLE_ICON_SIZE = 48
