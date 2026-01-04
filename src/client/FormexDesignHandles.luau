@@ -45,7 +45,13 @@ local function checkHit(ray: Ray): HandleInfo?
     return handles[result.Instance.Name]
 end
 
-function Handles.CreateHandle(name: string, color: Color3, iconAsset: string, onClick: (any) -> nil, argument: any): BasePart
+function Handles.CreateHandle(name: string, color: Color3, iconAsset: number | string, onClick: (any) -> nil, argument: any): BasePart
+    if type(iconAsset) == "number" then
+        iconAsset = Content.fromAssetId(iconAsset)
+    else
+        iconAsset = Content.fromUri(iconAsset)
+    end
+
     local part = handles[name] and handles[name].Part
     local icon: ImageLabel
     
@@ -77,7 +83,7 @@ function Handles.CreateHandle(name: string, color: Color3, iconAsset: string, on
         icon.Position = UDim2.fromScale(0.5, 0.5)
         icon.Size = UDim2.fromScale(0.75, 0.75)
         icon.BackgroundTransparency = 1
-        icon.Image = iconAsset
+        icon.ImageContent = iconAsset
         icon.ZIndex = 2
         icon.ImageColor3 = color
 

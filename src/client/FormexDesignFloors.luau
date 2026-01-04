@@ -31,7 +31,7 @@ local setActionType: (string) -> ()
 local getDesignMode: () -> string
 local getCurrentLevel: () -> number
 local getSelectionType: () -> string
-local getSelectionPart: () -> BasePart?
+local getSelectionPart: () -> Instance?
 local getFloorMaterialId: () -> number
 local select: (Instance) -> boolean
 local clearSelection: () -> ()
@@ -44,6 +44,9 @@ local moveSharedPoints: {SharedFloorPoint} = {}
 local moveFloorId: number? = nil
 local moveLevelIndex: number? = nil
 local movePreviewPoints: {Vector2int16}? = nil
+local lastHandleFloorId: number? = nil
+local lastHandleLevelIndex: number? = nil
+local lastHandlePointsKey: string? = nil
 
 function Floors.Init()
 	local ctx = Context.Get()
@@ -73,6 +76,13 @@ local function getFloorModelFromSelection(): Model?
 	local selectionPart = getSelectionPart()
 	if not selectionPart then
 		return nil
+	end
+
+	if selectionPart:IsA("Model") then
+		local parent = selectionPart.Parent
+		if parent and parent:IsA("Folder") and parent.Name == "Floors" then
+			return selectionPart
+		end
 	end
 
 	local selectionKind, floorId, level = getSelectionInfoFromInstance(selectionPart)
@@ -121,8 +131,7 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 end
 
 local function getHandleY(levelIndex: number): number
-	local levelTop = Formex.LevelHeight * (levelIndex - 1)
-	return levelTop + Constants.HandleOffset
+	return Formex.LevelHeight * (levelIndex - 1)
 end
 
 local function setHandlesVisible(visible: boolean)
@@ -136,6 +145,9 @@ local function clearFloorHandles()
 	Handles.Clear()
 	floorHandles = {}
 	activeHandle = nil
+	lastHandleFloorId = nil
+	lastHandleLevelIndex = nil
+	lastHandlePointsKey = nil
 end
 
 local function addFloorHandle(name: string, color: Color3, iconAsset: string, onClick: (any) -> (), argument: any): BasePart
@@ -397,15 +409,23 @@ local function updateFloorHandles(plotInfo: any)
 		return
 	end
 
-	clearFloorHandles()
-
 	local floorData = getFloorDataFromModel(floorModel)
 	local points = movePreviewPoints or floorData.Points
+	local pointsKey = Formex.EncodeFloorPoints(points)
+	local shouldRebuild = floorData.FloorId ~= lastHandleFloorId
+		or floorData.LevelIndex ~= lastHandleLevelIndex
+		or pointsKey ~= lastHandlePointsKey
+	if not shouldRebuild then
+		return
+	end
+
+	clearFloorHandles()
+
 	local levelIndex = floorData.LevelIndex
 	local y = getHandleY(levelIndex)
 
 	for index, point in ipairs(points) do
-		local handle = addFloorHandle("FloorPoint_" .. tostring(index), Constants.SelectionColor, Constants.HandleIconMoveEnd, onFloorHandleClicked, {
+		local handle = addFloorHandle("FloorPoint_" .. tostring(index), Constants.SelectionColor, Formex.Icons.ResizeItem, onFloorHandleClicked, {
 			Kind = "Point",
 			Index = index,
 			Handle = nil,
@@ -421,7 +441,7 @@ local function updateFloorHandles(plotInfo: any)
 	local midpoints = buildMidpoints(points)
 	for index, midpoint in ipairs(midpoints) do
 		if midpoint.X ~= 0 or midpoint.Y ~= 0 then
-			local handle = addFloorHandle("FloorMid_" .. tostring(index), Constants.GhostValidColor, Constants.HandleIconExtendWall, onFloorHandleClicked, {
+			local handle = addFloorHandle("FloorMid_" .. tostring(index), Constants.GhostValidColor, Formex.Icons.WallExtend, onFloorHandleClicked, {
 				Kind = "Midpoint",
 				Index = index,
 				Handle = nil,
@@ -440,7 +460,7 @@ local function updateFloorHandles(plotInfo: any)
 		centroid += Vector2.new(point.X, point.Y)
 	end
 	centroid /= math.max(#points, 1)
-	local deleteHandle = addFloorHandle("FloorDelete", Constants.GhostInvalidColor, Constants.HandleIconDeleteWall, onFloorHandleClicked, {
+	local deleteHandle = addFloorHandle("FloorDelete", Constants.GhostInvalidColor, Formex.Icons.DeleteItem, onFloorHandleClicked, {
 		Kind = "Delete",
 		Index = 0,
 		Handle = nil,
@@ -452,6 +472,9 @@ local function updateFloorHandles(plotInfo: any)
 		Handle = deleteHandle,
 	}
 
+	lastHandleFloorId = floorData.FloorId
+	lastHandleLevelIndex = floorData.LevelIndex
+	lastHandlePointsKey = pointsKey
 	setHandlesVisible(true)
 end
 
@@ -505,9 +528,7 @@ function Floors.HandlePrimaryClick(input: any)
 	local actionType = getActionType()
 	if actionType == Enums.ActionType.Select then
 		local selected = input.Target and select(input.Target) or false
-		if selected then
-			return
-		end
+		if selected then return end
 
 		if input.LayoutTile then
 			createFloorFromTile(input.PlotInfo, input.LayoutTile)

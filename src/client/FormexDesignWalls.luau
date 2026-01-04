@@ -39,7 +39,7 @@ local getDesignMode: () -> string
 local getCurrentLevel: () -> number
 local getViewSettings: () -> any
 local getSelectionType: () -> string
-local getSelectionPart: () -> BasePart?
+local getSelectionPart: () -> Instance?
 local getLastInputInfo: () -> any?
 local getSnappedPoint: (BasePart, Vector3) -> Vector2int16
 local snapWallEndPoint: (Vector2 | Vector2int16, Vector2) -> Vector2int16
@@ -575,14 +575,14 @@ local function updateWallHandles(plotInfo: any)
 		Part = wallPart,
 	}
 
-	wallHandleStart = Handles.CreateHandle("WallHandleStart", Constants.SelectionColor, Constants.HandleIconMoveEnd, onWallMove, "Start")
-	wallHandleEnd = Handles.CreateHandle("WallHandleEnd", Constants.SelectionColor, Constants.HandleIconMoveEnd, onWallMove, "End")
-	wallHandleCenter = Handles.CreateHandle("WallHandleCenter", Constants.GhostValidColor, Constants.HandleIconMoveWall, onWallMove, "Center")
-	wallHandleStartSolo = Handles.CreateHandle("WallHandleStartSolo", Constants.SelectionColor, Constants.HandleIconDisconnectWall, onWallMove, "StartSolo")
-	wallHandleEndSolo = Handles.CreateHandle("WallHandleEndSolo", Constants.SelectionColor, Constants.HandleIconDisconnectWall, onWallMove, "EndSolo")
-	wallHandleExtendStart = Handles.CreateHandle("WallHandleExtendStart", Constants.GhostValidColor, Constants.HandleIconExtendWall, onWallExtendStart)
-	wallHandleExtendEnd = Handles.CreateHandle("WallHandleExtendEnd", Constants.GhostValidColor, Constants.HandleIconExtendWall, onWallExtendEnd)
-	wallHandleDelete = Handles.CreateHandle("WallHandleDelete", Constants.GhostInvalidColor, Constants.HandleIconDeleteWall, onWallDelete)
+	wallHandleStart = Handles.CreateHandle("WallHandleStart", Constants.SelectionColor, Formex.Icons.ResizeItem, onWallMove, "Start")
+	wallHandleEnd = Handles.CreateHandle("WallHandleEnd", Constants.SelectionColor, Formex.Icons.ResizeItem, onWallMove, "End")
+	wallHandleCenter = Handles.CreateHandle("WallHandleCenter", Constants.GhostValidColor, Formex.Icons.MoveItem, onWallMove, "Center")
+	wallHandleStartSolo = Handles.CreateHandle("WallHandleStartSolo", Constants.SelectionColor, Formex.Icons.WallDisconnect, onWallMove, "StartSolo")
+	wallHandleEndSolo = Handles.CreateHandle("WallHandleEndSolo", Constants.SelectionColor, Formex.Icons.WallDisconnect, onWallMove, "EndSolo")
+	wallHandleExtendStart = Handles.CreateHandle("WallHandleExtendStart", Constants.GhostValidColor, Formex.Icons.WallExtend, onWallExtendStart)
+	wallHandleExtendEnd = Handles.CreateHandle("WallHandleExtendEnd", Constants.GhostValidColor, Formex.Icons.WallExtend, onWallExtendEnd)
+	wallHandleDelete = Handles.CreateHandle("WallHandleDelete", Constants.GhostInvalidColor, Formex.Icons.DeleteItem, onWallDelete)
 
 	local viewSettings = getViewSettings()
 	local handleY = getWallHandleY(level, viewSettings.HandleLocation or Enums.HandleLocation.Middle)

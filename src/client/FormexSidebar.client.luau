@@ -12,7 +12,7 @@ local COLLAPSED_WIDTH = 72
 local HEADER_HEIGHT = 46
 local SIDE_MARGIN = 18
 local TOP_MARGIN = 18
-local BOTTOM_OFFSET = 140
+local BOTTOM_OFFSET = 64
 
 local COLORS = {
     Panel = Color3.fromRGB(252, 252, 255),
@@ -36,10 +36,6 @@ local wallBackMaterialId = Formex.DefaultWallMaterial
 local cachedOwnerUserId = -1
 
 local ui = {}
-
-local function iconAsset(iconId: number?): string
-    return "rbxassetid://" .. tostring(iconId or 0)
-end
 
 local function canDesign(plot: FormexClient.PlotInfo): boolean
     return plot.IsValid and plot.SaveId ~= 0
@@ -129,7 +125,7 @@ local function createIconButton(parent: Instance, name: string, iconId: number, 
     icon.AnchorPoint = Vector2.new(0.5, 0.5)
     icon.Position = UDim2.new(0.5, 0, 0.5, 0)
     icon.Size = UDim2.new(0.6, 0, 0.6, 0)
-    icon.Image = iconAsset(iconId)
+    icon.ImageContent = Content.fromAssetId(iconId)
     icon.ImageColor3 = COLORS.Icon
     icon.ScaleType = Enum.ScaleType.Fit
 
@@ -299,7 +295,7 @@ local function setDesignExpanded(expanded: boolean)
     end
     if ui.DesignExpandIcon then
         local iconId = expanded and Formex.Icons.ChevronUp or Formex.Icons.ChevronDown
-        ui.DesignExpandIcon.Image = iconAsset(iconId)
+        ui.DesignExpandIcon.ImageContent = Content.fromAssetId(iconId)
     end
 end
 
@@ -309,7 +305,7 @@ local function updateOwnerAvatar(userId: number)
     end
     if userId <= 0 then
         cachedOwnerUserId = userId
-        ui.OwnerAvatar.Image = iconAsset(0)
+        ui.OwnerAvatar.ImageContent = Content.fromAssetId(0)
         return
     end
     if cachedOwnerUserId == userId then
@@ -436,7 +432,7 @@ local function buildSidebar()
     ownerAvatar.Name = "OwnerAvatar"
     ownerAvatar.BackgroundTransparency = 1
     ownerAvatar.Size = UDim2.new(0, 36, 0, 36)
-    ownerAvatar.Image = iconAsset(0)
+    ownerAvatar.ImageContent = Content.fromAssetId(0)
     ownerAvatar.ScaleType = Enum.ScaleType.Fit
     local avatarCorner = Instance.new("UICorner", ownerAvatar)
     avatarCorner.CornerRadius = UDim.new(1, 0)

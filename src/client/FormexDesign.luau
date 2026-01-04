@@ -116,17 +116,12 @@ local actionHeld = false
 local altHeld, alt1Held, alt2Held, alt3Held = false, false, false, false
 local selectionType: SelectionType = FormexDesign.SelectionType.None
 local selectionData: SelectionData = nil
-local selectionPart: BasePart? = nil
+local selectionPart: Instance? = nil
 local selectionHighlight: Highlight? = nil
 
 local selectionColor = Color3.fromRGB(255, 201, 107)
 local ghostValidColor = Color3.fromRGB(84, 140, 255)
 local ghostInvalidColor = Color3.fromRGB(245, 110, 110)
-local handleIconMoveEnd = "rbxassetid://78551851583998"
-local handleIconMoveWall = "rbxassetid://83970836971222"
-local handleIconDeleteWall = "rbxassetid://91738865172085"
-local handleIconDisconnectWall = "rbxassetid://70397467113579"
-local handleIconExtendWall = "rbxassetid://128647721275129"
 
 local function notifyDesignModeChange()
 	FormexClient.FireEvent("DesignModeChanged")
@@ -1008,9 +1003,19 @@ function FormexDesign.Select(part: Instance)
 			return false
 		end
 
+		local selectionTarget: Instance = part
+		if selectionKind == FormexDesign.SelectionType.Floor then
+			local floorModel = part:IsA("Model") and part or part:FindFirstAncestorOfClass("Model")
+			if floorModel and floorModel.Parent and floorModel.Parent:IsA("Folder") and floorModel.Parent.Name == "Floors" then
+				if tostring(partId) == floorModel.Name then
+					selectionTarget = floorModel
+				end
+			end
+		end
+
 		selectionType = selectionKind
 		selectionData = nil -- TODO
-		selectionPart = part
+		selectionPart = selectionTarget
 		currentLevel = level
 		notifyDesignModeChange()
 		updateHighlightTarget()
@@ -1183,11 +1188,6 @@ FormexDesignContext.Init({
 		SelectionColor = selectionColor,
 		GhostValidColor = ghostValidColor,
 		GhostInvalidColor = ghostInvalidColor,
-		HandleIconMoveEnd = handleIconMoveEnd,
-		HandleIconMoveWall = handleIconMoveWall,
-		HandleIconDeleteWall = handleIconDeleteWall,
-		HandleIconDisconnectWall = handleIconDisconnectWall,
-		HandleIconExtendWall = handleIconExtendWall,
 	},
 	GetActionType = function()
 		return actionType
