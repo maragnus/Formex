@@ -35,52 +35,18 @@ A **Plot** has a permissions list of other players that can interact with it. Th
 
 ## Workspace Structure
 
-- A **Plot** has parts organized as follows: 
-    Workspace\Formex: Folder\Plots: Folder
-        PlotPlaceholder: Part
-            {levelId: number}: Part
-                Walls (Folder)
-                    {WallId}: Part
-                Floors (Folder)
-                    {FloorId}: Part
-                Ceilings (Folder)
-                    {CeilingId}: Part
-                Objects: Folder
-                    {ObjectId}: Part
-- Wall and Floor/Ceiling parts
-  - Use `Texture` children with `Texture.Side` to represent `MaterialInfo`
-- Wall is a `Part` with a thickness of `Formex.WallThickness` and height of `Formex.LevelHeight`
-  - Wall has `FrontMaterial`, `BackMaterial`, `StartMaterial`, and `EndMaterial` that represents `Formex.Materials` used on the sides and end caps of the wall.
-  - Top of walls uses `Formex.WallTopMaterial`
-- Floor and Ceilings are a grid of `Formex.LayoutGrid` size, and `Formex.FoundationHeight` for Level 1, and `Formex.InterfloorHeight` at upper levels.
-- Floors and ceilings are complicated
-    - One `Part` represents both the floor and the ceiling of the adjacent level.
-    - If a floor is added, it also adds the respective ceiling. Likewise for adding a ceiling. Except on the Level 1 and level `Formex.MaxPlotSize.Levels`.
-- Shared `Formex` provides a shared interface to create Wall and Floor/Ceiling parts for server-side geometry and client-side ghosts for designing.
-
-## Optimizations
-
-**Problem:** A 100% full building can have 9,216 Floor/Ceiling parts
-**Solution:** Server can optimize a floor by converting large consecutive tiles into a single Part that represents all of them. Single this may be an expensive optimization, this optimization should be suspended while a player is in design mode. This means that a player needs to request "Design Mode" from the server.
-
-## Autosave
-Any **Plot** with a selected **Save Slot** will have autosave enabled. Some changes save immediately, Others create a 60 second timer to accumulate changes. After a save, the next change will create a new timer.
+Plot.Part \ Level.Part \ Walls (Folder) \ Wall.Part
+                        \ Floors (Folder) \ Floor.Part
+                        \ Objects (Folder) \ Object.Part
 
 ## Modules
 - `Formex` is the shared interface between client and server
 
 ### Server-side
-- `FormexSystem`: manage core plot ownership and common systems
-- `FormexPlot`: handles client functions related to plot management
-- `FormexBuild`: handles client functions related to building and designing
+- `FormexServer`: server-side implementation of `Formex.Plot`
 
 ### Client-side
-- `FormexCamera`: manages camera modes
-- `FormexClient`: core management for the Formex state
-- `FormexDesign`: design mode functionality (floors, walls, objects)
-- `FormexFooter`: UI for the footer menu
-- `FormexPrompts`: UI popups
-- `FormexUI`: custom UI component library
+- `FormexClient`: client-side implementation of `Formex.Plot`
 
 ## Communication
 - `FormexClient` has methods that call methods named in `Formex.Function`
