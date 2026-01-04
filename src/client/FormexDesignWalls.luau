@@ -250,7 +250,7 @@ local function safeBuildWall(wallData: any, action: any): (boolean, any)
 end
 
 local function createWallPreview(plotPart: BasePart, wallData: any): BasePart?
-	local preview = Formex.CreateWall(wallData, plotPart)
+	local preview = Formex.Walls.Create(wallData, plotPart)
 	if preview then
 		preview.CanCollide = false
 		preview.CanTouch = false

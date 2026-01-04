@@ -222,19 +222,6 @@ Formex.Function = table.freeze({
 	Redo = "Redo",
 }) :: {Function: string}
 
-function Formex.UpdateTexture(part: BasePart, texture: Texture, materialId: number)
-	local materialInfo = Formex.Materials[materialId]
-	if not materialInfo then
-		-- part.Material = Enum.Material.Air
-		texture.ColorMapContent = Content.fromAssetId(0)
-	else
-		part.Material = materialInfo.Material or Enum.Material.SmoothPlastic
-		texture.ColorMapContent = Content.fromAssetId(materialInfo.AssetId)
-		texture.StudsPerTileU = materialInfo.StudsPerTile
-		texture.StudsPerTileV = materialInfo.StudsPerTile
-	end
-end
-
 function Formex.EncodeFloorPoints(points: {Vector2int16}): string
 	local encoded = {}
 	for _, point in ipairs(points) do
@@ -252,11 +239,7 @@ function Formex.DecodeFloorPoints(value: string?): {Vector2int16}
 	for entry in string.gmatch(value, "([^;]+)") do
 		local xStr, yStr = string.match(entry, "([^,]+),([^,]+)")
 		if xStr and yStr then
-			local x = tonumber(xStr)
-			local y = tonumber(yStr)
-			if x and y then
-				table.insert(points, Vector2int16.new(x, y))
-			end
+			table.insert(points, Vector2int16.new(tonumber(xStr), tonumber(yStr)))
 		end
 	end
 
@@ -272,144 +255,6 @@ local function isPointLayoutGridSnapped(point: Vector2): boolean
 	return isLayoutGridSnapped(point.X) and isLayoutGridSnapped(point.Y)
 end
 
-local function getSegmentCenter(index: number): (number, number)
-	local row, column = Formex.Segments.GetRowColumn(index)
-	local xOffset = (column - (Formex.Segments.GridWidth + 1) / 2) * Formex.SegmentSize.Width
-	local zOffset = (row - (Formex.Segments.GridHeight + 1) / 2) * Formex.SegmentSize.Depth
-	return xOffset, zOffset
-end
-
-local function isPointInUnlockedSegments(point: Vector2, mask: number?): boolean
-	if not mask or mask == 0 then
-		return false
-	end
-
-	local halfWidth = Formex.SegmentSize.Width / 2
-	local halfDepth = Formex.SegmentSize.Depth / 2
-
-	for index = 1, Formex.Segments.Count do
-		if Formex.Segments.IsUnlocked(mask, index) then
-			local centerX, centerZ = getSegmentCenter(index)
-			if math.abs(point.X - centerX) <= halfWidth + EPSILON
-			and math.abs(point.Y - centerZ) <= halfDepth + EPSILON then
-				return true
-			end
-		end
-	end
-
-	return false
-end
-
-local function isLineWithinUnlockedSegments(startPoint: Vector2 | Vector2int16, endPoint: Vector2 | Vector2int16, mask: number?): boolean
-	if not isPointInUnlockedSegments(startPoint, mask) or not isPointInUnlockedSegments(endPoint, mask) then
-		return false
-	end
-
-	if typeof(startPoint) ~= "Vector2" or typeof(endPoint) ~= "Vector2" then
-		startPoint = Vector2.new(startPoint.X, startPoint.Y)
-		endPoint = Vector2.new(endPoint.X, endPoint.Y)
-	end
-
-	local direction: Vector2 = endPoint - startPoint
-	local length = direction.Magnitude
-	if length <= EPSILON then return false end
-
-	local step = math.max(Formex.GridSize, 1)
-	local steps = math.floor(length / step)
-	local unit = direction / length
-
-	for i = 1, steps do
-		local point = startPoint + unit * (i * step)
-		if not isPointInUnlockedSegments(point, mask) then
-			return false
-		end
-	end
-
-	return true
-end
-
-local function cross2(a: Vector2, b: Vector2): number
-	return a.X * b.Y - a.Y * b.X
-end
-
-local function isPointOnSegment(point: Vector2, startPoint: Vector2, endPoint: Vector2): boolean
-	if math.abs(cross2(endPoint - startPoint, point - startPoint)) > EPSILON then
-		return false
-	end
-	local minX = math.min(startPoint.X, endPoint.X) - EPSILON
-	local maxX = math.max(startPoint.X, endPoint.X) + EPSILON
-	local minY = math.min(startPoint.Y, endPoint.Y) - EPSILON
-	local maxY = math.max(startPoint.Y, endPoint.Y) + EPSILON
-	return point.X >= minX and point.X <= maxX and point.Y >= minY and point.Y <= maxY
-end
-
-local function segmentsIntersect(a: Vector2, b: Vector2, c: Vector2, d: Vector2): boolean
-	local ab = b - a
-	local cd = d - c
-	local ac = c - a
-	local ad = d - a
-	local ca = a - c
-	local cb = b - c
-
-	local cross1 = cross2(ab, ac)
-	local cross2Value = cross2(ab, ad)
-	local cross3 = cross2(cd, ca)
-	local cross4 = cross2(cd, cb)
-
-	if math.abs(cross1) <= EPSILON and isPointOnSegment(c, a, b) then
-		return true
-	end
-	if math.abs(cross2Value) <= EPSILON and isPointOnSegment(d, a, b) then
-		return true
-	end
-	if math.abs(cross3) <= EPSILON and isPointOnSegment(a, c, d) then
-		return true
-	end
-	if math.abs(cross4) <= EPSILON and isPointOnSegment(b, c, d) then
-		return true
-	end
-
-	return (cross1 > 0 and cross2Value < 0 or cross1 < 0 and cross2Value > 0)
-		and (cross3 > 0 and cross4 < 0 or cross3 < 0 and cross4 > 0)
-end
-
-local function getOverlapLength(a: Vector2, b: Vector2, c: Vector2, d: Vector2): number
-	if math.abs(b.X - a.X) >= math.abs(b.Y - a.Y) then
-		local min1, max1 = math.min(a.X, b.X), math.max(a.X, b.X)
-		local min2, max2 = math.min(c.X, d.X), math.max(c.X, d.X)
-		return math.min(max1, max2) - math.max(min1, min2)
-	else
-		local min1, max1 = math.min(a.Y, b.Y), math.max(a.Y, b.Y)
-		local min2, max2 = math.min(c.Y, d.Y), math.max(c.Y, d.Y)
-		return math.min(max1, max2) - math.max(min1, min2)
-	end
-end
-
-local function isWallIntersectionDisallowed(newStart: Vector2, newEnd: Vector2, existingStart: Vector2, existingEnd: Vector2): boolean
-	local newDir = newEnd - newStart
-	if math.abs(cross2(newDir, existingStart - newStart)) <= EPSILON
-	and math.abs(cross2(newDir, existingEnd - newStart)) <= EPSILON then
-		local overlap = getOverlapLength(newStart, newEnd, existingStart, existingEnd)
-		if overlap > EPSILON then
-			return true
-		end
-		if isPointOnSegment(newStart, existingStart, existingEnd) or isPointOnSegment(newEnd, existingStart, existingEnd) then
-			return false
-		end
-		return true
-	end
-
-	if not segmentsIntersect(newStart, newEnd, existingStart, existingEnd) then
-		return false
-	end
-
-	if isPointOnSegment(newStart, existingStart, existingEnd) or isPointOnSegment(newEnd, existingStart, existingEnd) then
-		return false
-	end
-
-	return true
-end
-
 local function getPlotPartFromInstance(instance: Instance): BasePart?
 	local current: Instance? = instance
 	while current do
@@ -419,132 +264,6 @@ local function getPlotPartFromInstance(instance: Instance): BasePart?
 		current = current.Parent
 	end
 	return nil
-end
-
-local function getLevelOffset(_plotPart: BasePart, level: number): number
-	return (math.max(level, 1) - 1) * Formex.SegmentSize.Height
-end
-
-local function ensureTexture(part: BasePart, name: string, face: Enum.NormalId): Texture
-	local existing = part:FindFirstChild(name)
-	if existing and existing:IsA("Texture") then
-		existing.Face = face
-		return existing
-	end
-
-	local texture = Instance.new("Texture")
-	texture.Name = name
-	texture.Face = face
-	texture.Parent = part
-	return texture
-end
-
-function Formex.IsWallValid(plot: PlotData, wall: WallData)
-	if not wall or not wall.Start or not wall.End then
-		return false
-	end
-
-	if not isPointLayoutGridSnapped(wall.Start) or not isPointLayoutGridSnapped(wall.End) then
-		return false
-	end
-
-	local dx = wall.End.X - wall.Start.X
-	local dz = wall.End.Y - wall.Start.Y
-	local length = math.sqrt(dx * dx + dz * dz)
-	if length <= EPSILON then
-		return false
-	end
-
-	-- if math.abs(dx) > EPSILON and math.abs(dz) > EPSILON
-	-- and math.abs(math.abs(dx) - math.abs(dz)) > EPSILON then
-	-- 	return false
-	-- end
-
-	if not isLineWithinUnlockedSegments(wall.Start, wall.End, plot.SegmentsUnlocked) then
-		return false
-	end
-
-	local levelIndex = wall.Level or 1
-	local levels = (plot :: any).Levels
-	if levels and levels[levelIndex] then
-		local walls = levels[levelIndex].Walls
-		if walls then
-			for wallId, existing in walls do
-				if wallId ~= wall.WallId and existing and existing.Start and existing.End then
-					if isWallIntersectionDisallowed(wall.Start, wall.End, existing.Start, existing.End) then
-						return false
-					end
-				end
-			end
-		end
-	end
-
-	return true
-end
-
-function Formex.CreateWall(wall: WallData, plotPartOverride: BasePart?): Part
-	local part = Instance.new("Part")
-	part.Name = tostring(wall.WallId)
-	part.Anchored = true
-	part.CollisionGroup = Formex.CollisionGroup.Structure
-	wall.Part = part
-	Formex.EditWall(wall, plotPartOverride)
-	return part
-end
-
-function Formex.EditWall(wall: WallData, plotPartOverride: BasePart?)
-	local part = wall.Part
-	if not part then
-		return
-	end
-
-	local plotPart = plotPartOverride or getPlotPartFromInstance(part)
-	if not plotPart then
-		return
-	end
-
-	local height = Formex.SegmentSize.Height
-	local levelIndex = wall.Level or 1
-	local startPoint = wall.Start
-	local endPoint = wall.End
-	local dx = endPoint.X - startPoint.X
-	local dz = endPoint.Y - startPoint.Y
-	local length = math.max(math.sqrt(dx * dx + dz * dz), 1)
-
-	local levelOffset = getLevelOffset(plotPart, levelIndex)
-	local midLocal = Vector3.new((startPoint.X + endPoint.X) / 2, levelOffset + height / 2, (startPoint.Y + endPoint.Y) / 2)
-	local worldMid = plotPart.CFrame:PointToWorldSpace(midLocal)
-
-	local dirLocal = Vector3.new(dx, 0, dz)
-	if dirLocal.Magnitude <= EPSILON then
-		dirLocal = Vector3.new(0, 0, 1)
-	end
-	local worldDir = plotPart.CFrame:VectorToWorldSpace(dirLocal)
-
-	part.Size = Vector3.new(1, height, length)
-	part.CFrame = CFrame.lookAt(worldMid, worldMid + worldDir)
-	part.Transparency = 0 -- Disable invisibility in case it was set
-
-	local frontMaterial = wall.FrontMaterial or Formex.DefaultWallMaterial
-	local backMaterial = wall.BackMaterial or frontMaterial
-	local startMaterial = wall.StartMaterial or frontMaterial
-	local endMaterial = wall.EndMaterial or frontMaterial
-
-	local frontTexture = ensureTexture(part, "Front", Enum.NormalId.Left)
-	local backTexture = ensureTexture(part, "Back", Enum.NormalId.Right)
-	local startTexture = ensureTexture(part, "Start", Enum.NormalId.Back)
-	local endTexture = ensureTexture(part, "End", Enum.NormalId.Front)
-	local topTexture = ensureTexture(part, "Top", Enum.NormalId.Top)
-
-	Formex.UpdateTexture(part, frontTexture, frontMaterial)
-	Formex.UpdateTexture(part, backTexture, backMaterial)
-	Formex.UpdateTexture(part, startTexture, startMaterial)
-	Formex.UpdateTexture(part, endTexture, endMaterial)
-	Formex.UpdateTexture(part, topTexture, Formex.WallTopMaterial)
-end
-
-function Formex.DivideWall(wall: WallData, distance: number): {WallData}
-	-- TODO returns two new walls split at `distance` from `wall.Start`
 end
 
 local function toVector2(point: Vector2 | Vector2int16): Vector2
@@ -595,7 +314,7 @@ local function isPointInPolygon(point: Vector2, polygon: {Vector2}): boolean
 	for i = 1, #polygon do
 		local a = polygon[i]
 		local b = polygon[(i % #polygon) + 1]
-		if isPointOnSegment(point, a, b) then
+		if Formex.Plot.IsPointOnSegment(point, a, b) then
 			return true
 		end
 		if (a.Y > point.Y) ~= (b.Y > point.Y) then
@@ -925,7 +644,7 @@ function Formex.IsFloorValid(plot: PlotData, floor: FloorData)
 		if not isPointLayoutGridSnapped(point) then
 			return false
 		end
-		if not isPointInUnlockedSegments(point, plot.SegmentsUnlocked) then
+		if not Formex.Plot.IsPointInUnlockedSegments(point, plot.SegmentsUnlocked) then
 			return false
 		end
 		table.insert(polygon, toVector2(point))
@@ -934,7 +653,7 @@ function Formex.IsFloorValid(plot: PlotData, floor: FloorData)
 	for i = 1, #polygon do
 		local startPoint = polygon[i]
 		local endPoint = polygon[(i % #polygon) + 1]
-		if not isLineWithinUnlockedSegments(startPoint, endPoint, plot.SegmentsUnlocked) then
+		if not Formex.Plot.IsLineWithinUnlockedSegments(startPoint, endPoint, plot.SegmentsUnlocked) then
 			return false
 		end
 	end
@@ -991,8 +710,8 @@ function Formex.CreateFloor(floor: FloorData, plotPartOverride: BasePart?, paren
 				floorFace = Enum.NormalId.Right
 				ceilingFace = Enum.NormalId.Left
 			end
-			local floorTexture = ensureTexture(part, "Floor", floorFace)
-			local ceilingTexture = ensureTexture(part, "Ceiling", ceilingFace)
+			local floorTexture = Formex.Util.EnsureTexture(part, "Floor", floorFace)
+			local ceilingTexture = Formex.Util.EnsureTexture(part, "Ceiling", ceilingFace)
 			Formex.UpdateTexture(part, floorTexture, floorMaterial)
 			Formex.UpdateTexture(part, ceilingTexture, ceilingMaterial)
 			applyTextureOffset(plotPart, part, floorTexture)
@@ -1003,113 +722,6 @@ function Formex.CreateFloor(floor: FloorData, plotPartOverride: BasePart?, paren
 	end
 
 	return model
-end
-
-function Formex.Segments.GetRowColumn(index: number): (number, number)
-	if index < 1 or index > Formex.Segments.Count then
-		error("Segment index out of range: " .. tostring(index))
-	end
-
-	local row = math.ceil(index / Formex.Segments.GridWidth)
-	local column = ((index - 1) % Formex.Segments.GridWidth) + 1
-	return row, column
-end
-
-function Formex.Segments.GetIndex(row: number, column: number): number
-	if row < 1 or row > Formex.Segments.GridHeight or column < 1 or column > Formex.Segments.GridWidth then
-		error("Segment row/column out of range: " .. tostring(row) .. "," .. tostring(column))
-	end
-
-	return (row - 1) * Formex.Segments.GridWidth + column
-end
-
-function Formex.Segments.Bit(index: number): number
-	if index < 1 or index > Formex.Segments.Count then
-		error("Segment index out of range: " .. tostring(index))
-	end
-
-	return bit32.lshift(1, index - 1)
-end
-
-function Formex.Segments.IsUnlocked(mask: number?, index: number): boolean
-	return bit32.band(mask or 0, Formex.Segments.Bit(index)) ~= 0
-end
-
-function Formex.Segments.Unlock(mask: number?, index: number): number
-	return bit32.bor(mask or 0, Formex.Segments.Bit(index))
-end
-
-function Formex.Segments.CountUnlocked(mask: number?): number
-	local unlocked = 0
-	for index = 1, Formex.Segments.Count do
-		if Formex.Segments.IsUnlocked(mask, index) then
-			unlocked += 1
-		end
-	end
-	return unlocked
-end
-
-function Formex.Segments.GetAllUnlocked(mask: number?): {number}
-	local unlocked = {}
-	for index = 1, Formex.Segments.Count do
-		if Formex.Segments.IsUnlocked(mask, index) then
-			table.insert(unlocked, index)
-		end
-	end
-	return unlocked
-end
-
-function Formex.Segments.GetBounds(plotPart: BasePart, segmentIndex: number, levelsUnlocked: number?): SegmentBounds
-	local row, column = Formex.Segments.GetRowColumn(segmentIndex)
-	local xOffset = (column - (Formex.Segments.GridWidth + 1) / 2) * Formex.SegmentSize.Width
-	local zOffset = (row - (Formex.Segments.GridHeight + 1) / 2) * Formex.SegmentSize.Depth
-	local height = math.max(1, levelsUnlocked or 1) * Formex.LevelHeight
-
-	local segmentCFrame = plotPart.CFrame * CFrame.new(xOffset, 0, zOffset)
-	local size = Vector3.new(Formex.SegmentSize.Width, height, Formex.SegmentSize.Depth)
-
-	return {
-		Index = segmentIndex,
-		Row = row,
-		Column = column,
-		CFrame = segmentCFrame,
-		Position = segmentCFrame.Position,
-		Size = size,
-		Extents = size / 2,
-	}
-end
-
-function Formex.IsNearPlot(plotCenter: Vector3, position: Vector3, border: number): boolean
-	local plotDimensions = Formex.Dimensions
-	local plotWidth = plotDimensions.Width
-	local plotDepth = plotDimensions.Depth
-	local plotHeight = plotDimensions.Height
-
-	local xDiff = math.abs(position.X - plotCenter.X)
-	local yDiff = math.abs(position.Y - plotCenter.Y)
-	local zDiff = math.abs(position.Z - plotCenter.Z)
-
-	return xDiff <= (plotWidth / 2 + border) and yDiff <= (plotHeight / 2 + border) and zDiff <= (plotDepth / 2 + border)
-end
-
-function Formex.DeepClone(original)
-    local clone = table.clone(original)
-    for key, value in original do
-        if type(value) == "table" then
-            clone[key] = Formex.DeepClone(value)
-        end
-    end
-    return clone
-end
-
-function Formex.EnsureFolder(name: string, parent: Instance): Folder
-	local folder = parent:FindFirstChild(name)
-	if folder and folder:IsA("Folder") then
-		return folder :: Folder
-	end
-	folder = Instance.new("Folder", parent)
-	folder.Name = name
-	return folder
 end
 
 return Formex

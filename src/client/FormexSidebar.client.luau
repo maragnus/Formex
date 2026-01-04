@@ -260,7 +260,7 @@ local function applySelectedWallMaterials(frontMaterial: number?, backMaterial: 
         EndMaterial = existingEnd,
         Part = wallPart,
     }
-    Formex.EditWall(clientData, plot.PlotPart)
+    Formex.Walls.Edit(clientData, plot.PlotPart)
 
     local serverData = {
         WallId = wallId,

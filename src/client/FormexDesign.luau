@@ -10,7 +10,7 @@ local Formex = FormexClient.Formex
 local localPlayer = Players.LocalPlayer
 
 local formexWorkspace = Workspace:WaitForChild("Formex")
-local overlayFolder = Formex.EnsureFolder("FormexDesignOverlays", formexWorkspace)
+local overlayFolder = Formex.Util.EnsureFolder("FormexDesignOverlays", formexWorkspace)
 
 local EPSILON = 1e-4
 
@@ -865,7 +865,7 @@ local function ensureWallGhost(plotPart: BasePart, startPoint: Vector2, endPoint
 
 	if not ghostWallData then
 		ghostWallData = buildWallData(startPoint, endPoint)
-		ghost = Formex.CreateWall(ghostWallData, plotPart)
+		ghost = Formex.Walls.Create(ghostWallData, plotPart)
 		if ghost then
 			ghost.Parent = overlayFolder
 			applyGhostAppearance(ghost)
@@ -877,7 +877,7 @@ local function ensureWallGhost(plotPart: BasePart, startPoint: Vector2, endPoint
 	end
 
 	if ghostWallData then
-		Formex.EditWall(ghostWallData, plotPart)
+		Formex.Walls.Edit(ghostWallData, plotPart)
 	end
 
 	ghostActive = ghost ~= nil
