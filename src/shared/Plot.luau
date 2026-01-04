@@ -43,13 +43,13 @@ export type Wall = {
     IsGhost: boolean,
     IsSelected: boolean,
 
-    UpdatePoints: (newStart: Vector2int16, newEnd: Vector2int16) -> (),
-    SetHeight: (newHeight: number) -> (),
-    SetFrontMaterial: (materialId: number) -> (),
-    SetBackMaterial: (materialId: number) -> (),
-    Select: () -> (),
-    Finish: () -> (),
-    Delete: () -> (),
+    UpdatePoints: (this: Wall, newStart: Vector2int16, newEnd: Vector2int16) -> (),
+    SetHeight: (this: Wall, newHeight: number) -> (),
+    SetFrontMaterial: (this: Wall, materialId: number) -> (),
+    SetBackMaterial: (this: Wall, materialId: number) -> (),
+    Select: (this: Wall) -> (),
+    Finish: (this: Wall) -> (),
+    Delete: (this: Wall) -> (),
 }
 
 export type Floor = {
@@ -60,14 +60,14 @@ export type Floor = {
     IsGhost: boolean,
     IsSelected: boolean,
 
-    UpdatePoints: (newPoints: {Vector2int16}) -> (),
-    SetHeight: (newHeight: number) -> (),
-    SetFloorMaterial: (materialId: number) -> (),
-    SetCeilingMaterial: (materialId: number) -> (),
-    SetFoundationMaterial: (materialId: number) -> (),
-    Select: () -> (),
-    Finish: () -> (),
-    Delete: () -> (),
+    UpdatePoints: (this: Floor, newPoints: {Vector2int16}) -> (),
+    SetHeight: (this: Floor, newHeight: number) -> (),
+    SetFloorMaterial: (this: Floor, materialId: number) -> (),
+    SetCeilingMaterial: (this: Floor, materialId: number) -> (),
+    SetFoundationMaterial: (this: Floor, materialId: number) -> (),
+    Select: (this: Floor) -> (),
+    Finish: (this: Floor) -> (),
+    Delete: (this: Floor) -> (),
 }
 
 export type Object = {
@@ -80,11 +80,11 @@ export type Object = {
     IsGhost: boolean,
     IsSelected: boolean,
 
-    SetPosition: (newPosition: Vector3) -> (),
-    SetOrientation: (newOrientation: Vector3) -> (),
-    Select: () -> (),
-    Finish: () -> (),
-    Delete: () -> (),
+    SetPosition: (this: Object, newPosition: Vector3) -> (),
+    SetOrientation: (this: Object, newOrientation: Vector3) -> (),
+    Select: (this: Object) -> (),
+    Finish: (this: Object) -> (),
+    Delete: (this: Object) -> (),
 }
 
 export type Level = {
@@ -94,13 +94,13 @@ export type Level = {
     IsActive: boolean,
     Unlock: () -> (),
 
-    Walls: {number: Wall},
-    Floors: {number: Floor},
-    Objects: {number: Object},
+    Walls: {this: Level, number: Wall},
+    Floors: {this: Level, number: Floor},
+    Objects: {this: Level, number: Object},
 
-    AddWall: (start: Vector2int16) -> Wall,
-    AddFloor: (start: Vector2int16) -> Floor,
-    AddObject: (start: Vector2int16, modelId: number) -> Object,
+    AddWall: (this: Level, start: Vector2int16) -> Wall,
+    AddFloor: (this: Level, start: Vector2int16) -> Floor,
+    AddObject: (this: Level, start: Vector2int16, modelId: number) -> Object,
 }
 
 export type PermissionItem = {
@@ -123,25 +123,25 @@ export type Plot = {
 
     DesignMode: DesignMode,
     SelectedPart: Wall | Floor | Object | nil,
-    SetDesignMode: (mode: DesignMode, levelIndex: number) -> (),
+    SetDesignMode: (this: Plot, mode: DesignMode, levelIndex: number) -> (),
 
-    SetName: (newName: string) -> (),
-    GetPermissions: () -> {number: PermissionItem},
-    SetPermission: (userId: number, permission: Formex.Permission) -> (),
-    UnlockSegment: (segment: Vector2int16) -> (),
+    SetName: (this: Plot, newName: string) -> (),
+    GetPermissions: (this: Plot) -> {number: PermissionItem},
+    SetPermission: (this: Plot, userId: number, permission: Formex.Permission) -> (),
+    UnlockSegment: (this: Plot, segment: Vector2int16) -> (),
 
-    DeselectAll: () -> (),
-    Undo: () -> (),
-    Redo: () -> (),
+    DeselectAll: (this: Plot) -> (),
+    Undo: (this: Plot) -> (),
+    Redo: (this: Plot) -> (),
 
-    IsPointValid: (point: Vector2 | Vector2int16) -> boolean,
-    IsLineValid: (lineStart: Vector2 | Vector2int16, lineEnd: Vector2 | Vector2int16) -> boolean,
-    IsPolygonValid: (points: {Vector2 | Vector2int16}) -> boolean,
-    IsPointNearBoundary: (point: Vector3, threshold: number) -> boolean,
+    IsPointValid: (this: Plot, point: Vector2 | Vector2int16) -> boolean,
+    IsLineValid: (this: Plot, lineStart: Vector2 | Vector2int16, lineEnd: Vector2 | Vector2int16) -> boolean,
+    IsPolygonValid: (this: Plot, points: {Vector2 | Vector2int16}) -> boolean,
+    IsPointNearBoundary: (this: Plot, point: Vector3, threshold: number) -> boolean,
 
     -- Events
-    OnPlotChanged: () -> (),
-    OnSelectionChanged: (part: Wall | Floor | Object | nil) -> (),
+    OnPlotChanged: (this: Plot) -> (),
+    OnSelectionChanged: (this: Plot, part: Wall | Floor | Object | nil) -> (),
 }
 
 local plot = {} :: Plot
