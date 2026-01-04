@@ -143,7 +143,7 @@ function FormexDesign.SetAlt(held: boolean)
 end
 
 function FormexDesign.GetDesignMode(): DesignMode
-	return designMode
+	return PlotClient.CurrentPlot.DesignMode or FormexDesign.DesignMode.Play
 end
 
 function FormexDesign.GetActionType(): ActionType
@@ -627,6 +627,10 @@ function FormexDesign.ClearSelection()
 	selectionType = FormexDesign.SelectionType.None
 	selectionData = nil
 	selectionPart = nil
+	local plot = PlotClient.CurrentPlot
+	if plot and plot.IsValid then
+		plot:DeselectAll()
+	end
 	if Walls then
 		Walls.ClearSelection()
 	end
@@ -1163,7 +1167,11 @@ function FormexDesign.SetDesignMode(mode: DesignMode?)
 		designSessionPendingFocus = false
 	end
 
-	designMode = mode
+	local plot = PlotClient.CurrentPlot
+	if plot and plot.IsValid then
+		plot:SetDesignMode(mode, currentLevel)
+	end
+	designMode = PlotClient.CurrentPlot.DesignMode or mode
 	viewSettings = designModeViewSettings[mode]
 	actionType = FormexDesign.ActionType.Select
 	FormexDesign.ClearSelection()
@@ -1261,6 +1269,8 @@ Objects.Init()
 FormexClient.ClientEvents:Connect(function(eventName)
 	if eventName == "CurrentPlotChanged" then
 		FormexDesign.CancelAction()
+		designMode = PlotClient.CurrentPlot.DesignMode or FormexDesign.DesignMode.Play
+		viewSettings = designModeViewSettings[designMode]
 		refresh()
 	end
 end)

@@ -6,6 +6,7 @@ local PlotShared = {}
 
 export type PlotInfo = {
 	IsValid: boolean,
+	Id: number,
 	PlotId: number,
 	Part: BasePart?,
 	PlotPart: BasePart?,
@@ -36,6 +37,7 @@ end
 function PlotShared.CreateEmptyPlot(parent: Instance?): PlotInfo
 	return {
 		IsValid = false,
+		Id = 0,
 		PlotId = 0,
 		Part = nil,
 		PlotPart = nil,
@@ -65,6 +67,7 @@ end
 
 function PlotShared.ApplyPlotAttributes(plotPart: BasePart, plot: PlotInfo, localUserId: number?)
 	plot.PlotId = plotPart:GetAttribute("PlotId") or plot.PlotId
+	plot.Id = plot.PlotId
 	plot.Name = plotPart:GetAttribute("PlotName") or "Unnamed"
 	local ownerUserId = plotPart:GetAttribute("OwnerUserId") or 0
 	local ownerName = plotPart:GetAttribute("OwnerName") or "Unknown Player"
@@ -88,6 +91,7 @@ function PlotShared.CreatePlot(plotPart: BasePart, localUserId: number?, parent:
 	plot.Part = plotPart
 	plot.PlotPart = plotPart
 	PlotShared.ApplyPlotAttributes(plotPart, plot, localUserId)
+	plot.Id = plot.PlotId
 	return plot
 end
 

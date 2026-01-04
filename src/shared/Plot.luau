@@ -122,11 +122,14 @@ export type PlotPlayer = {
 }
 
 export type Plot = {
+    Id: number,
     Name: string,
     Part: Part,
     OwnerUserId: number?,
     OwnerName: string?,
     MyPermission: Formex.Permission,
+    SegmentsUnlocked: number,
+    LevelsUnlocked: number,
     Segments: {Segment},
     Levels: {number: Level},
     Players: {PlotPlayer},
@@ -160,6 +163,118 @@ export type Plot = {
 
 local plot = {} :: Plot
 
--- Implementation will be different on client and server
+local Plot = {}
+Plot.__index = Plot
 
-return plot
+export type PlotHooks = {
+    Invoke: ((this: Plot, action: string, ...any) -> any)?,
+    OnSelectionChanged: ((this: Plot) -> ())?,
+}
+
+local function fireSelectionChanged(self: Plot)
+    self.OnSelectionChanged:Fire()
+    if self._hooks and self._hooks.OnSelectionChanged then
+        self._hooks.OnSelectionChanged(self)
+    end
+end
+
+function Plot.Attach(data: Plot, hooks: PlotHooks?): Plot
+    data.Id = data.PlotId
+    data.DesignMode = data.DesignMode or "Play"
+    data.SelectedPart = data.SelectedPart or nil
+    data.OnPlotChanged = data.OnPlotChanged or Instance.new("BindableEvent")
+    data.OnPartChanged = data.OnPartChanged or Instance.new("BindableEvent")
+    data.OnSelectionChanged = data.OnSelectionChanged or Instance.new("BindableEvent")
+    (data :: any)._hooks = hooks
+    return setmetatable(data, Plot) :: Plot
+end
+
+function Plot:SetName(newName: string)
+    if self.Name == newName then
+        return
+    end
+    self.Name = newName
+    self.OnPlotChanged:Fire()
+    if self._hooks and self._hooks.Invoke then
+        self._hooks.Invoke(self, Formex.Function.RenamePlot, newName)
+    end
+end
+
+function Plot:SetPermission(userId: number, permission: Formex.Permission)
+    if self._hooks and self._hooks.Invoke then
+        self._hooks.Invoke(self, Formex.Function.SetPermission, userId, permission)
+    end
+end
+
+function Plot:SetDesignMode(mode: DesignMode, levelIndex: number)
+    if self.DesignMode == mode then
+        return
+    end
+    self.DesignMode = mode
+    self.OnPlotChanged:Fire()
+    if self._hooks and self._hooks.Invoke then
+        self._hooks.Invoke(self, "SetDesignMode", mode, levelIndex)
+    end
+end
+
+function Plot:SelectPart(part: Wall | Floor | Object)
+    if self.SelectedPart == part then
+        return
+    end
+    self.SelectedPart = part
+    fireSelectionChanged(self)
+    if self._hooks and self._hooks.Invoke then
+        self._hooks.Invoke(self, "SelectPart", part and part.Id or 0)
+    end
+end
+
+function Plot:DeselectAll()
+    if not self.SelectedPart then
+        return
+    end
+    self.SelectedPart = nil
+    fireSelectionChanged(self)
+    if self._hooks and self._hooks.Invoke then
+        self._hooks.Invoke(self, "DeselectAll")
+    end
+end
+
+function Plot:Undo()
+    if self._hooks and self._hooks.Invoke then
+        return self._hooks.Invoke(self, Formex.Function.Undo)
+    end
+    return false
+end
+
+function Plot:Redo()
+    if self._hooks and self._hooks.Invoke then
+        return self._hooks.Invoke(self, Formex.Function.Redo)
+    end
+    return false
+end
+
+function Plot:IsPointValid(point: Vector2 | Vector2int16): boolean
+    return Formex.Plot.IsPointInUnlockedSegments(point, self.SegmentsUnlocked)
+end
+
+function Plot:IsLineValid(lineStart: Vector2 | Vector2int16, lineEnd: Vector2 | Vector2int16): boolean
+    return Formex.Plot.IsLineWithinUnlockedSegments(lineStart, lineEnd, self.SegmentsUnlocked)
+end
+
+function Plot:IsPolygonValid(points: {Vector2 | Vector2int16}): boolean
+    for _, point in points do
+        if not self:IsPointValid(point) then
+            return false
+        end
+    end
+    return true
+end
+
+function Plot:IsPointNearBoundary(point: Vector3, threshold: number): boolean
+    if not self.Part then
+        return false
+    end
+    return Formex.Plot.IsPointNear(self.Part.Position, point, threshold)
+end
+
+return Plot

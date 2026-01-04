@@ -4,7 +4,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
+local Plot = require(FormexFolder:WaitForChild("Plot"))
 local PlotShared = require(FormexFolder:WaitForChild("PlotShared"))
+local FormexFunctions: RemoteFunction = FormexFolder:WaitForChild("FormexFunctions")
 
 if not Players.LocalPlayer then
 	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
@@ -15,7 +17,7 @@ local PlotClient = {}
 
 export type PlotInfo = PlotShared.PlotInfo
 
-local emptyPlot = PlotShared.CreateEmptyPlot()
+local emptyPlot = Plot.Attach(PlotShared.CreateEmptyPlot(), nil)
 
 PlotClient.Plots = {} :: {[number]: PlotInfo}
 PlotClient.MyPlotId = 0
@@ -42,8 +44,14 @@ local function notifyPlotChange(plotId: number)
 	end
 end
 
+local function invokePlot(plot: PlotInfo, action: string, ...)
+	return FormexFunctions:InvokeServer(plot.Id, action, ...)
+end
+
 local function subscribeToPlot(plotPart: BasePart)
-	local plot = PlotShared.CreatePlot(plotPart, localPlayer.UserId)
+	local plot = Plot.Attach(PlotShared.CreatePlot(plotPart, localPlayer.UserId), {
+		Invoke = invokePlot,
+	})
 	PlotClient.Plots[plot.PlotId] = plot
 	PlotShared.BindPlotAttributes(plotPart, plot, {
 		LocalUserId = localPlayer.UserId,

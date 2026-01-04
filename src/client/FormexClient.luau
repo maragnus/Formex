@@ -28,7 +28,8 @@ end
 PlotClient.SetEventEmitter(events)
 
 function FormexClient.ClaimPlot(plotId: number?) : boolean
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.ClaimPlot, plotId)
+    local targetPlotId = plotId or PlotClient.CurrentPlot.Id
+    local result, message = FormexFunctions:InvokeServer(targetPlotId, Formex.Function.ClaimPlot, plotId)
     if result == false then
         warn("ClaimPlot failed:", message)
     end
@@ -36,7 +37,7 @@ function FormexClient.ClaimPlot(plotId: number?) : boolean
 end
 
 function FormexClient.ReleasePlot()
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.ReleasePlot)
+    local result, message = FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.ReleasePlot)
     if result == false then
         warn("ReleasePlot failed:", message)
     end
@@ -44,7 +45,7 @@ function FormexClient.ReleasePlot()
 end
 
 function FormexClient.UnlockSegment(segmentIndex: number)
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.UnlockSegment, segmentIndex)
+    local result, message = FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.UnlockSegment, segmentIndex)
     if result == false then
         warn("UnlockSegment failed:", message)
     end
@@ -52,7 +53,7 @@ function FormexClient.UnlockSegment(segmentIndex: number)
 end
 
 function FormexClient.RenamePlot(newName: string)
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.RenamePlot, newName)
+    local result, message = FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.RenamePlot, newName)
     if result == false then
         warn("RenamePlot failed:", message)
     end
@@ -60,7 +61,7 @@ function FormexClient.RenamePlot(newName: string)
 end
 
 function FormexClient.GetSaves(): {[number]: Formex.PlotSaveInfo}
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.ListSaves)
+    local result, message = FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.ListSaves)
     if result == false then
         warn("ListSaves failed:", message)
         return {}
@@ -69,7 +70,7 @@ function FormexClient.GetSaves(): {[number]: Formex.PlotSaveInfo}
 end
 
 function FormexClient.LoadSave(saveId: number)
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.LoadSave, saveId)
+    local result, message = FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.LoadSave, saveId)
     if result == false then
         warn("LoadSave failed:", message)
     end
@@ -77,7 +78,7 @@ function FormexClient.LoadSave(saveId: number)
 end
 
 function FormexClient.NewSave(startingSegment: number?)
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.NewSave, startingSegment)
+    local result, message = FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.NewSave, startingSegment)
     if result == false then
         warn("NewSave failed:", message)
     end
@@ -85,35 +86,35 @@ function FormexClient.NewSave(startingSegment: number?)
 end
 
 function FormexClient.SetSavePermission(targetUserId: number, permission: Formex.Permission): (boolean, string?)
-    return FormexFunctions:InvokeServer(Formex.Function.SetPermission, targetUserId, permission)
+    return FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.SetPermission, targetUserId, permission)
 end
 
 function FormexClient.GetSavePermissions(): {[number]: Formex.Permission}
-    return FormexFunctions:InvokeServer(Formex.Function.GetPermissions)
+    return FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.GetPermissions)
 end
 
 function FormexClient.BuildWall(wall: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction): Formex.WallData | {Formex.WallData}
-    return FormexFunctions:InvokeServer(Formex.Function.BuildWall, wall, action)
+    return FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.BuildWall, wall, action)
 end
 
 function FormexClient.BuildFloor(floor: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction): Formex.FloorData | {Formex.FloorData}
-    return FormexFunctions:InvokeServer(Formex.Function.BuildFloor, floor, action)
+    return FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.BuildFloor, floor, action)
 end
 
 function FormexClient.BuildObject(wall: Formex.ObjectData, action: Formex.BuildAction): Formex.ObjectData
-    return FormexFunctions:InvokeServer(Formex.Function.BuildObject, wall, action)
+    return FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.BuildObject, wall, action)
 end
 
 function FormexClient.CanUndo(): boolean
-    return FormexFunctions:InvokeServer(Formex.Function.CanUndo)
+    return FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.CanUndo)
 end
 
 function FormexClient.CanRedo(): boolean
-    return FormexFunctions:InvokeServer(Formex.Function.CanRedo)
+    return FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.CanRedo)
 end
 
 function FormexClient.Undo(): (boolean, string?)
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.Undo)
+    local result, message = FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.Undo)
     if result == false then
         warn("Undo failed:", message)
     end
@@ -121,7 +122,7 @@ function FormexClient.Undo(): (boolean, string?)
 end
 
 function FormexClient.Redo(): (boolean, string?)
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.Redo)
+    local result, message = FormexFunctions:InvokeServer(PlotClient.CurrentPlot.Id, Formex.Function.Redo)
     if result == false then
         warn("Redo failed:", message)
     end

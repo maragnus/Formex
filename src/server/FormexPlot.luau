@@ -129,6 +129,46 @@ function FormexPlot.UnlockSegment(player: Player, segmentIndex: number): (boolea
     return true, mask
 end
 
+function FormexPlot.SetDesignMode(player: Player, mode: string, levelIndex: number): (boolean, string?)
+    local plotData = FormexSystem.GetPlayerCurrentPlot(player)
+    if not plotData then
+        return false, "No plot"
+    end
+    local plotPart = FormexSystem.Plots[plotData.PlotId]
+    if not plotPart then
+        return false, "Invalid plot"
+    end
+    plotPart:SetAttribute("DesignMode_" .. tostring(player.UserId), mode)
+    plotPart:SetAttribute("DesignLevel_" .. tostring(player.UserId), levelIndex)
+    return true
+end
+
+function FormexPlot.SelectPart(player: Player, partId: number)
+    local plotData = FormexSystem.GetPlayerCurrentPlot(player)
+    if not plotData then
+        return false, "No plot"
+    end
+    local plotPart = FormexSystem.Plots[plotData.PlotId]
+    if not plotPart then
+        return false, "Invalid plot"
+    end
+    plotPart:SetAttribute("SelectedPart_" .. tostring(player.UserId), partId)
+    return true
+end
+
+function FormexPlot.DeselectAll(player: Player)
+    local plotData = FormexSystem.GetPlayerCurrentPlot(player)
+    if not plotData then
+        return false, "No plot"
+    end
+    local plotPart = FormexSystem.Plots[plotData.PlotId]
+    if not plotPart then
+        return false, "Invalid plot"
+    end
+    plotPart:SetAttribute("SelectedPart_" .. tostring(player.UserId), nil)
+    return true
+end
+
 function FormexPlot.SetPermission(player: Player, targetUserId: number, permission: Formex.Permission): boolean
     local plotData, playerPermission = FormexSystem.GetPlayerCurrentPlot(player)
     if not plotData then return false, "No current plot" end

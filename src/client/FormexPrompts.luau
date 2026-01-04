@@ -172,7 +172,7 @@ function FormexPrompts.PlotRename()
          }, function(value) dialog.Result = value end)
     end)
     if newName then
-        FormexClient.RenamePlot(newName)
+        PlotClient.CurrentPlot:SetName(newName)
     end
 end
 
