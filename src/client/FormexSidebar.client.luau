@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
+local PlotClient = require(script.Parent:WaitForChild("PlotClient"))
 local Formex = FormexClient.Formex
 local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
 local FormexPrompts = require(script.Parent:WaitForChild("FormexPrompts"))
@@ -37,12 +38,12 @@ local cachedOwnerUserId = -1
 
 local ui = {}
 
-local function canDesign(plot: FormexClient.PlotInfo): boolean
+local function canDesign(plot: PlotClient.PlotInfo): boolean
     return plot.IsValid and plot.SaveId ~= 0
         and (plot.MyPermission == Formex.Permission.Owner or plot.MyPermission == Formex.Permission.Manager)
 end
 
-local function canManage(plot: FormexClient.PlotInfo): boolean
+local function canManage(plot: PlotClient.PlotInfo): boolean
     return plot.IsValid and plot.SaveId ~= 0
         and (plot.MyPermission == Formex.Permission.Owner)
 end
@@ -209,7 +210,7 @@ local function getWallMaterialIds(wallPart: BasePart): (number, number, number, 
     return frontMaterial, backMaterial, startMaterial, endMaterial
 end
 
-local function getWallPart(plot: FormexClient.PlotInfo, wallId: number, level: number): BasePart?
+local function getWallPart(plot: PlotClient.PlotInfo, wallId: number, level: number): BasePart?
     if not plot.PlotPart then
         return nil
     end
@@ -234,7 +235,7 @@ local function applySelectedWallMaterials(frontMaterial: number?, backMaterial: 
         return
     end
 
-    local plot = FormexClient.CurrentPlot
+    local plot = PlotClient.CurrentPlot
     if not plot or not plot.IsValid or not plot.PlotPart then
         return
     end
@@ -481,7 +482,7 @@ local function buildSidebar()
     end)
 
     local expandButton = createIconButton(ownerActionsRow, "Expand", Formex.Icons.PlotExpand, function()
-        if not canManage(FormexClient.CurrentPlot) then return end
+        if not canManage(PlotClient.CurrentPlot) then return end
         
         local mode = FormexDesign.GetDesignMode()
         if mode ~= FormexDesign.DesignMode.Expand then
@@ -496,7 +497,7 @@ local function buildSidebar()
     end)
 
     local designButton = createIconButton(ownerActionsRow, "DesignMode", Formex.Icons.DesignStart, function()
-        if not canDesign(FormexClient.CurrentPlot) then return end
+        if not canDesign(PlotClient.CurrentPlot) then return end
         local mode = FormexDesign.GetDesignMode()
         if mode == FormexDesign.DesignMode.Play then
             FormexDesign.SetDesignMode(FormexDesign.DesignMode.Design)
@@ -824,7 +825,7 @@ local function buildSidebar()
 end
 
 local function refreshUI()
-    local plot = FormexClient.CurrentPlot :: FormexClient.PlotInfo
+    local plot = PlotClient.CurrentPlot :: PlotClient.PlotInfo
     if not plot.IsValid then
         ui.Container.Visible = false
         return
@@ -945,7 +946,7 @@ FormexClient.ClientEvents:Connect(function(eventName)
         return
     end
 
-    local plot = FormexClient.CurrentPlot :: FormexClient.PlotInfo
+    local plot = PlotClient.CurrentPlot :: PlotClient.PlotInfo
     if not plot.IsValid then
         ui.Container.Visible = false
         return

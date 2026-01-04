@@ -1,6 +1,7 @@
 --!strict
 
 local Formex = require(script.Parent:FindFirstChild("FormexServer"))
+local PlotServer = require(script.Parent:WaitForChild("PlotServer"))
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
 local DataStoreService = game:GetService("DataStoreService")
@@ -178,6 +179,7 @@ end
 function FormexSystem.SetPlayerCurrentPlot(player, plotId)
     plotId = plotId or 0
     player:SetAttribute("CurrentPlotId", plotId)
+    PlotServer.SetPlayerCurrentPlot(player, plotId)
 end
 
 function FormexSystem.RegisterPlot(plotPart: Part)
@@ -209,6 +211,7 @@ function FormexSystem.RegisterPlot(plotPart: Part)
         Permissions = {},
     }
     FormexSystem.UpdatePlotAttributes(plotId)
+    PlotServer.RegisterPlot(plotPart)
 end
 
 local saveQueue = {} :: {[number]: number}
