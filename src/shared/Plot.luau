@@ -92,6 +92,7 @@ export type Level = {
     Part: Part,
     IsUnlocked: boolean,
     IsActive: boolean,
+    CanUnlock: boolean,
     Unlock: () -> (),
 
     Walls: {this: Level, number: Wall},
@@ -103,10 +104,21 @@ export type Level = {
     AddObject: (this: Level, start: Vector2int16, modelId: number) -> Object,
 }
 
-export type PermissionItem = {
+export type Segment = {
+    Position: Vector2int16,
+    IsUnlocked: boolean,
+    CanUnlock: boolean,
+    Unlock: () -> (),
+}
+
+export type PlotPlayer = {
     UserId: number,
     UserName: string,
     Permission: Formex.Permission,
+    Color: Color3,
+    IsPresent: boolean,
+    DesignMode: DesignMode,
+    SortOrder: number, -- Plot.Owner = 0, Owner = 1, Manager = 2, VIP = 3, Guest = 4, Banned = 5
 }
 
 export type Plot = {
@@ -115,21 +127,19 @@ export type Plot = {
     OwnerUserId: number?,
     OwnerName: string?,
     MyPermission: Formex.Permission,
-    Segments: {Vector2int16},
+    Segments: {Segment},
     Levels: {number: Level},
-    Players: {number: Color3},
+    Players: {PlotPlayer},
     CanUndo: boolean,
     CanRedo: boolean,
-
     DesignMode: DesignMode,
     SelectedPart: Wall | Floor | Object | nil,
-    SetDesignMode: (this: Plot, mode: DesignMode, levelIndex: number) -> (),
 
     SetName: (this: Plot, newName: string) -> (),
-    GetPermissions: (this: Plot) -> {number: PermissionItem},
     SetPermission: (this: Plot, userId: number, permission: Formex.Permission) -> (),
-    UnlockSegment: (this: Plot, segment: Vector2int16) -> (),
 
+    SetDesignMode: (this: Plot, mode: DesignMode, levelIndex: number) -> (),
+    SelectPart: (this: Plot, part: Wall | Floor | Object) -> (),
     DeselectAll: (this: Plot) -> (),
     Undo: (this: Plot) -> (),
     Redo: (this: Plot) -> (),
@@ -140,10 +150,16 @@ export type Plot = {
     IsPointNearBoundary: (this: Plot, point: Vector3, threshold: number) -> boolean,
 
     -- Events
-    OnPlotChanged: (this: Plot) -> (),
-    OnSelectionChanged: (this: Plot, part: Wall | Floor | Object | nil) -> (),
+    -- When Plot.*, Plot.Players, Plot.Segments, or Plot.Levels change (no arguments)
+    OnPlotChanged: BindableEvent,
+    -- When a Part is added, removed, or changed (part: Wall | Floor | Object)
+    OnPartChanged: BindableEvent,
+    -- When Plot.SelectedPart changes (no arguments)
+    OnSelectionChanged: BindableEvent,
 }
 
 local plot = {} :: Plot
+
+-- Implementation will be different on client and server
 
 return plot
