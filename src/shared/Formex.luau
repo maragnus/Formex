@@ -7,12 +7,6 @@
 -- \/   \___/|_|  |_| |_| |_|\___/_/\_\
 -- Formex by NexArc Solutions <roblox@nexarc.dev>
 
-local DATA_VERSION: number = 2
-local INITIAL_BUFFER_SIZE: number = 1024
-local SNAP_WALLS_TO_45_DEGREES: boolean = false
-
-local Buffer = require(script.Parent.Buffer)
-
 -- Type constants
 
 export type SurfaceType = "Square" | "Sliced"
@@ -44,27 +38,6 @@ export type PlotData = {
 	SegmentsUnlocked: number,
 	Permissions: {[number]: Permission},
 }
-
---[[ Old LevelData and FloorData format
-export type LevelData = {
-	Walls: {[number]: WallData}, -- [WallId: WallData]
-	Floors: {[number]: number | nil}, -- [Formex.XYToIndex(x, y)]: Formex.Materials[index] | nil
-	Ceilings: {[number]: number | nil}, -- [Formex.XYToIndex(x, y)]: Formex.Materials[index] | nil
-	Objects: {[number]: ObjectData}, -- [ObjectId: ObjectData]
-	Part: Part?
-
-export type FloorData = {
-	FloorId: number,
-	LevelIndex: number,
-	Tile: Vector2int16,
-	Type: FloorType,
-	FloorMaterial: number?,
-	CeilingMaterial: number?,
-	FloorMaterial2: number?,
-	CeilingMaterial2: number?,
-	Part: Part?
-}
-]]
 
 export type LevelData = {
 	Walls: {[number]: WallData}, -- {[WallId]: WallData}
@@ -124,9 +97,32 @@ export type ObjectInfo = {
 	Properties: {[string]: any}?,
 }
 
+export type SegmentBounds = {
+	Index: number,
+	Row: number,
+	Column: number,
+	CFrame: CFrame,
+	Position: Vector3,
+	Size: Vector3,
+	Extents: Vector3,
+}
+
 -- Module constants
 
 local Formex = {}
+
+local EPSILON = 1e-4
+Formex.EPSILON = EPSILON
+
+Formex.Math = {} :: {
+	DoLinesIntersect: (p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2) -> boolean,
+	IsSimplePolygon: (polygon: {Vector2}) -> boolean,
+	SimplifyPolygon: (polygon: {Vector2}) -> {Vector2},
+}
+Formex.Serialization = {} :: {
+	SerializeLevelData: (levels: LevelArray) -> string,
+	DeserializeLevelData: (dataString: string) -> LevelArray,
+}
 
 Formex.GridSize = 2 -- studs
 Formex.LayoutGridSize = 4 -- studs
@@ -143,6 +139,28 @@ Formex.DefaultCeilingMaterial = 2
 Formex.DefaultWallMaterial = 2
 Formex.DefaultFoundationMaterial = 2 -- Exterior of Level 1 floor
 Formex.SnapWallsTo45Degrees = false
+
+Formex.Permission = table.freeze({
+        Banned = "Banned",
+        Guest = "Guest",
+        VIP = "VIP",
+        Manager = "Manager",
+        Owner = "Owner"
+    }) :: { Permission: Permission }
+
+Formex.BuildAction = table.freeze({
+        Add = "Add",
+        Delete = "Delete",
+        Edit = "Edit"
+    }) :: {BuildAction: BuildAction}
+
+Formex.PartType = table.freeze({
+        Wall = "Wall",
+        Floor = "Floor",
+        Ceiling = "Ceiling",
+        Object = "Object",
+        All = nil,
+    }) :: {PartType: PartType}
 
 Formex.CollisionGroup = {
 	Grid = "FormexGrids",
@@ -180,88 +198,29 @@ Formex.Segments = {
 }
 Formex.Segments.Count = Formex.Segments.GridWidth * Formex.Segments.GridHeight
 
-Formex.Materials = {
-	{
-		Name = "Structure",
-		Material = Enum.Material.Wood,
-		StudsPerTile = 4,
-		AssetId = 10536172711,
-	},
-	{
-		Name = "Checked Tile",
-		Material = Enum.Material.CeramicTiles,
-		AssetId = 10536172734,
-		StudsPerTile = 8,
-		Categories = { "Floor", "Wall", "Ceiling" }
-	},
-	{
-		Name = "Beige Tile",
-		Material = Enum.Material.CeramicTiles,
-		AssetId = 125491924817688,
-		StudsPerTile = 4,
-		Categories = { "Floor" }
-	}
-} :: {number: MaterialInfo}
+Formex.Icons = {} :: {[string]: number}
+Formex.Materials = {} :: {number: MaterialInfo}
+Formex.Furniture = {} :: {ObjectInfo}
 
-Formex.Icons = { -- Content.fromAssetId(...)
-    Menu = 123614418099512,
-    Refresh = 123101975679190,
-    AddItem = 128647721275129,
-    MoveItem = 83970836971222,
-	RotateItem = 101431557821612,
-    ResizeItem = 78551851583998,
-    DeleteItem = 91738865172085,
-    WallExtend = 128647721275129,
-    WallDivide = 116931266034105,
-    WallDisconnect = 70397467113579,
-    PlotExpand = 88488799504419,
-    PlotRename = 74166756362476,
-    PlotClaim = 85199762467908,
-    PlotRelease = 137711830774408,
-    PlotPermissions = 83277863761797,
-    DesignStart = 78727585562674,
-    DesignFurniture = 120639802680464,
-    DesignCeilings = 86944909652185,
-    DesignFloors = 136537860205120,
-    DesignWalls =  105416010695180,
-    DesignPaint = 92885878760720,
-    Undo = 118863163301402,
-    Redo = 118241293985419,
-    ChevronDown = 84853982697443,
-    ChevronUp = 125753605575669,
-    AlertPrimary = 103853485477063,
-    AlertSecondary = 115719232269249,
-    AlertInfo = 119134101744939,
-    AlertWarn = 111518129231234,
-    AlertDanger = 73134495809587,
-	SecurityLock = 71709652798579,
-	SecurityUnlock = 95498189643385,
-	SecurityKey = 115917399534136,
-	Camera = 70772215979759,
-    CircleBackground = 114484129436279,
-} :: {[string]: number}
-
-Formex.Furniture = {
-	{
-		Name = "Modern Chair",
-		IconAssetId = 128201486227303,
-		PrefabName = "Chairs/ModernChair",
-		Size = Vector3.new(4, 6, 4),
-		Categories = { "Seating", "Indoors" },
-	},
-} :: {ObjectInfo}
-
-local TileColumns = Formex.LayoutGrid.Columns
-function Formex.IndexToXY(index: number): Vector2int16
-	local zeroIndex = index - 1
-	local x = zeroIndex % TileColumns
-	local y = math.floor(zeroIndex / TileColumns)
-	return Vector2int16.new(x, y)
-end
-
-function Formex.XYToIndex(x: number, y: number): number
-	return x + y * TileColumns + 1
-end
+-- Network function names
+Formex.Function = table.freeze({
+	ClaimPlot = "ClaimPlot",
+	ReleasePlot = "ReleasePlot",
+	RenamePlot = "RenamePlot",
+	ListSaves = "ListSaves",
+	LoadSave = "LoadSave",
+	NewSave = "NewSave",
+	GetPermissions = "GetPermissions",
+	SetPermission = "SetPermission",
+	UnlockSegment = "UnlockSegment",
+	BuildWall = "BuildWall",
+	BuildFloor = "BuildFloor",
+	BuildObject = "BuildObject",
+	CanUndo = "CanUndo",
+	CanRedo = "CanRedo",
+	Undo = "Undo",
+	Redo = "Redo",
+}) :: {Function: string}
 
 function Formex.UpdateTexture(part: BasePart, texture: Texture, materialId: number)
 	local materialInfo = Formex.Materials[materialId]
@@ -302,60 +261,6 @@ function Formex.DecodeFloorPoints(value: string?): {Vector2int16}
 	end
 
 	return points
-end
-
-
--- Network function names
-Formex.Function = table.freeze({
-	ClaimPlot = "ClaimPlot",
-	ReleasePlot = "ReleasePlot",
-	RenamePlot = "RenamePlot",
-	ListSaves = "ListSaves",
-	LoadSave = "LoadSave",
-	NewSave = "NewSave",
-	GetPermissions = "GetPermissions",
-	SetPermission = "SetPermission",
-	UnlockSegment = "UnlockSegment",
-	BuildWall = "BuildWall",
-	BuildFloor = "BuildFloor",
-	BuildObject = "BuildObject",
-	CanUndo = "CanUndo",
-	CanRedo = "CanRedo",
-	Undo = "Undo",
-	Redo = "Redo",
-}) :: {Function: string}
-
-Formex.Permission = table.freeze({
-	Banned = "Banned",
-	Guest = "Guest",
-	VIP = "VIP",
-	Manager = "Manager",
-	Owner = "Owner"
-}) :: { Permission: Permission }
-
-Formex.BuildAction = table.freeze({
-	Add = "Add",
-	Delete = "Delete",
-	Edit = "Edit"
-}) :: {BuildAction: BuildAction}
-
-Formex.PartType = table.freeze({
-	Wall = "Wall",
-	Floor = "Floor",
-	Ceiling = "Ceiling",
-	Object = "Object",
-	All = nil,
-}) :: {PartType: PartType}
-
-local EPSILON = 1e-4
-
-local function isGridSnapped(value: number): boolean
-	local scaled = value / Formex.GridSize
-	return math.abs(scaled - math.round(scaled)) <= EPSILON
-end
-
-local function isPointGridSnapped(point: Vector2): boolean
-	return isGridSnapped(point.X) and isGridSnapped(point.Y)
 end
 
 local function isLayoutGridSnapped(value: number): boolean
@@ -518,13 +423,6 @@ end
 
 local function getLevelOffset(_plotPart: BasePart, level: number): number
 	return (math.max(level, 1) - 1) * Formex.SegmentSize.Height
-end
-
-local function resolveMaterial(materialName: string?): Enum.Material
-	if materialName and Enum.Material[materialName] then
-		return Enum.Material[materialName]
-	end
-	return Enum.Material.SmoothPlastic
 end
 
 local function ensureTexture(part: BasePart, name: string, face: Enum.NormalId): Texture
@@ -1161,16 +1059,6 @@ function Formex.Segments.GetAllUnlocked(mask: number?): {number}
 	return unlocked
 end
 
-export type SegmentBounds = {
-	Index: number,
-	Row: number,
-	Column: number,
-	CFrame: CFrame,
-	Position: Vector3,
-	Size: Vector3,
-	Extents: Vector3,
-}
-
 function Formex.Segments.GetBounds(plotPart: BasePart, segmentIndex: number, levelsUnlocked: number?): SegmentBounds
 	local row, column = Formex.Segments.GetRowColumn(segmentIndex)
 	local xOffset = (column - (Formex.Segments.GridWidth + 1) / 2) * Formex.SegmentSize.Width
@@ -1222,286 +1110,6 @@ function Formex.EnsureFolder(name: string, parent: Instance): Folder
 	folder = Instance.new("Folder", parent)
 	folder.Name = name
 	return folder
-end
-
-function Formex.SerializeLevelData(levels: LevelArray): string
-	local writer = Buffer.new(INITIAL_BUFFER_SIZE)
-	writer:WriteU16(DATA_VERSION)
-
-	-- Serialize levels
-	for levelIndex = 1, Formex.MaxPlotSize.Levels do
-		local levelData = levels[levelIndex] :: LevelData
-
-		if levelData then
-			writer:WriteU8(levelIndex)
-
-			-- Walls
-			for wallId, wall in levelData.Walls do
-				writer:WriteU16(wallId)
-				writer:WriteI16(wall.Start.X)
-				writer:WriteI16(wall.Start.Y)
-				writer:WriteI16(wall.End.X)
-				writer:WriteI16(wall.End.Y)
-				writer:WriteU8(wall.FrontMaterial or 0)
-				writer:WriteU8(wall.BackMaterial or 0)
-				writer:WriteU8(wall.StartMaterial or 0)
-				writer:WriteU8(wall.EndMaterial or 0)
-			end
-			writer:WriteU16(0)
-
-			-- Floors
-			for floorId, floor in levelData.Floors do
-				local points = floor.Points or {}
-				writer:WriteU16(floorId)
-				writer:WriteU8(floor.FloorMaterial or 0)
-				writer:WriteU8(floor.CeilingMaterial or 0)
-				writer:WriteU8(#points)
-				for _, point in ipairs(points) do
-					writer:WriteI8(point.X)
-					writer:WriteI8(point.Y)
-				end
-			end
-			writer:WriteU16(0)
-
-			-- Objects
-			for objectId, object in levelData.Objects do
-				writer:WriteU16(objectId)
-				writer:WriteF32(object.Position.X)
-				writer:WriteF32(object.Position.Y)
-				writer:WriteF32(object.Position.Z)
-				writer:WriteF32(object.Rotation.X)
-				writer:WriteF32(object.Rotation.Y)
-				writer:WriteF32(object.Rotation.Z)
-				writer:WriteU16(object.WallId or 0)
-				for designIndex, value in object.Design do
-					writer:WriteU16(designIndex)
-					writer:WriteString(value)
-				end
-				writer:WriteU16(0)
-			end
-			writer:WriteU16(0)
-
-		else
-			writer:WriteU8(0) -- levelIndex
-			writer:WriteU16(0) -- walls terminator
-			writer:WriteU16(0) -- floors terminator
-			writer:WriteU16(0) -- objects terminator
-		end
-	end
-
-	return writer:ToString()
-end
-
-local function deserializeLevelDataV1(reader): LevelArray
-	local result = {} :: LevelArray
-
-	for i = 1, Formex.MaxPlotSize.Levels do
-		local levelData: LevelData = {
-			Walls = {},
-			Floors = {},
-			Objects = {},
-		}
-
-		local levelIndex = reader:ReadU8()
-		if levelIndex ~= 0 then
-			result[levelIndex] = levelData
-		end
-
-		-- Walls
-		while true do
-			local wallId = reader:ReadU16()
-			if wallId == 0 then break end
-
-			local wall: WallData = {
-				WallId = wallId,
-				Level = levelIndex,
-				Start = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
-				End = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
-				FrontMaterial = reader:ReadU8(),
-				BackMaterial = reader:ReadU8(),
-				StartMaterial = reader:ReadU8(),
-				EndMaterial = reader:ReadU8(),
-			}
-			levelData.Walls[wallId] = wall
-		end
-
-		local legacyFloors = {}
-		while true do
-			local index = reader:ReadU16()
-			if index == 0 then break end
-			legacyFloors[index] = reader:ReadU8()
-		end
-
-		local legacyCeilings = {}
-		while true do
-			local index = reader:ReadU16()
-			if index == 0 then break end
-			legacyCeilings[index] = reader:ReadU8()
-		end
-
-		for index, floorMaterial in legacyFloors do
-			local ceilingMaterial = legacyCeilings[index] or floorMaterial
-			local tile = Formex.IndexToXY(index)
-			local tileSize = Formex.LayoutGridSize
-			local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
-			local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
-			levelData.Floors[index] = {
-				FloorId = index,
-				LevelIndex = levelIndex,
-				Points = {
-					Vector2int16.new(x0, z0),
-					Vector2int16.new(x0 + tileSize, z0),
-					Vector2int16.new(x0 + tileSize, z0 + tileSize),
-					Vector2int16.new(x0, z0 + tileSize),
-				},
-				FloorMaterial = floorMaterial,
-				CeilingMaterial = ceilingMaterial,
-				FloorParts = {},
-				CeilingParts = {},
-			}
-		end
-		for index, ceilingMaterial in legacyCeilings do
-			if not legacyFloors[index] then
-				local tile = Formex.IndexToXY(index)
-				local tileSize = Formex.LayoutGridSize
-				local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
-				local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
-				levelData.Floors[index] = {
-					FloorId = index,
-					LevelIndex = levelIndex,
-					Points = {
-						Vector2int16.new(x0, z0),
-						Vector2int16.new(x0 + tileSize, z0),
-						Vector2int16.new(x0 + tileSize, z0 + tileSize),
-						Vector2int16.new(x0, z0 + tileSize),
-					},
-					FloorMaterial = ceilingMaterial,
-					CeilingMaterial = ceilingMaterial,
-					FloorParts = {},
-					CeilingParts = {},
-				}
-			end
-		end
-
-		-- Objects
-		while true do
-			local objectId = reader:ReadU16()
-			if objectId == 0 then break end
-			local obj = {
-				ObjectId = tostring(objectId),
-				Level = levelIndex,
-				Position = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				Rotation = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				WallId = reader:ReadU16(),
-				Design = {},
-				Properties = {},
-			}
-
-			while true do
-				local designIndex = reader:ReadU16()
-				if designIndex == 0 then break end
-				obj.Design[designIndex] = reader:ReadString()
-			end
-
-			levelData.Objects[objectId] = obj
-		end
-	end
-
-	return result
-end
-
-local function deserializeLevelDataV2(reader): LevelArray
-	local result = {} :: LevelArray
-
-	for i = 1, Formex.MaxPlotSize.Levels do
-		local levelData: LevelData = {
-			Walls = {},
-			Floors = {},
-			Objects = {},
-		}
-
-		local levelIndex = reader:ReadU8()
-		if levelIndex ~= 0 then
-			result[levelIndex] = levelData
-		end
-
-		-- Walls
-		while true do
-			local wallId = reader:ReadU16()
-			if wallId == 0 then break end
-
-			local wall: WallData = {
-				WallId = wallId,
-				Level = levelIndex,
-				Start = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
-				End = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
-				FrontMaterial = reader:ReadU8(),
-				BackMaterial = reader:ReadU8(),
-				StartMaterial = reader:ReadU8(),
-				EndMaterial = reader:ReadU8(),
-			}
-			levelData.Walls[wallId] = wall
-		end
-
-		while true do
-			local floorId = reader:ReadU16()
-			if floorId == 0 then break end
-			local floorMaterial = reader:ReadU8()
-			local ceilingMaterial = reader:ReadU8()
-			local pointCount = reader:ReadU8()
-			local points = {}
-			for _ = 1, pointCount do
-				table.insert(points, Vector2int16.new(reader:ReadI8(), reader:ReadI8()))
-			end
-			levelData.Floors[floorId] = {
-				FloorId = floorId,
-				LevelIndex = levelIndex,
-				Points = points,
-				FloorMaterial = floorMaterial,
-				CeilingMaterial = ceilingMaterial,
-				FloorParts = {},
-				CeilingParts = {},
-			}
-		end
-
-		-- Objects
-		while true do
-			local objectId = reader:ReadU16()
-			if objectId == 0 then break end
-			local obj = {
-				ObjectId = tostring(objectId),
-				Level = levelIndex,
-				Position = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				Rotation = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				WallId = reader:ReadU16(),
-				Design = {},
-				Properties = {},
-			}
-
-			while true do
-				local designIndex = reader:ReadU16()
-				if designIndex == 0 then break end
-				obj.Design[designIndex] = reader:ReadString()
-			end
-
-			levelData.Objects[objectId] = obj
-		end
-	end
-
-	return result
-end
-
-function Formex.DeserializeLevelData(dataString: string): LevelArray
-	local reader = Buffer.read(dataString)
-	local version = reader:ReadU16()
-
-	if version == 1 then
-		return deserializeLevelDataV1(reader)
-	elseif version == 2 then
-		return deserializeLevelDataV2(reader)
-	else
-		error("Unsupported data version: " .. tostring(version))
-	end
 end
 
 return Formex

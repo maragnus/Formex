@@ -1,10 +1,7 @@
 --!strict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
-local Formex = require(FormexFolder:WaitForChild("Formex"))
-local FormexSystem = require(script.Parent:WaitForChild("FormexSystem"))
+local Formex = require(script.Parent:FindFirstChild("FormexServer"))
+local FormexSystem = require(script.Parent:FindFirstChild("FormexSystem"))
 
 local PhysicsService = game:GetService("PhysicsService")
 PhysicsService:RegisterCollisionGroup(Formex.CollisionGroup.Grid)

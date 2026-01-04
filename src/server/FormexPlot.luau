@@ -1,13 +1,10 @@
 --!strict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
-local Formex = require(FormexFolder:WaitForChild("Formex"))
-local FormexSystem = require(script.Parent:WaitForChild("FormexSystem"))
-local FormexBuild = require(script.Parent:WaitForChild("FormexBuild"))
+local Formex = require(script.Parent:FindFirstChild("FormexServer"))
+local FormexSystem = require(script.Parent:FindFirstChild("FormexSystem"))
 
 local FormexPlot = {}
 

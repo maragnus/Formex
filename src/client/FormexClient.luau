@@ -1,10 +1,12 @@
 --!strict
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
 local Formex = require(FormexFolder:WaitForChild("Formex"))
-local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
+Formex.Math = require(FormexFolder:WaitForChild("FormexMath"))
+Formex.Plot = require(FormexFolder:WaitForChild("FormexPlot"))
+require(FormexFolder:WaitForChild("FormexData"))
+
 local FormexFunctions: RemoteFunction = FormexFolder:WaitForChild("FormexFunctions")
 
 export type PlotInfo = {

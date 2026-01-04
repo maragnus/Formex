@@ -1,12 +1,9 @@
 --!strict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Formex = require(script.Parent:FindFirstChild("FormexServer"))
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
 local DataStoreService = game:GetService("DataStoreService")
-
-local FormexFolder = ReplicatedStorage:WaitForChild("Formex")
-local Formex = require(FormexFolder:WaitForChild("Formex"))
 
 local FormexSystem = {}
 
@@ -249,7 +246,7 @@ function FormexSystem.SavePlot(plotId: number)
         end
     end
 
-    local levelData = Formex.SerializeLevelData(plotData.Levels)
+    local levelData = Formex.Serialization.SerializeLevelData(plotData.Levels)
 
     local key = tostring(userId) .. ":" .. tostring(plotData.SaveId)
     local success, err = pcall(function()
@@ -329,7 +326,7 @@ function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
     plotData.Permissions = fixNumbericDictionary(saveData.Permissions or {})
 
     if type(levelData) == "string" then
-        plotData.Levels = Formex.DeserializeLevelData(levelData)
+        plotData.Levels = Formex.Serialization.DeserializeLevelData(levelData)
     else
         warn("No level data found for plot", plotId, "save", saveId)
         plotData.Levels = plotData.Levels or {}

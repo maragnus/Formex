@@ -14,7 +14,6 @@ screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 local FormexUI = {}
 FormexUI.ScreenGui = screenGui
 FormexUI.BlurController = BlurController
-local currentContentParent: Instance? = nil
 
 local buttonPalette = {
     Primary = { Base = Color3.fromRGB(88, 118, 255), Text = Color3.fromRGB(248, 249, 255) },
