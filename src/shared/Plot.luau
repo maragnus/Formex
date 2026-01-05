@@ -15,7 +15,7 @@ local Formex = require(script.Parent:FindFirstChild("Formex"))
     Players can see what other players have selected, and two players cannot select the same part at the same time.
 
     Workspace Hierarchy:
-    Plot.Part \ Level.Part \ Walls (Folder) \ Wall.Part
+    Plot.Part \ Level.Part \ Walls (Folder) \ Wall.Part \ BackSide.Part
                            \ Floors (Folder) \ Floor.Part
                            \ Objects (Folder) \ Object.Part
 
@@ -34,6 +34,7 @@ export type DesignMode = "Play" | "Wall" | "Floor" | "Object"
 export type Wall = {
     Id: number,
     Part: Part,
+    BackPart: Part?,
     Level: Level,
     Start: Vector2int16,
     End: Vector2int16,

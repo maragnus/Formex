@@ -7,6 +7,21 @@ local EPSILON = Formex.EPSILON
 
 Formex.Walls = {}
 
+local BACK_PART_NAME = "BackSide"
+Formex.Walls.BackPartName = BACK_PART_NAME
+
+local function ensureBackPart(frontPart: BasePart): BasePart
+	local existing = frontPart:FindFirstChild(BACK_PART_NAME)
+	if existing and existing:IsA("BasePart") then
+		return existing
+	end
+
+	local backPart = Instance.new("Part")
+	backPart.Name = BACK_PART_NAME
+	backPart.Parent = frontPart
+	return backPart
+end
+
 local function cross2(a: Vector2, b: Vector2): number
 	return a.X * b.Y - a.Y * b.X
 end
@@ -125,6 +140,8 @@ end
 function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 	local part = wall.Part
 	if not part or not plotPart then return end
+	local backPart = ensureBackPart(part)
+	wall.BackPart = backPart
 
 	local height = Formex.SegmentSize.Height
 	local levelIndex = wall.Level or 1
@@ -144,9 +161,24 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 	end
 	local worldDir = plotPart.CFrame:VectorToWorldSpace(dirLocal)
 
-	part.Size = Vector3.new(1, height, length)
-	part.CFrame = CFrame.lookAt(worldMid, worldMid + worldDir)
+	local wallThickness = Formex.WallThickness
+	local sideThickness = wallThickness / 2
+	local sideOffset = wallThickness / 4
+
+	local wallCFrame = CFrame.lookAt(worldMid, worldMid + worldDir)
+	part.Size = Vector3.new(sideThickness, height, length)
+	part.CFrame = wallCFrame * CFrame.new(-sideOffset, 0, 0)
 	part.Transparency = 0 -- Disable invisibility in case it was set
+
+	backPart.Size = Vector3.new(sideThickness, height, length)
+	backPart.CFrame = wallCFrame * CFrame.new(sideOffset, 0, 0)
+	backPart.Anchored = part.Anchored
+	backPart.CollisionGroup = part.CollisionGroup
+	backPart.CanCollide = part.CanCollide
+	backPart.CanTouch = part.CanTouch
+	backPart.CanQuery = part.CanQuery
+	backPart.CastShadow = part.CastShadow
+	backPart.Transparency = part.Transparency
 
 	local frontMaterial = wall.FrontMaterial or Formex.DefaultWallMaterial
 	local backMaterial = wall.BackMaterial or frontMaterial
@@ -155,16 +187,30 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 
     local ensureTexture = Formex.Util.EnsureTexture
 	local frontTexture = ensureTexture(part, "Front", Enum.NormalId.Left)
-	local backTexture = ensureTexture(part, "Back", Enum.NormalId.Right)
 	local startTexture = ensureTexture(part, "Start", Enum.NormalId.Back)
 	local endTexture = ensureTexture(part, "End", Enum.NormalId.Front)
 	local topTexture = ensureTexture(part, "Top", Enum.NormalId.Top)
 
 	Formex.UpdateTexture(part, frontTexture, frontMaterial)
-	Formex.UpdateTexture(part, backTexture, backMaterial)
 	Formex.UpdateTexture(part, startTexture, startMaterial)
 	Formex.UpdateTexture(part, endTexture, endMaterial)
 	Formex.UpdateTexture(part, topTexture, Formex.WallTopMaterial)
+
+	local legacyBackTexture = part:FindFirstChild("Back")
+	if legacyBackTexture and legacyBackTexture:IsA("Texture") then
+		legacyBackTexture.Face = Enum.NormalId.Right
+		Formex.UpdateTexture(part, legacyBackTexture, backMaterial)
+	end
+
+	local backTexture = ensureTexture(backPart, "Back", Enum.NormalId.Right)
+	local backStartTexture = ensureTexture(backPart, "Start", Enum.NormalId.Back)
+	local backEndTexture = ensureTexture(backPart, "End", Enum.NormalId.Front)
+	local backTopTexture = ensureTexture(backPart, "Top", Enum.NormalId.Top)
+
+	Formex.UpdateTexture(backPart, backTexture, backMaterial)
+	Formex.UpdateTexture(backPart, backStartTexture, startMaterial)
+	Formex.UpdateTexture(backPart, backEndTexture, endMaterial)
+	Formex.UpdateTexture(backPart, backTopTexture, Formex.WallTopMaterial)
 end
 
 function Formex.Walls.Divide(wall: Formex.WallData, distance: number): {Formex.WallData}

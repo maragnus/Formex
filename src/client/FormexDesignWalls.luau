@@ -232,8 +232,20 @@ local function applyWallTransform(plotPart: BasePart, wall: WallInfo)
 	end
 	local worldDir = plotPart.CFrame:VectorToWorldSpace(dirLocal)
 
-	wall.Part.Size = Vector3.new(1, height, length)
-	wall.Part.CFrame = CFrame.lookAt(worldMid, worldMid + worldDir)
+	local wallThickness = Formex.WallThickness
+	local sideThickness = wallThickness / 2
+	local sideOffset = wallThickness / 4
+	local wallCFrame = CFrame.lookAt(worldMid, worldMid + worldDir)
+
+	wall.Part.Size = Vector3.new(sideThickness, height, length)
+	wall.Part.CFrame = wallCFrame * CFrame.new(-sideOffset, 0, 0)
+
+	local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
+	local backPart = wall.Part:FindFirstChild(backPartName)
+	if backPart and backPart:IsA("BasePart") then
+		backPart.Size = Vector3.new(sideThickness, height, length)
+		backPart.CFrame = wallCFrame * CFrame.new(sideOffset, 0, 0)
+	end
 end
 
 local function isZeroLength(startPoint: Vector2int16, endPoint: Vector2int16): boolean
@@ -256,6 +268,14 @@ local function createWallPreview(plotPart: BasePart, wallData: any): BasePart?
 		preview.CanTouch = false
 		preview.CanQuery = false
 		preview.CastShadow = false
+		local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
+		local backPart = preview:FindFirstChild(backPartName)
+		if backPart and backPart:IsA("BasePart") then
+			backPart.CanCollide = false
+			backPart.CanTouch = false
+			backPart.CanQuery = false
+			backPart.CastShadow = false
+		end
 		preview.Parent = OverlayFolder
 		deleteAfterDelay(preview, 1)
 	end
@@ -279,9 +299,20 @@ local function getMaterialIdFromTexture(texture: Texture?): number?
 	return nil
 end
 
+local function getWallBackPart(part: BasePart): BasePart?
+	local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
+	local backPart = part:FindFirstChild(backPartName)
+	if backPart and backPart:IsA("BasePart") then
+		return backPart
+	end
+	return nil
+end
+
 local function getWallMaterialIds(part: BasePart): (number, number, number, number)
 	local frontMaterial = getMaterialIdFromTexture(part:FindFirstChild("Front") :: Texture?) or Formex.DefaultWallMaterial
-	local backMaterial = getMaterialIdFromTexture(part:FindFirstChild("Back") :: Texture?) or frontMaterial
+	local backPart = getWallBackPart(part)
+	local backTexture = backPart and backPart:FindFirstChild("Back") or part:FindFirstChild("Back")
+	local backMaterial = getMaterialIdFromTexture(backTexture :: Texture?) or frontMaterial
 	local startMaterial = getMaterialIdFromTexture(part:FindFirstChild("Start") :: Texture?) or frontMaterial
 	local endMaterial = getMaterialIdFromTexture(part:FindFirstChild("End") :: Texture?) or frontMaterial
 	return frontMaterial, backMaterial, startMaterial, endMaterial

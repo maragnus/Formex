@@ -55,7 +55,8 @@ export type WallData = {
 	BackMaterial: number, -- Formex.Materials[index]
 	StartMaterial: number?, -- Formex.Materials[index]
 	EndMaterial: number?, -- Formex.Materials[index]
-	Part: Part?
+	Part: Part?,
+	BackPart: Part?
 }
 
 export type FloorData = {

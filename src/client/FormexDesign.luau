@@ -786,6 +786,16 @@ local function applyGhostAppearance(part: BasePart)
 	part.CastShadow = false
 	part.Name = "Ghost"
 	part:SetAttribute("IsGhost", true)
+
+	local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
+	local backPart = part:FindFirstChild(backPartName)
+	if backPart and backPart:IsA("BasePart") then
+		backPart.CanCollide = false
+		backPart.CanTouch = false
+		backPart.CanQuery = false
+		backPart.CastShadow = false
+		backPart:SetAttribute("IsGhost", true)
+	end
 end
 
 local function updateGhostValidity(isValid: boolean)
@@ -806,6 +816,12 @@ function Formex.HideGhost(plotPart: BasePart?)
 
 	ghost.Size = Vector3.new(0, 0, 0)
 	ghost.CFrame = hiddenCFrame
+	local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
+	local backPart = ghost:FindFirstChild(backPartName)
+	if backPart and backPart:IsA("BasePart") then
+		backPart.Size = Vector3.new(0, 0, 0)
+		backPart.CFrame = hiddenCFrame
+	end
 	ghostActive = false
 	ghostIsValid = false
 	updateHighlightTarget()
@@ -1004,6 +1020,17 @@ function FormexDesign.Select(part: Instance)
 		end
 
 		local selectionTarget: Instance = part
+		if selectionKind == FormexDesign.SelectionType.Wall then
+			local currentPart = part
+			while currentPart do
+				local parent = currentPart.Parent
+				if parent and parent:IsA("Folder") and parent.Name == "Walls" and currentPart:IsA("BasePart") then
+					selectionTarget = currentPart
+					break
+				end
+				currentPart = parent
+			end
+		end
 		if selectionKind == FormexDesign.SelectionType.Floor then
 			local floorModel = part:IsA("Model") and part or part:FindFirstAncestorOfClass("Model")
 			if floorModel and floorModel.Parent and floorModel.Parent:IsA("Folder") and floorModel.Parent.Name == "Floors" then

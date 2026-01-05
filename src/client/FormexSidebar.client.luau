@@ -203,7 +203,10 @@ end
 
 local function getWallMaterialIds(wallPart: BasePart): (number, number, number, number)
     local frontMaterial = getMaterialIdFromTexture(wallPart:FindFirstChild("Front") :: Texture?) or Formex.DefaultWallMaterial
-    local backMaterial = getMaterialIdFromTexture(wallPart:FindFirstChild("Back") :: Texture?) or frontMaterial
+    local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
+    local backPart = wallPart:FindFirstChild(backPartName)
+    local backTexture = backPart and backPart:FindFirstChild("Back") or wallPart:FindFirstChild("Back")
+    local backMaterial = getMaterialIdFromTexture(backTexture :: Texture?) or frontMaterial
     local startMaterial = getMaterialIdFromTexture(wallPart:FindFirstChild("Start") :: Texture?) or frontMaterial
     local endMaterial = getMaterialIdFromTexture(wallPart:FindFirstChild("End") :: Texture?) or frontMaterial
     return frontMaterial, backMaterial, startMaterial, endMaterial
