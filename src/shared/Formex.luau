@@ -51,10 +51,17 @@ export type WallData = {
 	Level: number,
 	Start: Vector2int16,
 	End: Vector2int16,
-	FrontMaterial: number, -- Formex.Materials[index]
-	BackMaterial: number, -- Formex.Materials[index]
-	StartMaterial: number?, -- Formex.Materials[index]
-	EndMaterial: number?, -- Formex.Materials[index]
+	Height: number?, -- studs <NEW FEATURE>
+	FrontSplitHeight: number?, -- studs <NEW FEATURE>
+	FrontTopColor: Color3?, -- <NEW FEATURE>
+	FrontTopMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
+	FrontBottomColor: Color3?, -- <NEW FEATURE>
+	FrontBottomMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
+	BackSplitHeight: number?, -- studs <NEW FEATURE>
+	BackTopColor: Color3?, -- <NEW FEATURE>
+	BackTopMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
+	BackBottomColor: Color3?, -- <NEW FEATURE>
+	BackBottomMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
 	Part: Part?,
 	BackPart: Part?
 }
@@ -63,8 +70,12 @@ export type FloorData = {
 	FloorId: number,
 	LevelIndex: number,
 	Points: {Vector2int16},
-	FloorMaterial: number,
-	CeilingMaterial: number,
+	FloorMaterial: number?, -- Formex.FloorMaterials[index]
+	FloorColor: Color3?, -- <NEW FEATURE>
+	CeilingMaterial: number?, -- Formex.FloorMaterials[index]
+	CeilingColor: Color3?, -- <NEW FEATURE>
+	FoundationMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
+	FoundationColor: Color3?, -- <NEW FEATURE>
 	FloorParts: {Part},
 	CeilingParts: {Part},
 	Model: Model?,
@@ -81,12 +92,25 @@ export type ObjectData = {
 	Part: Part?
 }
 
+export type WallMaterialInfo = {
+	Name: string,
+	Material: Enum.Material?,
+	MaterialVariant: string?,
+	PreviewAssetId: number?, -- Image
+}
+
+export type FloorMaterialInfo = {
+	Name: string,
+	AssetId: number?, -- Texture.ColorMapContent = Content.fromAssetId(...)
+	StudsPerTile: number,
+}
+
 export type MaterialInfo = {
 	Name: string,
-	AssetId: number,
+	AssetId: number?,
 	Material: Enum.Material,
 	StudsPerTile: number,
-	Categories: {PartType}
+	Categories: {PartType} -- REMOVE
 }
 
 export type ObjectInfo = {
@@ -201,6 +225,10 @@ Formex.Segments.Count = Formex.Segments.GridWidth * Formex.Segments.GridHeight
 
 Formex.Icons = {} :: {[string]: number}
 Formex.Materials = {} :: {number: MaterialInfo}
+Formex.WallMaterials = {} :: {number: WallMaterialInfo}
+Formex.FloorMaterials = {} :: {number: FloorMaterialInfo}
+Formex.Walls = {} :: {}
+Formex.Floors = {} :: {}
 Formex.Furniture = {} :: {ObjectInfo}
 
 -- Network function names

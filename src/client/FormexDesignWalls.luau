@@ -214,40 +214,6 @@ local function getPerpOffset(startPoint: Vector2int16, endPoint: Vector2int16, d
 	return perp * distance
 end
 
-local function applyWallTransform(plotPart: BasePart, wall: WallInfo)
-	local height = Formex.SegmentSize.Height
-	local dx = wall.End.X - wall.Start.X
-	local dz = wall.End.Y - wall.Start.Y
-	local length = math.max(math.sqrt(dx * dx + dz * dz), 1)
-
-	local levelOffset = (math.max(wall.Level, 1) - 1) * Formex.LevelHeight
-	local midLocal = Vector3.new((wall.Start.X + wall.End.X) / 2, levelOffset + height / 2, (wall.Start.Y + wall.End.Y) / 2)
-	local worldMid = plotPart.CFrame:PointToWorldSpace(midLocal)
-
-	local dirLocal = Vector3.new(dx, 0, dz)
-	if dirLocal.Magnitude <= Constants.Epsilon then
-		dirLocal = Vector3.new(0, 0, 1)
-	else
-		dirLocal = dirLocal.Unit
-	end
-	local worldDir = plotPart.CFrame:VectorToWorldSpace(dirLocal)
-
-	local wallThickness = Formex.WallThickness
-	local sideThickness = wallThickness / 2
-	local sideOffset = wallThickness / 4
-	local wallCFrame = CFrame.lookAt(worldMid, worldMid + worldDir)
-
-	wall.Part.Size = Vector3.new(sideThickness, height, length)
-	wall.Part.CFrame = wallCFrame * CFrame.new(-sideOffset, 0, 0)
-
-	local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
-	local backPart = wall.Part:FindFirstChild(backPartName)
-	if backPart and backPart:IsA("BasePart") then
-		backPart.Size = Vector3.new(sideThickness, height, length)
-		backPart.CFrame = wallCFrame * CFrame.new(sideOffset, 0, 0)
-	end
-end
-
 local function isZeroLength(startPoint: Vector2int16, endPoint: Vector2int16): boolean
 	return startPoint.X == endPoint.X and startPoint.Y == endPoint.Y
 end
@@ -268,35 +234,22 @@ local function createWallPreview(plotPart: BasePart, wallData: any): BasePart?
 		preview.CanTouch = false
 		preview.CanQuery = false
 		preview.CastShadow = false
-		local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
-		local backPart = preview:FindFirstChild(backPartName)
-		if backPart and backPart:IsA("BasePart") then
-			backPart.CanCollide = false
-			backPart.CanTouch = false
-			backPart.CanQuery = false
-			backPart.CastShadow = false
+		local function applyGhostChild(child: Instance?)
+			if child and child:IsA("BasePart") then
+				child.CanCollide = false
+				child.CanTouch = false
+				child.CanQuery = false
+				child.CastShadow = false
+			end
 		end
+		local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
+		applyGhostChild(preview:FindFirstChild(backPartName))
+		applyGhostChild(preview:FindFirstChild("FrontTop"))
+		applyGhostChild(preview:FindFirstChild("BackTop"))
 		preview.Parent = OverlayFolder
 		deleteAfterDelay(preview, 1)
 	end
 	return preview
-end
-
-local function getMaterialIdFromTexture(texture: Texture?): number?
-	if not texture then return nil end
-
-	local content: string? = texture.ColorMapContent and texture.ColorMapContent.Uri or nil
-	if not content then return nil end
-
-	local assetId = tonumber(string.match(content, "rbxassetid://(%d+)"))
-	if not assetId then return nil end
-
-	for index, materialInfo in Formex.Materials do
-		if materialInfo.AssetId == assetId then
-			return index
-		end
-	end
-	return nil
 end
 
 local function getWallBackPart(part: BasePart): BasePart?
@@ -308,14 +261,139 @@ local function getWallBackPart(part: BasePart): BasePart?
 	return nil
 end
 
-local function getWallMaterialIds(part: BasePart): (number, number, number, number)
-	local frontMaterial = getMaterialIdFromTexture(part:FindFirstChild("Front") :: Texture?) or Formex.DefaultWallMaterial
-	local backPart = getWallBackPart(part)
-	local backTexture = backPart and backPart:FindFirstChild("Back") or part:FindFirstChild("Back")
-	local backMaterial = getMaterialIdFromTexture(backTexture :: Texture?) or frontMaterial
-	local startMaterial = getMaterialIdFromTexture(part:FindFirstChild("Start") :: Texture?) or frontMaterial
-	local endMaterial = getMaterialIdFromTexture(part:FindFirstChild("End") :: Texture?) or frontMaterial
-	return frontMaterial, backMaterial, startMaterial, endMaterial
+local function getWallAttributeNumber(part: BasePart, name: string): number?
+	local value = part:GetAttribute(name)
+	if type(value) == "number" and value > 0 then
+		return value
+	end
+	return nil
+end
+
+local function getWallAttributeColor(part: BasePart, name: string): Color3?
+	local value = part:GetAttribute(name)
+	if typeof(value) == "Color3" then
+		return value
+	end
+	return nil
+end
+
+local function getWallTopPart(part: BasePart, name: string): BasePart?
+	local child = part:FindFirstChild(name)
+	if child and child:IsA("BasePart") then
+		return child
+	end
+	return nil
+end
+
+local function getWallMaterialIdFromPart(part: BasePart?): number?
+	if not part then return nil end
+
+	local variant = part.MaterialVariant
+	if variant and variant ~= "" then
+		for index, materialInfo in Formex.WallMaterials do
+			if materialInfo.MaterialVariant == variant then
+				return index
+			end
+		end
+	end
+
+	for index, materialInfo in Formex.WallMaterials do
+		if materialInfo.Material
+		and materialInfo.Material == part.Material
+		and (not materialInfo.MaterialVariant or materialInfo.MaterialVariant == "") then
+			return index
+		end
+	end
+
+	return nil
+end
+
+local function getWallColorFromPart(part: BasePart?): Color3?
+	return part and part.Color or nil
+end
+
+local function getWallDataFromPart(plotPart: BasePart, wallPart: BasePart, wallId: number, level: number): Formex.WallData
+	local startPoint, endPoint = getWallEndpoints(plotPart, wallPart)
+	local backPart = getWallBackPart(wallPart)
+	local frontTopPart = getWallTopPart(wallPart, "FrontTop")
+	local backTopPart = getWallTopPart(wallPart, "BackTop")
+
+	local height = wallPart:GetAttribute("WallHeight")
+	if type(height) ~= "number" then
+		height = nil
+	end
+
+	local frontSplitHeight = wallPart:GetAttribute("FrontSplitHeight")
+	if type(frontSplitHeight) ~= "number" or frontSplitHeight <= 0 then
+		frontSplitHeight = nil
+	end
+
+	local backSplitHeight = wallPart:GetAttribute("BackSplitHeight")
+	if type(backSplitHeight) ~= "number" or backSplitHeight <= 0 then
+		backSplitHeight = nil
+	end
+
+	local frontTopMaterial = getWallAttributeNumber(wallPart, "FrontTopMaterial")
+		or getWallMaterialIdFromPart(frontTopPart)
+		or getWallMaterialIdFromPart(wallPart)
+	local frontBottomMaterial = getWallAttributeNumber(wallPart, "FrontBottomMaterial")
+		or getWallMaterialIdFromPart(wallPart)
+	local backTopMaterial = getWallAttributeNumber(wallPart, "BackTopMaterial")
+		or getWallMaterialIdFromPart(backTopPart)
+		or getWallMaterialIdFromPart(backPart)
+	local backBottomMaterial = getWallAttributeNumber(wallPart, "BackBottomMaterial")
+		or getWallMaterialIdFromPart(backPart)
+
+	local frontTopColor = getWallAttributeColor(wallPart, "FrontTopColor")
+		or getWallColorFromPart(frontTopPart)
+		or getWallColorFromPart(wallPart)
+		or Color3.new(1, 1, 1)
+	local frontBottomColor = getWallAttributeColor(wallPart, "FrontBottomColor")
+		or getWallColorFromPart(wallPart)
+		or frontTopColor
+	local backTopColor = getWallAttributeColor(wallPart, "BackTopColor")
+		or getWallColorFromPart(backTopPart)
+		or getWallColorFromPart(backPart)
+		or Color3.new(1, 1, 1)
+	local backBottomColor = getWallAttributeColor(wallPart, "BackBottomColor")
+		or getWallColorFromPart(backPart)
+		or backTopColor
+
+	local resolvedFrontBottom = frontBottomMaterial or frontTopMaterial or Formex.DefaultWallMaterial
+	local resolvedFrontTop = frontTopMaterial or resolvedFrontBottom
+	local resolvedBackBottom = backBottomMaterial or backTopMaterial or resolvedFrontBottom
+	local resolvedBackTop = backTopMaterial or resolvedBackBottom
+
+	return {
+		WallId = wallId,
+		Level = level,
+		Start = startPoint,
+		End = endPoint,
+		Height = height,
+		FrontSplitHeight = frontSplitHeight,
+		BackSplitHeight = backSplitHeight,
+		FrontTopMaterial = resolvedFrontTop,
+		FrontBottomMaterial = resolvedFrontBottom,
+		BackTopMaterial = resolvedBackTop,
+		BackBottomMaterial = resolvedBackBottom,
+		FrontTopColor = frontTopColor,
+		FrontBottomColor = frontBottomColor,
+		BackTopColor = backTopColor,
+		BackBottomColor = backBottomColor,
+		Part = wallPart,
+	}
+end
+
+local function applyWallTransform(plotPart: BasePart, wall: WallInfo)
+	if not wall.Part then
+		return
+	end
+
+	local wallData = getWallDataFromPart(plotPart, wall.Part, wall.WallId, wall.Level)
+	wallData.Start = wall.Start
+	wallData.End = wall.End
+	wallData.Part = wall.Part
+	Formex.Walls.Edit(wallData, plotPart)
 end
 
 local function isPointOnSegment(point: Vector2int16, startPoint: Vector2int16, endPoint: Vector2int16): boolean
@@ -344,29 +422,20 @@ local function splitWallAtPoint(plotInfo: any, wall: WallInfo, splitPoint: Vecto
 		return false
 	end
 
-	local frontMaterial, backMaterial, startMaterial, endMaterial = getWallMaterialIds(wall.Part)
-	local wallDataA = {
-		WallId = 0,
-		Level = wall.Level,
-		Start = wall.Start,
-		End = splitPoint,
-		FrontMaterial = frontMaterial,
-		BackMaterial = backMaterial,
-		StartMaterial = startMaterial,
-		EndMaterial = frontMaterial,
-		Part = nil,
-	}
-	local wallDataB = {
-		WallId = 0,
-		Level = wall.Level,
-		Start = splitPoint,
-		End = wall.End,
-		FrontMaterial = frontMaterial,
-		BackMaterial = backMaterial,
-		StartMaterial = frontMaterial,
-		EndMaterial = endMaterial,
-		Part = nil,
-	}
+	local baseData = getWallDataFromPart(plotInfo.PlotPart, wall.Part, wall.WallId, wall.Level)
+	local wallDataA = table.clone(baseData)
+	wallDataA.WallId = 0
+	wallDataA.Level = wall.Level
+	wallDataA.Start = wall.Start
+	wallDataA.End = splitPoint
+	wallDataA.Part = nil
+
+	local wallDataB = table.clone(baseData)
+	wallDataB.WallId = 0
+	wallDataB.Level = wall.Level
+	wallDataB.Start = splitPoint
+	wallDataB.End = wall.End
+	wallDataB.Part = nil
 
 	local previewA = createWallPreview(plotInfo.PlotPart, wallDataA)
 	local previewB = createWallPreview(plotInfo.PlotPart, wallDataB)

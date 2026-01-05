@@ -2,7 +2,7 @@
 
 local Formex = require(script.Parent:FindFirstChild("Formex"))
 
-Formex.Materials = {
+Formex.Materials = { -- Deprecated: use WallMaterials/FloorMaterials instead.
 	{
 		Name = "Structure",
 		Material = Enum.Material.Wood,
@@ -24,6 +24,116 @@ Formex.Materials = {
 		Categories = { "Floor" }
 	}
 } :: {number: Formex.MaterialInfo}
+
+-- Represented as Part.MaterialVariant
+Formex.WallMaterials = {
+	{
+		Name = "Basic Plaster",
+		Material = Enum.Material.Plaster,
+		MaterialVariant = "Basic Plaster",
+		PreviewAssetId = 129376458712399,
+	},
+	{
+		Name = "Ceramic Tiles",
+		Material = Enum.Material.CeramicTiles,
+		MaterialVariant = "Ceramic Tiles",
+		PreviewAssetId = 129376458712399,
+	},
+	{
+		Name = "Carpet",
+		Material = Enum.Material.Carpet,
+		MaterialVariant = "Commercial Carpet",
+		PreviewAssetId = 119901194214934,
+	},
+	{
+		Name = "Arcade Stars",
+		Material = Enum.Material.Carpet,
+		MaterialVariant = "Arcade Stars",
+		PreviewAssetId = 105056201224798,
+	},
+	{
+		Name = "Arcade Lines",
+		Material = Enum.Material.Carpet,
+		MaterialVariant = "Arcade Lines",
+		PreviewAssetId = 102853832787062,
+	},
+	{
+		Name = "Brick",
+		Material = Enum.Material.Brick,
+		MaterialVariant = "Brick",
+		PreviewAssetId = 107922567322014,
+	},
+	{
+		Name = "Rough Brick",
+		Material = Enum.Material.Brick,
+		MaterialVariant = "Rough Brick",
+		PreviewAssetId = 107922567322014,
+	},
+	{
+		Name = "Cobblestone",
+		Material = Enum.Material.CeramicTiles,
+		MaterialVariant = "Cobblestone",
+		PreviewAssetId = 129376458712399,
+	},
+	{
+		Name = "Checkered Tiles",
+		Material = Enum.Material.CeramicTiles,
+		MaterialVariant = "Checkered Tiles",
+		PreviewAssetId = 81652242056434,
+	},
+	{
+		Name = "Speckle Tiles",
+		Material = Enum.Material.CeramicTiles,
+		MaterialVariant = "Speckle Tiles",
+		PreviewAssetId = 98900012004141,
+	},
+	{
+		Name = "Wood Panels",
+		Material = Enum.Material.Wood,
+		MaterialVariant = "WoodFloor",
+		PreviewAssetId = 133949919154473,
+	}
+} :: {number: Formex.WallMaterialInfo}
+
+-- Represented as Texture.ColorMapContent
+Formex.FloorMaterials = {
+	{
+		Name = "Basic Plaster",
+		AssetId = 129376458712399,
+		StudsPerTile = 8,
+	},
+	{
+		Name = "Speckle Tiles",
+		AssetId = 98900012004141,
+		StudsPerTile = 32,
+	},
+	{
+		Name = "Checkered Tiles",
+		AssetId = 81652242056434,
+		StudsPerTile = 32,
+	},
+	{
+		Name = "Commercial Carpet",
+		AssetId = 119901194214934,
+		StudsPerTile = 8,
+	},
+	{
+		Name = "Arcade Stars",
+		AssetId = 105056201224798,
+		StudsPerTile = 16,
+	},
+	{
+		Name = "Arcade Lines",
+		AssetId = 102853832787062,
+		StudsPerTile = 12,
+	},
+	{
+		Name = "Rough Brick",
+		AssetId = 107922567322014,
+		StudsPerTile = 12,
+	}
+} :: {number: Formex.FloorMaterialInfo}
+
 
 Formex.Icons = { -- Content.fromAssetId(...)
     Menu = 123614418099512,

@@ -9,6 +9,8 @@ Formex.Walls = {}
 
 local BACK_PART_NAME = "BackSide"
 Formex.Walls.BackPartName = BACK_PART_NAME
+local FRONT_TOP_NAME = "FrontTop"
+local BACK_TOP_NAME = "BackTop"
 
 local function ensureBackPart(frontPart: BasePart): BasePart
 	local existing = frontPart:FindFirstChild(BACK_PART_NAME)
@@ -20,6 +22,66 @@ local function ensureBackPart(frontPart: BasePart): BasePart
 	backPart.Name = BACK_PART_NAME
 	backPart.Parent = frontPart
 	return backPart
+end
+
+local function ensureChildPart(parent: Instance, name: string): BasePart
+	local existing = parent:FindFirstChild(name)
+	if existing and existing:IsA("BasePart") then
+		return existing
+	end
+
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Parent = parent
+	return part
+end
+
+local function clearTextures(part: Instance)
+	for _, child in ipairs(part:GetChildren()) do
+		if child:IsA("Texture") then
+			child:Destroy()
+		end
+	end
+end
+
+local function snapToGrid(value: number): number
+	local grid = Formex.LayoutGridSize
+	return math.round(value / grid) * grid
+end
+
+local function resolveWallHeight(value: number?): number
+	local resolved = value
+	if resolved ~= nil and resolved <= 0 then
+		resolved = nil
+	end
+	resolved = resolved or Formex.LevelHeight
+	resolved = snapToGrid(resolved)
+	return math.clamp(resolved, Formex.LayoutGridSize, Formex.LevelHeight)
+end
+
+local function resolveSplitHeight(height: number, value: number?): number?
+	if not value or value <= 0 then
+		return nil
+	end
+
+	if height <= Formex.LayoutGridSize * 2 then
+		return nil
+	end
+
+	local snapped = snapToGrid(value)
+	local maxSplit = height - Formex.LayoutGridSize
+	return math.clamp(snapped, Formex.LayoutGridSize, maxSplit)
+end
+
+local function resolveColor(primary: Color3?, fallback: Color3?): Color3
+	return primary or fallback or Color3.new(1, 1, 1)
+end
+
+local function normalizeMaterialId(value: number?): number?
+	if type(value) ~= "number" or value <= 0 then
+		return nil
+	end
+	return value
 end
 
 local function cross2(a: Vector2, b: Vector2): number
@@ -143,7 +205,9 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 	local backPart = ensureBackPart(part)
 	wall.BackPart = backPart
 
-	local height = Formex.SegmentSize.Height
+	local height = resolveWallHeight(wall.Height)
+	local frontSplitHeight = resolveSplitHeight(height, wall.FrontSplitHeight)
+	local backSplitHeight = resolveSplitHeight(height, wall.BackSplitHeight)
 	local levelIndex = wall.Level or 1
 	local startPoint = wall.Start
 	local endPoint = wall.End
@@ -166,51 +230,82 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 	local sideOffset = wallThickness / 4
 
 	local wallCFrame = CFrame.lookAt(worldMid, worldMid + worldDir)
-	part.Size = Vector3.new(sideThickness, height, length)
-	part.CFrame = wallCFrame * CFrame.new(-sideOffset, 0, 0)
 	part.Transparency = 0 -- Disable invisibility in case it was set
 
-	backPart.Size = Vector3.new(sideThickness, height, length)
-	backPart.CFrame = wallCFrame * CFrame.new(sideOffset, 0, 0)
-	backPart.Anchored = part.Anchored
-	backPart.CollisionGroup = part.CollisionGroup
-	backPart.CanCollide = part.CanCollide
-	backPart.CanTouch = part.CanTouch
-	backPart.CanQuery = part.CanQuery
-	backPart.CastShadow = part.CastShadow
-	backPart.Transparency = part.Transparency
+	local frontBottomMaterial = normalizeMaterialId(wall.FrontBottomMaterial)
+		or normalizeMaterialId(wall.FrontTopMaterial)
+		or normalizeMaterialId(wall.FrontMaterial)
+		or Formex.DefaultWallMaterial
+	local frontTopMaterial = normalizeMaterialId(wall.FrontTopMaterial) or frontBottomMaterial
+	local backBottomMaterial = normalizeMaterialId(wall.BackBottomMaterial)
+		or normalizeMaterialId(wall.BackTopMaterial)
+		or normalizeMaterialId(wall.BackMaterial)
+		or frontBottomMaterial
+	local backTopMaterial = normalizeMaterialId(wall.BackTopMaterial) or backBottomMaterial
 
-	local frontMaterial = wall.FrontMaterial or Formex.DefaultWallMaterial
-	local backMaterial = wall.BackMaterial or frontMaterial
-	local startMaterial = wall.StartMaterial or frontMaterial
-	local endMaterial = wall.EndMaterial or frontMaterial
+	local frontBottomColor = resolveColor(wall.FrontBottomColor, wall.FrontTopColor)
+	local frontTopColor = resolveColor(wall.FrontTopColor, frontBottomColor)
+	local backBottomColor = resolveColor(wall.BackBottomColor, wall.BackTopColor)
+	local backTopColor = resolveColor(wall.BackTopColor, backBottomColor)
 
-    local ensureTexture = Formex.Util.EnsureTexture
-	local frontTexture = ensureTexture(part, "Front", Enum.NormalId.Left)
-	local startTexture = ensureTexture(part, "Start", Enum.NormalId.Back)
-	local endTexture = ensureTexture(part, "End", Enum.NormalId.Front)
-	local topTexture = ensureTexture(part, "Top", Enum.NormalId.Top)
+	part:SetAttribute("WallHeight", height)
+	part:SetAttribute("FrontSplitHeight", frontSplitHeight)
+	part:SetAttribute("BackSplitHeight", backSplitHeight)
+	part:SetAttribute("FrontTopMaterial", frontTopMaterial)
+	part:SetAttribute("FrontBottomMaterial", frontBottomMaterial)
+	part:SetAttribute("BackTopMaterial", backTopMaterial)
+	part:SetAttribute("BackBottomMaterial", backBottomMaterial)
+	part:SetAttribute("FrontTopColor", frontTopColor)
+	part:SetAttribute("FrontBottomColor", frontBottomColor)
+	part:SetAttribute("BackTopColor", backTopColor)
+	part:SetAttribute("BackBottomColor", backBottomColor)
 
-	Formex.UpdateTexture(part, frontTexture, frontMaterial)
-	Formex.UpdateTexture(part, startTexture, startMaterial)
-	Formex.UpdateTexture(part, endTexture, endMaterial)
-	Formex.UpdateTexture(part, topTexture, Formex.WallTopMaterial)
+	clearTextures(part)
+	clearTextures(backPart)
 
-	local legacyBackTexture = part:FindFirstChild("Back")
-	if legacyBackTexture and legacyBackTexture:IsA("Texture") then
-		legacyBackTexture.Face = Enum.NormalId.Right
-		Formex.UpdateTexture(part, legacyBackTexture, backMaterial)
+	local function applySegment(target: BasePart, segmentHeight: number, segmentCenterY: number, offsetX: number)
+		target.Size = Vector3.new(sideThickness, segmentHeight, length)
+		target.CFrame = wallCFrame * CFrame.new(offsetX, segmentCenterY - (levelOffset + height / 2), 0)
+		target.Anchored = part.Anchored
+		target.CollisionGroup = part.CollisionGroup
+		target.CanCollide = part.CanCollide
+		target.CanTouch = part.CanTouch
+		target.CanQuery = part.CanQuery
+		target.CastShadow = part.CastShadow
+		target.Transparency = part.Transparency
 	end
 
-	local backTexture = ensureTexture(backPart, "Back", Enum.NormalId.Right)
-	local backStartTexture = ensureTexture(backPart, "Start", Enum.NormalId.Back)
-	local backEndTexture = ensureTexture(backPart, "End", Enum.NormalId.Front)
-	local backTopTexture = ensureTexture(backPart, "Top", Enum.NormalId.Top)
+	local function applySide(splitHeight: number?, bottomPart: BasePart, topName: string, offsetX: number, bottomMaterial: number, topMaterial: number, bottomColor: Color3, topColor: Color3)
+		local topPart: BasePart? = nil
+		if splitHeight then
+			topPart = ensureChildPart(part, topName)
+			clearTextures(topPart)
+		else
+			local existing = part:FindFirstChild(topName)
+			if existing and existing:IsA("BasePart") then
+				existing:Destroy()
+			end
+		end
 
-	Formex.UpdateTexture(backPart, backTexture, backMaterial)
-	Formex.UpdateTexture(backPart, backStartTexture, startMaterial)
-	Formex.UpdateTexture(backPart, backEndTexture, endMaterial)
-	Formex.UpdateTexture(backPart, backTopTexture, Formex.WallTopMaterial)
+		if splitHeight then
+			local bottomHeight = splitHeight
+			local topHeight = height - splitHeight
+			applySegment(bottomPart, bottomHeight, levelOffset + (bottomHeight / 2), offsetX)
+			if topPart then
+				applySegment(topPart, topHeight, levelOffset + splitHeight + (topHeight / 2), offsetX)
+			end
+		else
+			applySegment(bottomPart, height, levelOffset + (height / 2), offsetX)
+		end
+
+		Formex.Util.ApplyWallMaterial(bottomPart, bottomMaterial, bottomColor)
+		if topPart then
+			Formex.Util.ApplyWallMaterial(topPart, topMaterial, topColor)
+		end
+	end
+
+	applySide(frontSplitHeight, part, FRONT_TOP_NAME, -sideOffset, frontBottomMaterial, frontTopMaterial, frontBottomColor, frontTopColor)
+	applySide(backSplitHeight, backPart, BACK_TOP_NAME, sideOffset, backBottomMaterial, backTopMaterial, backBottomColor, backTopColor)
 end
 
 function Formex.Walls.Divide(wall: Formex.WallData, distance: number): {Formex.WallData}

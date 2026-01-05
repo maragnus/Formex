@@ -112,6 +112,11 @@ local ghostType: Formex.PartType? = nil
 local ghostActive = false
 local ghostIsValid = false
 local floorMaterialId = Formex.DefaultFloorMaterial
+local ceilingMaterialId = Formex.DefaultCeilingMaterial
+local floorColor = Color3.new(1, 1, 1)
+local ceilingColor = Color3.new(1, 1, 1)
+local foundationMaterialId = Formex.DefaultFoundationMaterial
+local foundationColor = Color3.new(1, 1, 1)
 local actionHeld = false
 local altHeld, alt1Held, alt2Held, alt3Held = false, false, false, false
 local selectionType: SelectionType = FormexDesign.SelectionType.None
@@ -163,7 +168,76 @@ function FormexDesign.SetFloorMaterial(materialId: number)
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
 	and ghostFloorData then
 		ghostFloorData.FloorMaterial = materialId
+	end
+	notifyDesignModeChange()
+end
+
+function FormexDesign.GetCeilingMaterial(): number
+	return ceilingMaterialId
+end
+
+function FormexDesign.SetCeilingMaterial(materialId: number)
+	ceilingMaterialId = materialId
+	if ghostActive
+	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
+	and ghostFloorData then
 		ghostFloorData.CeilingMaterial = materialId
+	end
+	notifyDesignModeChange()
+end
+
+function FormexDesign.GetFloorColor(): Color3
+	return floorColor
+end
+
+function FormexDesign.SetFloorColor(color: Color3)
+	floorColor = color
+	if ghostActive
+	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
+	and ghostFloorData then
+		ghostFloorData.FloorColor = color
+	end
+	notifyDesignModeChange()
+end
+
+function FormexDesign.GetCeilingColor(): Color3
+	return ceilingColor
+end
+
+function FormexDesign.SetCeilingColor(color: Color3)
+	ceilingColor = color
+	if ghostActive
+	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
+	and ghostFloorData then
+		ghostFloorData.CeilingColor = color
+	end
+	notifyDesignModeChange()
+end
+
+function FormexDesign.GetFoundationMaterial(): number
+	return foundationMaterialId
+end
+
+function FormexDesign.SetFoundationMaterial(materialId: number)
+	foundationMaterialId = materialId
+	if ghostActive
+	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
+	and ghostFloorData then
+		ghostFloorData.FoundationMaterial = materialId
+	end
+	notifyDesignModeChange()
+end
+
+function FormexDesign.GetFoundationColor(): Color3
+	return foundationColor
+end
+
+function FormexDesign.SetFoundationColor(color: Color3)
+	foundationColor = color
+	if ghostActive
+	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
+	and ghostFloorData then
+		ghostFloorData.FoundationColor = color
 	end
 	notifyDesignModeChange()
 end
@@ -788,14 +862,19 @@ local function applyGhostAppearance(part: BasePart)
 	part:SetAttribute("IsGhost", true)
 
 	local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
-	local backPart = part:FindFirstChild(backPartName)
-	if backPart and backPart:IsA("BasePart") then
-		backPart.CanCollide = false
-		backPart.CanTouch = false
-		backPart.CanQuery = false
-		backPart.CastShadow = false
-		backPart:SetAttribute("IsGhost", true)
+	local function applyToChild(child: Instance?)
+		if child and child:IsA("BasePart") then
+			child.CanCollide = false
+			child.CanTouch = false
+			child.CanQuery = false
+			child.CastShadow = false
+			child:SetAttribute("IsGhost", true)
+		end
 	end
+
+	applyToChild(part:FindFirstChild(backPartName))
+	applyToChild(part:FindFirstChild("FrontTop"))
+	applyToChild(part:FindFirstChild("BackTop"))
 end
 
 local function updateGhostValidity(isValid: boolean)
@@ -817,11 +896,16 @@ function Formex.HideGhost(plotPart: BasePart?)
 	ghost.Size = Vector3.new(0, 0, 0)
 	ghost.CFrame = hiddenCFrame
 	local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
-	local backPart = ghost:FindFirstChild(backPartName)
-	if backPart and backPart:IsA("BasePart") then
-		backPart.Size = Vector3.new(0, 0, 0)
-		backPart.CFrame = hiddenCFrame
+	local function hideChild(child: Instance?)
+		if child and child:IsA("BasePart") then
+			child.Size = Vector3.new(0, 0, 0)
+			child.CFrame = hiddenCFrame
+		end
 	end
+
+	hideChild(ghost:FindFirstChild(backPartName))
+	hideChild(ghost:FindFirstChild("FrontTop"))
+	hideChild(ghost:FindFirstChild("BackTop"))
 	ghostActive = false
 	ghostIsValid = false
 	updateHighlightTarget()
@@ -833,16 +917,19 @@ local function clearGhost()
 end
 
 local function buildWallData(startPoint: Vector2int16, endPoint: Vector2int16): Formex.WallData
-	local wallMaterial = Formex.DefaultWallMaterial
 	return {
 		WallId = 0,
 		Level = currentLevel,
 		Start = startPoint,
 		End = endPoint,
-		FrontMaterial = wallMaterial,
-		BackMaterial = wallMaterial,
-		StartMaterial = wallMaterial,
-		EndMaterial = wallMaterial,
+		FrontTopMaterial = Formex.DefaultWallMaterial,
+		FrontBottomMaterial = Formex.DefaultWallMaterial,
+		BackTopMaterial = Formex.DefaultWallMaterial,
+		BackBottomMaterial = Formex.DefaultWallMaterial,
+		FrontTopColor = Color3.new(1, 1, 1),
+		FrontBottomColor = Color3.new(1, 1, 1),
+		BackTopColor = Color3.new(1, 1, 1),
+		BackBottomColor = Color3.new(1, 1, 1),
 		Part = nil
 	}
 end
@@ -861,7 +948,11 @@ local function buildFloorGhostData(levelIndex: number, tile: Vector2int16): Form
 			Vector2int16.new(x0, z0 + tileSize),
 		},
 		FloorMaterial = floorMaterialId,
-		CeilingMaterial = floorMaterialId,
+		CeilingMaterial = ceilingMaterialId,
+		FoundationMaterial = foundationMaterialId,
+		FloorColor = floorColor,
+		CeilingColor = ceilingColor,
+		FoundationColor = foundationColor,
 		FloorParts = {},
 		CeilingParts = {},
 		Model = nil,
@@ -925,7 +1016,11 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 		ghostFloorData.LevelIndex = levelIndex
 		ghostFloorData.FloorId = Formex.XYToIndex(tile.X, tile.Y)
 		ghostFloorData.FloorMaterial = floorMaterialId
-		ghostFloorData.CeilingMaterial = floorMaterialId
+		ghostFloorData.CeilingMaterial = ceilingMaterialId
+		ghostFloorData.FoundationMaterial = foundationMaterialId
+		ghostFloorData.FloorColor = floorColor
+		ghostFloorData.CeilingColor = ceilingColor
+		ghostFloorData.FoundationColor = foundationColor
 	end
 
 	local tileSize = Formex.LayoutGridSize
@@ -1267,6 +1362,21 @@ FormexDesignContext.Init({
 	end,
 	GetFloorMaterialId = function()
 		return floorMaterialId
+	end,
+	GetCeilingMaterialId = function()
+		return ceilingMaterialId
+	end,
+	GetFloorColor = function()
+		return floorColor
+	end,
+	GetCeilingColor = function()
+		return ceilingColor
+	end,
+	GetFoundationMaterialId = function()
+		return foundationMaterialId
+	end,
+	GetFoundationColor = function()
+		return foundationColor
 	end,
 	NotifyDesignModeChange = notifyDesignModeChange,
 	ClearSelection = FormexDesign.ClearSelection,

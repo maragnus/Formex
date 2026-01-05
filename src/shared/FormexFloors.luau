@@ -344,6 +344,27 @@ local function getFloorThickness(levelIndex: number): number
 	return Formex.SegmentSize.Interfloor
 end
 
+local function resolveColor(value: Color3?): Color3
+	return value or Color3.new(1, 1, 1)
+end
+
+local function normalizeMaterialId(value: number?): number?
+	if type(value) ~= "number" or value <= 0 then
+		return nil
+	end
+	return value
+end
+
+local function applyFoundationMaterial(part: BasePart, foundationMaterial: number?, foundationColor: Color3?, levelIndex: number)
+	if levelIndex == 1 then
+		Formex.Util.ApplyWallMaterial(part, foundationMaterial, foundationColor)
+	else
+		part.Material = Enum.Material.SmoothPlastic
+		part.MaterialVariant = ""
+		part.Color = Color3.new(1, 1, 1)
+	end
+end
+
 local function applyTextureOffset(plotPart: BasePart, part: BasePart, texture: Texture)
 	local localCFrame = plotPart.CFrame:ToObjectSpace(part.CFrame)
 	texture.OffsetStudsU = localCFrame.Position.X + (Formex.Dimensions.Width / 2)
@@ -473,8 +494,19 @@ function Formex.Floors.Create(floor: Formex.FloorData, plotPartOverride: BasePar
 	floor.FloorParts = {}
 	floor.CeilingParts = {}
 
-	model:SetAttribute("FloorMaterial", floor.FloorMaterial or 0)
-	model:SetAttribute("CeilingMaterial", floor.CeilingMaterial or 0)
+	local floorMaterial = normalizeMaterialId(floor.FloorMaterial) or Formex.DefaultFloorMaterial
+	local ceilingMaterial = normalizeMaterialId(floor.CeilingMaterial) or floorMaterial
+	local foundationMaterial = normalizeMaterialId(floor.FoundationMaterial) or Formex.DefaultFoundationMaterial
+	local floorColor = resolveColor(floor.FloorColor)
+	local ceilingColor = resolveColor(floor.CeilingColor)
+	local foundationColor = resolveColor(floor.FoundationColor)
+
+	model:SetAttribute("FloorMaterial", floorMaterial)
+	model:SetAttribute("CeilingMaterial", ceilingMaterial)
+	model:SetAttribute("FoundationMaterial", foundationMaterial)
+	model:SetAttribute("FloorColor", floorColor)
+	model:SetAttribute("CeilingColor", ceilingColor)
+	model:SetAttribute("FoundationColor", foundationColor)
 	model:SetAttribute("Points", Formex.EncodeFloorPoints(floor.Points))
 
 	local points = {}
@@ -483,12 +515,11 @@ function Formex.Floors.Create(floor: Formex.FloorData, plotPartOverride: BasePar
 	end
 
 	local triangles = triangulatePolygon(points)
-	local floorMaterial = floor.FloorMaterial or 0
-	local ceilingMaterial = floor.CeilingMaterial or 0
 
 	for _, triangle in ipairs(triangles) do
 		local wedges = createTriangleWedges(plotPart, model, triangle[1], triangle[2], triangle[3], floor.LevelIndex)
 		for _, part in ipairs(wedges) do
+			applyFoundationMaterial(part, foundationMaterial, foundationColor, floor.LevelIndex)
 			local floorFace = Enum.NormalId.Left
 			local ceilingFace = Enum.NormalId.Right
 			if part.CFrame.RightVector.Y > 0 then
@@ -497,8 +528,8 @@ function Formex.Floors.Create(floor: Formex.FloorData, plotPartOverride: BasePar
 			end
 			local floorTexture = Formex.Util.EnsureTexture(part, "Floor", floorFace)
 			local ceilingTexture = Formex.Util.EnsureTexture(part, "Ceiling", ceilingFace)
-			Formex.UpdateTexture(part, floorTexture, floorMaterial)
-			Formex.UpdateTexture(part, ceilingTexture, ceilingMaterial)
+			Formex.UpdateTexture(part, floorTexture, floorMaterial, floorColor)
+			Formex.UpdateTexture(part, ceilingTexture, ceilingMaterial, ceilingColor)
 			applyTextureOffset(plotPart, part, floorTexture)
 			applyTextureOffset(plotPart, part, ceilingTexture)
 			table.insert(floor.FloorParts, part)

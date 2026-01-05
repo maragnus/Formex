@@ -464,8 +464,8 @@ end
 type MaterialPartType = "Wall" | "Floor" | "Ceiling" | "Object" | nil
 type MaterialInfo = {
     Name: string,
-    AssetId: number,
-    Categories: {string}?
+    AssetId: number?,
+    PreviewAssetId: number?,
 }
 
 export type MaterialSelectOptions = {
@@ -481,19 +481,16 @@ export type MaterialSelectHandle = {
     GetSelected: () -> number?,
 }
 
-local function materialMatchesPart(materialInfo: MaterialInfo, partType: MaterialPartType?): boolean
-    if partType == nil then
-        return true
+local function resolveMaterialList(partType: MaterialPartType?): ({[number]: MaterialInfo}, string)
+    if partType == "Wall" then
+        return Formex.WallMaterials, "PreviewAssetId"
     end
-    local categories = materialInfo.Categories
-    if not categories then
-        return false
-    end
-    return table.find(categories, partType) ~= nil
+    return Formex.FloorMaterials, "AssetId"
 end
 
 function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((materialId: number?) -> nil)?): MaterialSelectHandle
     local selectedMaterialId = options.SelectedMaterial or 0
+    local materialList, previewKey = resolveMaterialList(options.PartType)
     local name = options.Name or options.Label or "MaterialSelect"
 
     local container = Instance.new("ImageButton", options.Parent)
@@ -576,10 +573,11 @@ function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((ma
 
     local function applySelected(materialId: number?)
         selectedMaterialId = materialId or 0
-        local materialInfo = Formex.Materials[selectedMaterialId]
+        local materialInfo = materialList[selectedMaterialId]
         if materialInfo then
             selectedLabel.Text = materialInfo.Name
-            preview.Image = normalizeAsset(tostring(materialInfo.AssetId))
+            local previewId = (materialInfo :: any)[previewKey]
+            preview.Image = normalizeAsset(tostring(previewId or 0))
         else
             selectedLabel.Text = "None"
             preview.Image = normalizeAsset("0")
@@ -614,11 +612,8 @@ function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((ma
                 gridFrame.Size = UDim2.new(1, 0, 0, gridLayout.AbsoluteContentSize.Y)
             end)
 
-            for materialId, materialInfo in Formex.Materials do
-                if not materialMatchesPart(materialInfo, options.PartType) then
-                    continue
-                end
-
+            for materialId, materialInfo in ipairs(materialList) do
+                
                 local tile = Instance.new("ImageButton", gridFrame)
                 tile.Name = "Material_" .. tostring(materialId)
                 tile.AutoButtonColor = false
@@ -644,7 +639,8 @@ function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((ma
                 image.Name = "Preview"
                 image.BackgroundTransparency = 1
                 image.Size = UDim2.new(0, 64, 0, 64)
-                image.Image = normalizeAsset(tostring(materialInfo.AssetId))
+                local previewId = (materialInfo :: any)[previewKey]
+                image.Image = normalizeAsset(tostring(previewId or 0))
                 image.ScaleType = Enum.ScaleType.Fit
 
                 local nameLabel = Instance.new("TextLabel", tile)

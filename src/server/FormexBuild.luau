@@ -144,6 +144,81 @@ local function isZeroLength(startPoint: Vector2int16, endPoint: Vector2int16): b
 	return startPoint.X == endPoint.X and startPoint.Y == endPoint.Y
 end
 
+local function snapToGrid(value: number): number
+	local grid = Formex.LayoutGridSize
+	return math.round(value / grid) * grid
+end
+
+local function resolveWallHeight(value: number?, existing: number?): number
+	if value == 0 then
+		value = nil
+		existing = nil
+	end
+	local resolved = value
+	if resolved ~= nil and resolved < 0 then
+		resolved = nil
+	end
+	if resolved == nil then
+		resolved = existing
+	end
+	resolved = resolved or Formex.LevelHeight
+	resolved = snapToGrid(resolved)
+	return math.clamp(resolved, Formex.LayoutGridSize, Formex.LevelHeight)
+end
+
+local function resolveSplitHeight(height: number, value: number?, existing: number?): number?
+	local resolved = value
+	if resolved == nil then
+		resolved = existing
+	end
+	if resolved == nil or resolved <= 0 then
+		return nil
+	end
+	if height <= Formex.LayoutGridSize * 2 then
+		return nil
+	end
+	local snapped = snapToGrid(resolved)
+	local maxSplit = height - Formex.LayoutGridSize
+	return math.clamp(snapped, Formex.LayoutGridSize, maxSplit)
+end
+
+local function resolveColor(value: Color3?, fallback: Color3?): Color3
+	return value or fallback or Color3.new(1, 1, 1)
+end
+
+local function normalizeMaterialId(value: number?): number?
+	if type(value) ~= "number" or value <= 0 then
+		return nil
+	end
+	return value
+end
+
+local function resolveSideMaterials(entryTop: number?, entryBottom: number?, entryLegacy: number?, existingTop: number?, existingBottom: number?, existingLegacy: number?, defaultMaterial: number): (number, number)
+	entryTop = normalizeMaterialId(entryTop)
+	entryBottom = normalizeMaterialId(entryBottom)
+	entryLegacy = normalizeMaterialId(entryLegacy)
+	existingTop = normalizeMaterialId(existingTop)
+	existingBottom = normalizeMaterialId(existingBottom)
+	existingLegacy = normalizeMaterialId(existingLegacy)
+
+	local base = entryLegacy or entryBottom or entryTop
+	if not base then
+		base = existingBottom or existingTop or existingLegacy
+	end
+	base = base or defaultMaterial
+
+	local bottom = entryBottom or existingBottom or base
+	local top = entryTop or existingTop or base
+	return bottom, top
+end
+
+local function resolveSideColors(entryTop: Color3?, entryBottom: Color3?, existingTop: Color3?, existingBottom: Color3?, fallback: Color3?): (Color3, Color3)
+	local base = entryBottom or entryTop or existingBottom or existingTop or fallback or Color3.new(1, 1, 1)
+	local bottom = entryBottom or existingBottom or base
+	local top = entryTop or existingTop or base
+	return bottom, top
+end
+
 function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction)
 	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
 	if not plotData then error("No current plot") end
@@ -171,10 +246,43 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 			local levelIndex = entry.Level or 1
 			local levelData = FormexSystem.EnsureLevelData(plotData, levelIndex)
 
-			local frontMaterial = entry.FrontMaterial or Formex.DefaultWallMaterial
-			local backMaterial = entry.BackMaterial or frontMaterial
-			local startMaterial = entry.StartMaterial or frontMaterial
-			local endMaterial = entry.EndMaterial or frontMaterial
+			local height = resolveWallHeight(entry.Height, nil)
+			local frontSplitHeight = resolveSplitHeight(height, entry.FrontSplitHeight, nil)
+			local backSplitHeight = resolveSplitHeight(height, entry.BackSplitHeight, nil)
+
+			local frontBottomMaterial, frontTopMaterial = resolveSideMaterials(
+				entry.FrontTopMaterial,
+				entry.FrontBottomMaterial,
+				entry.FrontMaterial,
+				nil,
+				nil,
+				nil,
+				Formex.DefaultWallMaterial
+			)
+			local backBottomMaterial, backTopMaterial = resolveSideMaterials(
+				entry.BackTopMaterial,
+				entry.BackBottomMaterial,
+				entry.BackMaterial,
+				nil,
+				nil,
+				nil,
+				frontBottomMaterial
+			)
+
+			local frontBottomColor, frontTopColor = resolveSideColors(
+				entry.FrontTopColor,
+				entry.FrontBottomColor,
+				nil,
+				nil,
+				nil
+			)
+			local backBottomColor, backTopColor = resolveSideColors(
+				entry.BackTopColor,
+				entry.BackBottomColor,
+				nil,
+				nil,
+				frontBottomColor
+			)
 
 			local newId = getNextId(levelData.Walls)
 			local newWall = {
@@ -182,10 +290,17 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 				Level = levelIndex,
 				Start = entry.Start,
 				End = entry.End,
-				FrontMaterial = frontMaterial,
-				BackMaterial = backMaterial,
-				StartMaterial = startMaterial,
-				EndMaterial = endMaterial,
+				Height = height,
+				FrontSplitHeight = frontSplitHeight,
+				BackSplitHeight = backSplitHeight,
+				FrontTopMaterial = frontTopMaterial,
+				FrontBottomMaterial = frontBottomMaterial,
+				BackTopMaterial = backTopMaterial,
+				BackBottomMaterial = backBottomMaterial,
+				FrontTopColor = frontTopColor,
+				FrontBottomColor = frontBottomColor,
+				BackTopColor = backTopColor,
+				BackBottomColor = backBottomColor,
 				Part = nil
 			}
 			levelData.Walls[newId] = newWall
@@ -195,10 +310,17 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 				Level = levelIndex,
 				Start = entry.Start,
 				End = entry.End,
-				FrontMaterial = frontMaterial,
-				BackMaterial = backMaterial,
-				StartMaterial = startMaterial,
-				EndMaterial = endMaterial,
+				Height = height,
+				FrontSplitHeight = frontSplitHeight,
+				BackSplitHeight = backSplitHeight,
+				FrontTopMaterial = frontTopMaterial,
+				FrontBottomMaterial = frontBottomMaterial,
+				BackTopMaterial = backTopMaterial,
+				BackBottomMaterial = backBottomMaterial,
+				FrontTopColor = frontTopColor,
+				FrontBottomColor = frontBottomColor,
+				BackTopColor = backTopColor,
+				BackBottomColor = backBottomColor,
 				Part = nil
 			})
 		end
@@ -236,20 +358,60 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 				levelData.Walls[entry.WallId] = nil
 				didChange = true
 			else
-				local frontMaterial = entry.FrontMaterial or existing.FrontMaterial or Formex.DefaultWallMaterial
-				local backMaterial = entry.BackMaterial or existing.BackMaterial or frontMaterial
-				local startMaterial = entry.StartMaterial or existing.StartMaterial or frontMaterial
-				local endMaterial = entry.EndMaterial or existing.EndMaterial or frontMaterial
+				local height = resolveWallHeight(entry.Height, existing.Height)
+				local frontSplitHeight = resolveSplitHeight(height, entry.FrontSplitHeight, existing.FrontSplitHeight)
+				local backSplitHeight = resolveSplitHeight(height, entry.BackSplitHeight, existing.BackSplitHeight)
+
+				local frontBottomMaterial, frontTopMaterial = resolveSideMaterials(
+					entry.FrontTopMaterial,
+					entry.FrontBottomMaterial,
+					entry.FrontMaterial,
+					existing.FrontTopMaterial,
+					existing.FrontBottomMaterial,
+					existing.FrontMaterial,
+					Formex.DefaultWallMaterial
+				)
+				local backBottomMaterial, backTopMaterial = resolveSideMaterials(
+					entry.BackTopMaterial,
+					entry.BackBottomMaterial,
+					entry.BackMaterial,
+					existing.BackTopMaterial,
+					existing.BackBottomMaterial,
+					existing.BackMaterial,
+					frontBottomMaterial
+				)
+
+				local frontBottomColor, frontTopColor = resolveSideColors(
+					entry.FrontTopColor,
+					entry.FrontBottomColor,
+					existing.FrontTopColor,
+					existing.FrontBottomColor,
+					nil
+				)
+				local backBottomColor, backTopColor = resolveSideColors(
+					entry.BackTopColor,
+					entry.BackBottomColor,
+					existing.BackTopColor,
+					existing.BackBottomColor,
+					frontBottomColor
+				)
 
 				local updated = {
 					WallId = existing.WallId,
 					Level = levelIndex,
 					Start = entry.Start,
 					End = entry.End,
-					FrontMaterial = frontMaterial,
-					BackMaterial = backMaterial,
-					StartMaterial = startMaterial,
-					EndMaterial = endMaterial,
+					Height = height,
+					FrontSplitHeight = frontSplitHeight,
+					BackSplitHeight = backSplitHeight,
+					FrontTopMaterial = frontTopMaterial,
+					FrontBottomMaterial = frontBottomMaterial,
+					BackTopMaterial = backTopMaterial,
+					BackBottomMaterial = backBottomMaterial,
+					FrontTopColor = frontTopColor,
+					FrontBottomColor = frontBottomColor,
+					BackTopColor = backTopColor,
+					BackBottomColor = backBottomColor,
 					Part = existing.Part
 				}
 				levelData.Walls[existing.WallId] = updated
@@ -259,10 +421,17 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 					Level = updated.Level,
 					Start = updated.Start,
 					End = updated.End,
-					FrontMaterial = updated.FrontMaterial,
-					BackMaterial = updated.BackMaterial,
-					StartMaterial = updated.StartMaterial,
-					EndMaterial = updated.EndMaterial,
+					Height = updated.Height,
+					FrontSplitHeight = updated.FrontSplitHeight,
+					BackSplitHeight = updated.BackSplitHeight,
+					FrontTopMaterial = updated.FrontTopMaterial,
+					FrontBottomMaterial = updated.FrontBottomMaterial,
+					BackTopMaterial = updated.BackTopMaterial,
+					BackBottomMaterial = updated.BackBottomMaterial,
+					FrontTopColor = updated.FrontTopColor,
+					FrontBottomColor = updated.FrontBottomColor,
+					BackTopColor = updated.BackTopColor,
+					BackBottomColor = updated.BackBottomColor,
 					Part = nil
 				})
 				didChange = true
@@ -354,8 +523,12 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 			local levelData = FormexSystem.EnsureLevelData(plotData, levelIndex)
 			local newId = getNextId(levelData.Floors)
 
-			local floorMaterial = entry.FloorMaterial or Formex.DefaultFloorMaterial
-			local ceilingMaterial = entry.CeilingMaterial or floorMaterial
+			local floorMaterial = normalizeMaterialId(entry.FloorMaterial) or Formex.DefaultFloorMaterial
+			local ceilingMaterial = normalizeMaterialId(entry.CeilingMaterial) or floorMaterial
+			local foundationMaterial = normalizeMaterialId(entry.FoundationMaterial) or Formex.DefaultFoundationMaterial
+			local floorColor = resolveColor(entry.FloorColor, nil)
+			local ceilingColor = resolveColor(entry.CeilingColor, floorColor)
+			local foundationColor = resolveColor(entry.FoundationColor, floorColor)
 
 			local newFloor = {
 				FloorId = newId,
@@ -363,6 +536,10 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 				Points = entry.Points,
 				FloorMaterial = floorMaterial,
 				CeilingMaterial = ceilingMaterial,
+				FoundationMaterial = foundationMaterial,
+				FloorColor = floorColor,
+				CeilingColor = ceilingColor,
+				FoundationColor = foundationColor,
 				FloorParts = {},
 				CeilingParts = {},
 				Model = nil,
@@ -376,6 +553,10 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 				Points = entry.Points,
 				FloorMaterial = floorMaterial,
 				CeilingMaterial = ceilingMaterial,
+				FoundationMaterial = foundationMaterial,
+				FloorColor = floorColor,
+				CeilingColor = ceilingColor,
+				FoundationColor = foundationColor,
 				FloorParts = {},
 				CeilingParts = {},
 				Model = nil,
@@ -412,8 +593,12 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 				levelData.Floors[entry.FloorId] = nil
 				didChange = true
 			else
-				local floorMaterial = entry.FloorMaterial or existing.FloorMaterial or Formex.DefaultFloorMaterial
-				local ceilingMaterial = entry.CeilingMaterial or existing.CeilingMaterial or floorMaterial
+				local floorMaterial = normalizeMaterialId(entry.FloorMaterial) or normalizeMaterialId(existing.FloorMaterial) or Formex.DefaultFloorMaterial
+				local ceilingMaterial = normalizeMaterialId(entry.CeilingMaterial) or normalizeMaterialId(existing.CeilingMaterial) or floorMaterial
+				local foundationMaterial = normalizeMaterialId(entry.FoundationMaterial) or normalizeMaterialId(existing.FoundationMaterial) or Formex.DefaultFoundationMaterial
+				local floorColor = resolveColor(entry.FloorColor, existing.FloorColor)
+				local ceilingColor = resolveColor(entry.CeilingColor, existing.CeilingColor or floorColor)
+				local foundationColor = resolveColor(entry.FoundationColor, existing.FoundationColor or floorColor)
 
 				local updated = {
 					FloorId = existing.FloorId,
@@ -421,6 +606,10 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 					Points = updatedPoints,
 					FloorMaterial = floorMaterial,
 					CeilingMaterial = ceilingMaterial,
+					FoundationMaterial = foundationMaterial,
+					FloorColor = floorColor,
+					CeilingColor = ceilingColor,
+					FoundationColor = foundationColor,
 					FloorParts = existing.FloorParts or {},
 					CeilingParts = existing.CeilingParts or {},
 					Model = existing.Model,
@@ -434,6 +623,10 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 					Points = updated.Points,
 					FloorMaterial = updated.FloorMaterial,
 					CeilingMaterial = updated.CeilingMaterial,
+					FoundationMaterial = updated.FoundationMaterial,
+					FloorColor = updated.FloorColor,
+					CeilingColor = updated.CeilingColor,
+					FoundationColor = updated.FoundationColor,
 					FloorParts = {},
 					CeilingParts = {},
 					Model = nil,

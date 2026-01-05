@@ -18,6 +18,10 @@ type SharedFloorPoint = {
 	PointIndex: number,
 	FloorMaterial: number,
 	CeilingMaterial: number,
+	FoundationMaterial: number,
+	FloorColor: Color3,
+	CeilingColor: Color3,
+	FoundationColor: Color3,
 }
 
 local FormexClient: any
@@ -33,6 +37,11 @@ local getCurrentLevel: () -> number
 local getSelectionType: () -> string
 local getSelectionPart: () -> Instance?
 local getFloorMaterialId: () -> number
+local getCeilingMaterialId: () -> number
+local getFloorColor: () -> Color3
+local getCeilingColor: () -> Color3
+local getFoundationMaterialId: () -> number
+local getFoundationColor: () -> Color3
 local select: (Instance) -> boolean
 local clearSelection: () -> ()
 local getSelectionInfoFromInstance: (Instance?) -> (string?, number?, number?)
@@ -63,6 +72,11 @@ function Floors.Init()
 	getSelectionType = ctx.GetSelectionType
 	getSelectionPart = ctx.GetSelectionPart
 	getFloorMaterialId = ctx.GetFloorMaterialId
+	getCeilingMaterialId = ctx.GetCeilingMaterialId
+	getFloorColor = ctx.GetFloorColor
+	getCeilingColor = ctx.GetCeilingColor
+	getFoundationMaterialId = ctx.GetFoundationMaterialId
+	getFoundationColor = ctx.GetFoundationColor
 	select = ctx.Select
 	clearSelection = ctx.ClearSelection
 	getSelectionInfoFromInstance = ctx.GetSelectionInfoFromInstance
@@ -115,6 +129,10 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 	local points = Formex.DecodeFloorPoints(model:GetAttribute("Points"))
 	local floorMaterial = model:GetAttribute("FloorMaterial") or Formex.DefaultFloorMaterial
 	local ceilingMaterial = model:GetAttribute("CeilingMaterial") or floorMaterial
+	local foundationMaterial = model:GetAttribute("FoundationMaterial") or Formex.DefaultFoundationMaterial
+	local floorColor = model:GetAttribute("FloorColor") or Color3.new(1, 1, 1)
+	local ceilingColor = model:GetAttribute("CeilingColor") or floorColor
+	local foundationColor = model:GetAttribute("FoundationColor") or floorColor
 	local levelIndex = tonumber(model.Parent.Parent.Name) or getCurrentLevel()
 	local floorId = tonumber(model.Name) or 0
 
@@ -124,6 +142,10 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 		Points = points,
 		FloorMaterial = floorMaterial,
 		CeilingMaterial = ceilingMaterial,
+		FoundationMaterial = foundationMaterial,
+		FloorColor = floorColor,
+		CeilingColor = ceilingColor,
+		FoundationColor = foundationColor,
 		FloorParts = {},
 		CeilingParts = {},
 		Model = model,
@@ -218,6 +240,10 @@ local function collectSharedFloors(plotPart: BasePart, levelIndex: number, origi
 								PointIndex = index,
 								FloorMaterial = floorData.FloorMaterial,
 								CeilingMaterial = floorData.CeilingMaterial,
+								FoundationMaterial = floorData.FoundationMaterial or Formex.DefaultFoundationMaterial,
+								FloorColor = floorData.FloorColor or Color3.new(1, 1, 1),
+								CeilingColor = floorData.CeilingColor or Color3.new(1, 1, 1),
+								FoundationColor = floorData.FoundationColor or Color3.new(1, 1, 1),
 							})
 						end
 					end
@@ -264,6 +290,10 @@ local function finalizeMove(plotInfo: any)
 			Points = shared.Points,
 			FloorMaterial = shared.FloorMaterial,
 			CeilingMaterial = shared.CeilingMaterial,
+			FoundationMaterial = shared.FoundationMaterial,
+			FloorColor = shared.FloorColor,
+			CeilingColor = shared.CeilingColor,
+			FoundationColor = shared.FoundationColor,
 			FloorParts = {},
 			CeilingParts = {},
 			Model = nil,
@@ -323,10 +353,11 @@ local function createFloorFromTile(plotInfo: any, tile: Vector2int16)
 	local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
 	local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
 	local materialId = getFloorMaterialId()
-	local ceilingMaterial = materialId
-	if getDesignMode() == Enums.DesignMode.Ceiling then
-		ceilingMaterial = materialId
-	end
+	local ceilingMaterial = getCeilingMaterialId()
+	local floorColor = getFloorColor()
+	local ceilingColor = getCeilingColor()
+	local foundationMaterial = getFoundationMaterialId()
+	local foundationColor = getFoundationColor()
 	local floorData = {
 		FloorId = 0,
 		LevelIndex = getCurrentLevel(),
@@ -338,6 +369,10 @@ local function createFloorFromTile(plotInfo: any, tile: Vector2int16)
 		},
 		FloorMaterial = materialId,
 		CeilingMaterial = ceilingMaterial,
+		FoundationMaterial = foundationMaterial,
+		FloorColor = floorColor,
+		CeilingColor = ceilingColor,
+		FoundationColor = foundationColor,
 		FloorParts = {},
 		CeilingParts = {},
 		Model = nil,
