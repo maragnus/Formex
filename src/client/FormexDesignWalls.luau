@@ -30,6 +30,7 @@ local FormexClient: any
 local Formex: any
 local Handles: any
 local OverlayFolder: Folder
+local Highlight: any
 local Enums: any
 local Constants: any
 
@@ -90,6 +91,7 @@ function Walls.Init()
 	Formex = ctx.Formex
 	Handles = ctx.Handles
 	OverlayFolder = ctx.OverlayFolder
+	Highlight = ctx.Highlight
 	Enums = ctx.Enums
 	Constants = ctx.Constants
 
@@ -713,6 +715,7 @@ local function updateWallHandles(plotInfo: any)
 		End = endPoint,
 		Part = wallModel,
 	}
+	Highlight.UpdateWallEdgePreview(plotInfo, level, startPoint, endPoint, true)
 
 	wallHandleStart = Handles.CreateHandle("WallHandleStart", Constants.SelectionColor, Formex.Icons.ResizeItem, onWallMove, "Start")
 	wallHandleEnd = Handles.CreateHandle("WallHandleEnd", Constants.SelectionColor, Formex.Icons.ResizeItem, onWallMove, "End")
@@ -920,6 +923,7 @@ local function updateWallMoveGhost(input: any)
 	local previewData = buildWallData(newStart, newEnd)
 	local valid = Formex.IsWallValid(input.PlotInfo :: any, previewData)
 	updateGhostValidity(valid)
+	Highlight.UpdateWallEdgePreview(input.PlotInfo, moveWallOriginal.Level, newStart, newEnd, valid)
 end
 
 local function finalizeWall(plotInfo: any, endPosition: Vector3)
@@ -1095,10 +1099,13 @@ function Walls.ClearSelection()
 	selectedWall = nil
 	Handles.ClearHandleHover()
 	Handles.Clear()
+	Highlight.ClearFloorEdgePreview()
+	Highlight.UpdateSelectionHighlight()
 end
 
 function Walls.UpdateHandles(plotInfo: any)
 	updateWallHandles(plotInfo)
+	Highlight.UpdateSelectionHighlight()
 end
 
 function Walls.StartWall()

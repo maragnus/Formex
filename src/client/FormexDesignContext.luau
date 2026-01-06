@@ -7,6 +7,7 @@ export type Context = {
 	Formex: any,
 	OverlayFolder: Folder,
 	Handles: any,
+	Highlight: any,
 	Enums: {
 		DesignMode: {DesignMode: string},
 		ActionType: {ActionType: string},
@@ -42,6 +43,7 @@ export type Context = {
 	IsGhostActive: () -> boolean,
 	IsGhostValid: () -> boolean,
 	GetGhostType: () -> any?,
+	GetGhostInstance: () -> Instance?,
 	GetGhostFloorData: () -> any?,
 	GetFloorMaterialId: () -> number,
 	GetCeilingMaterialId: () -> number,

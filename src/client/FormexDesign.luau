@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
 local FormexCamera = require(script.Parent:WaitForChild("FormexCamera"))
 local FormexDesignContext = require(script.Parent:WaitForChild("FormexDesignContext"))
+local FormexDesignHighlights = require(script.Parent:WaitForChild("FormexDesignHighlights"))
 local Formex = FormexClient.Formex
 local localPlayer = Players.LocalPlayer
 
@@ -122,10 +123,9 @@ local altHeld, alt1Held, alt2Held, alt3Held = false, false, false, false
 local selectionType: SelectionType = FormexDesign.SelectionType.None
 local selectionData: SelectionData = nil
 local selectionPart: Instance? = nil
-local selectionHighlight: Highlight? = nil
 
 local selectionColor = Color3.fromRGB(255, 201, 107)
-local ghostValidColor = Color3.fromRGB(84, 140, 255)
+local ghostValidColor = selectionColor -- Color3.fromRGB(84, 140, 255)
 local ghostInvalidColor = Color3.fromRGB(245, 110, 110)
 
 local function getSelectedFloorModel(): Model?
@@ -444,7 +444,7 @@ local designModeViewSettings: {DesignMode: ViewSettings} = {
 local function clearOverlays()
 	-- clears segment, expands, ghosts
 	for _, child in overlayFolder:GetChildren() do
-		if child ~= ghost and child ~= selectionHighlight then
+		if child ~= ghost and not FormexDesignHighlights.IsHighlightInstance(child) then
 			child:Destroy()
 		end
 	end
@@ -754,42 +754,6 @@ local function getLevel(): number
 	return level
 end
 
-local function ensureSelectionHighlight(): Highlight
-	if selectionHighlight and selectionHighlight.Parent then
-		return selectionHighlight
-	end
-
-	local highlight = Instance.new("Highlight")
-	highlight.FillTransparency = 1
-	highlight.OutlineTransparency = 0
-	highlight.OutlineColor = selectionColor
-	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	highlight.Parent = overlayFolder
-	selectionHighlight = highlight
-	return highlight
-end
-
-local function updateHighlightTarget()
-	local highlight = ensureSelectionHighlight()
-
-	if ghostActive and ghost then
-		highlight.Adornee = ghost
-		highlight.OutlineColor = ghostIsValid and ghostValidColor or ghostInvalidColor
-		highlight.Enabled = true
-		return
-	end
-
-	if selectionPart then
-		highlight.Adornee = selectionPart
-		highlight.OutlineColor = selectionColor
-		highlight.Enabled = true
-		return
-	end
-
-	highlight.Adornee = nil
-	highlight.Enabled = false
-end
-
 function FormexDesign.ClearSelection()
 	selectionType = FormexDesign.SelectionType.None
 	selectionData = nil
@@ -800,7 +764,7 @@ function FormexDesign.ClearSelection()
 	if Floors then
 		Floors.ClearSelection()
 	end
-	updateHighlightTarget()
+	FormexDesignHighlights.UpdateSelectionHighlight()
 	notifyDesignModeChange()
 end
 
@@ -971,7 +935,7 @@ end
 
 local function updateGhostValidity(isValid: boolean)
 	ghostIsValid = isValid
-	updateHighlightTarget()
+	FormexDesignHighlights.UpdateSelectionHighlight()
 end
 
 function Formex.HideGhost(plotPart: BasePart?)
@@ -1002,7 +966,7 @@ function Formex.HideGhost(plotPart: BasePart?)
 
 	ghostActive = false
 	ghostIsValid = false
-	updateHighlightTarget()
+	FormexDesignHighlights.UpdateSelectionHighlight()
 end
 
 local function clearGhost()
@@ -1082,7 +1046,7 @@ local function ensureWallGhost(plotPart: BasePart, startPoint: Vector2, endPoint
 	end
 
 	ghostActive = ghost ~= nil
-	updateHighlightTarget()
+	FormexDesignHighlights.UpdateSelectionHighlight()
 end
 
 local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Vector2int16, partType: Formex.PartType)
@@ -1129,7 +1093,7 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 	ghost.Transparency = 1
 
 	ghostActive = true
-	updateHighlightTarget()
+	FormexDesignHighlights.UpdateSelectionHighlight()
 end
 
 
@@ -1250,7 +1214,7 @@ function FormexDesign.Select(part: Instance)
 			foundationColor = floorData.FoundationColor
 		end
 		notifyDesignModeChange()
-		updateHighlightTarget()
+		FormexDesignHighlights.UpdateSelectionHighlight()
 		local plotInfo = FormexClient.CurrentPlot
 		if plotInfo and plotInfo.IsValid then
 			if Walls then
@@ -1408,6 +1372,7 @@ FormexDesignContext.Init({
 	Formex = Formex,
 	OverlayFolder = overlayFolder,
 	Handles = FormexDesign.Handles,
+	Highlight = FormexDesignHighlights,
 	Enums = {
 		DesignMode = FormexDesign.DesignMode,
 		ActionType = FormexDesign.ActionType,
@@ -1467,6 +1432,9 @@ FormexDesignContext.Init({
 	GetGhostType = function()
 		return ghostType
 	end,
+	GetGhostInstance = function()
+		return ghost
+	end,
 	GetGhostFloorData = function()
 		return ghostFloorData
 	end,
@@ -1495,6 +1463,8 @@ FormexDesignContext.Init({
 	DeleteAfterDelay = deleteAfterDelay,
 	CancelAction = FormexDesign.CancelAction,
 })
+
+FormexDesignHighlights.Init(FormexDesignContext.Get())
 
 Walls = require(script.Parent:WaitForChild("FormexDesignWalls"))
 Floors = require(script.Parent:WaitForChild("FormexDesignFloors"))

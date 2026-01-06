@@ -137,6 +137,8 @@ Formex.FloorMaterials = {
 
 Formex.Icons = { -- Content.fromAssetId(...)
     Menu = 123614418099512,
+	Confirm = 116875236311469,
+	Cancel = 92308571652477,
     Refresh = 123101975679190,
     AddItem = 128647721275129,
     MoveItem = 83970836971222,

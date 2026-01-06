@@ -27,6 +27,7 @@ type SharedFloorPoint = {
 local FormexClient: any
 local Formex: any
 local Handles: any
+local Highlight: any
 local Enums: any
 local Constants: any
 
@@ -62,6 +63,7 @@ function Floors.Init()
 	FormexClient = ctx.FormexClient
 	Formex = ctx.Formex
 	Handles = ctx.Handles
+	Highlight = ctx.Highlight
 	Enums = ctx.Enums
 	Constants = ctx.Constants
 
@@ -170,6 +172,11 @@ local function clearFloorHandles()
 	lastHandleFloorId = nil
 	lastHandleLevelIndex = nil
 	lastHandlePointsKey = nil
+end
+
+local function updateFloorEdgePreview(plotInfo: any, levelIndex: number, points: {Vector2int16})
+	local isValid = Formex.Floors.IsValid(plotInfo :: any, { Points = points } :: any)
+	Highlight.UpdateFloorEdgePreview(plotInfo, levelIndex, points, isValid)
 end
 
 local function addFloorHandle(name: string, color: Color3, iconAsset: string, onClick: (any) -> (), argument: any): BasePart
@@ -435,12 +442,16 @@ end
 local function updateFloorHandles(plotInfo: any)
 	if getSelectionType() ~= Enums.SelectionType.Floor then
 		clearFloorHandles()
+		Highlight.ClearFloorEdgePreview()
+		Highlight.UpdateSelectionHighlight()
 		return
 	end
 
 	local floorModel = getFloorModelFromSelection()
 	if not floorModel or not plotInfo or not plotInfo.PlotPart then
 		clearFloorHandles()
+		Highlight.ClearFloorEdgePreview()
+		Highlight.UpdateSelectionHighlight()
 		return
 	end
 
@@ -455,6 +466,8 @@ local function updateFloorHandles(plotInfo: any)
 	end
 
 	clearFloorHandles()
+	updateFloorEdgePreview(plotInfo, floorData.LevelIndex, points)
+	Highlight.UpdateSelectionHighlight()
 
 	local levelIndex = floorData.LevelIndex
 	local y = getHandleY(levelIndex)
@@ -515,6 +528,7 @@ end
 
 function Floors.UpdateHandles(plotInfo: any)
 	updateFloorHandles(plotInfo)
+	Highlight.UpdateSelectionHighlight()
 end
 
 function Floors.StartFloor()
@@ -527,8 +541,13 @@ function Floors.CancelAction()
 		moveOriginalPoints = nil
 		moveSharedPoints = {}
 		activeHandle = nil
+		local plotInfo = FormexClient.CurrentPlot
+		if plotInfo and plotInfo.PlotPart and movePreviewPoints and moveLevelIndex then
+			updateFloorEdgePreview(plotInfo, moveLevelIndex, movePreviewPoints)
+		end
 	end
 	setActionType(Enums.ActionType.Select)
+	Highlight.UpdateSelectionHighlight()
 end
 
 function Floors.ClearSelection()
@@ -537,17 +556,24 @@ function Floors.ClearSelection()
 	moveSharedPoints = {}
 	activeHandle = nil
 	clearFloorHandles()
+	Highlight.ClearFloorEdgePreview()
+	Highlight.UpdateSelectionHighlight()
 end
 
 function Floors.HandleUpdate(input: any)
 	if getActionType() == Enums.ActionType.Select then
 		updateFloorHandles(input.PlotInfo)
 		Handles.CheckHover(input.Ray)
+		Highlight.UpdateSelectionHighlight()
 		return
 	end
 
 	if getActionType() == Enums.ActionType.Move then
 		handlePointMove(input.PlotInfo, input)
+		if movePreviewPoints and moveLevelIndex then
+			updateFloorEdgePreview(input.PlotInfo, moveLevelIndex, movePreviewPoints)
+		end
+		Highlight.UpdateSelectionHighlight()
 	end
 end
 
