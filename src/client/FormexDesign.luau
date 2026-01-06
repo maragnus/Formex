@@ -105,7 +105,7 @@ local viewSettings: ViewSettings = playViewSettings
 local designSessionActive = false
 local designSessionPendingFocus = false
 local lastPlotPart: BasePart? = nil
-local ghost: BasePart? = nil
+local ghost: Instance? = nil
 local ghostWallData: Formex.WallData? = nil
 local ghostFloorData: Formex.FloorData? = nil
 local ghostType: Formex.PartType? = nil
@@ -853,28 +853,26 @@ local function getInputInfo(forceGridCollision: boolean?): InputInfo | nil
 	return inputInfo
 end
 
-local function applyGhostAppearance(part: BasePart)
-	part.CanCollide = false
-	part.CanTouch = false
-	part.CanQuery = false
-	part.CastShadow = false
-	part.Name = "Ghost"
-	part:SetAttribute("IsGhost", true)
-
-	local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
-	local function applyToChild(child: Instance?)
-		if child and child:IsA("BasePart") then
-			child.CanCollide = false
-			child.CanTouch = false
-			child.CanQuery = false
-			child.CastShadow = false
-			child:SetAttribute("IsGhost", true)
-		end
+local function applyGhostAppearance(instance: Instance)
+	local function applyToPart(part: BasePart)
+		part.CanCollide = false
+		part.CanTouch = false
+		part.CanQuery = false
+		part.CastShadow = false
+		part:SetAttribute("IsGhost", true)
 	end
 
-	applyToChild(part:FindFirstChild(backPartName))
-	applyToChild(part:FindFirstChild("FrontTop"))
-	applyToChild(part:FindFirstChild("BackTop"))
+	if instance:IsA("BasePart") then
+		instance.Name = "Ghost"
+		applyToPart(instance)
+	elseif instance:IsA("Model") then
+		instance.Name = "Ghost"
+		for _, child in ipairs(instance:GetDescendants()) do
+			if child:IsA("BasePart") then
+				applyToPart(child)
+			end
+		end
+	end
 end
 
 local function updateGhostValidity(isValid: boolean)
@@ -893,19 +891,21 @@ function Formex.HideGhost(plotPart: BasePart?)
 		hiddenCFrame = plotPart.CFrame * CFrame.new(0, -offsetY, 0)
 	end
 
-	ghost.Size = Vector3.new(0, 0, 0)
-	ghost.CFrame = hiddenCFrame
-	local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
-	local function hideChild(child: Instance?)
-		if child and child:IsA("BasePart") then
-			child.Size = Vector3.new(0, 0, 0)
-			child.CFrame = hiddenCFrame
+	local function hidePart(part: BasePart)
+		part.Size = Vector3.new(0, 0, 0)
+		part.CFrame = hiddenCFrame
+	end
+
+	if ghost:IsA("BasePart") then
+		hidePart(ghost)
+	elseif ghost:IsA("Model") then
+		for _, child in ipairs(ghost:GetDescendants()) do
+			if child:IsA("BasePart") then
+				hidePart(child)
+			end
 		end
 	end
 
-	hideChild(ghost:FindFirstChild(backPartName))
-	hideChild(ghost:FindFirstChild("FrontTop"))
-	hideChild(ghost:FindFirstChild("BackTop"))
 	ghostActive = false
 	ghostIsValid = false
 	updateHighlightTarget()
@@ -1119,8 +1119,15 @@ function FormexDesign.Select(part: Instance)
 			local currentPart = part
 			while currentPart do
 				local parent = currentPart.Parent
-				if parent and parent:IsA("Folder") and parent.Name == "Walls" and currentPart:IsA("BasePart") then
-					selectionTarget = currentPart
+				if parent and parent:IsA("Folder") and parent.Name == "Walls" then
+					if currentPart:IsA("Model") then
+						selectionTarget = currentPart
+						break
+					end
+					if currentPart:IsA("BasePart") then
+						selectionTarget = currentPart
+						break
+					end
 					break
 				end
 				currentPart = parent

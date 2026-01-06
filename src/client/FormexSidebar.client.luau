@@ -234,7 +234,36 @@ local function createMaterialColorRow(options)
 	}
 end
 
-local function getWallEndpoints(plotPart: BasePart, wallPart: BasePart): (Vector2int16, Vector2int16)
+local function getWallFrontPart(instance: Instance?): BasePart?
+    if not instance then
+        return nil
+    end
+    if instance:IsA("BasePart") then
+        return instance
+    end
+    if instance:IsA("Model") then
+        if instance.PrimaryPart then
+            return instance.PrimaryPart
+        end
+        local frontName = Formex.Walls and Formex.Walls.FrontPartName or "Front"
+        local frontPart = instance:FindFirstChild(frontName)
+        if frontPart and frontPart:IsA("BasePart") then
+            return frontPart
+        end
+        for _, child in ipairs(instance:GetChildren()) do
+            if child:IsA("BasePart") then
+                return child
+            end
+        end
+    end
+    return nil
+end
+
+local function getWallEndpoints(plotPart: BasePart, wallModel: Instance): (Vector2int16, Vector2int16)
+    local wallPart = getWallFrontPart(wallModel)
+    if not wallPart then
+        return Vector2int16.new(0, 0), Vector2int16.new(0, 0)
+    end
     local midLocal = plotPart.CFrame:PointToObjectSpace(wallPart.Position)
     local dirLocal = plotPart.CFrame:VectorToObjectSpace(wallPart.CFrame.LookVector)
     dirLocal = Vector3.new(dirLocal.X, 0, dirLocal.Z)
@@ -269,7 +298,24 @@ local function getWallAttributeColor(part: BasePart, name: string): Color3?
     return nil
 end
 
-local function getWallAppearanceFromPart(wallPart: BasePart)
+local function getWallAppearanceFromPart(wallModel: Instance)
+    local wallPart = getWallFrontPart(wallModel)
+    if not wallPart then
+        return {
+            Height = nil,
+            FrontSplitHeight = nil,
+            BackSplitHeight = nil,
+            FrontTopMaterial = Formex.DefaultWallMaterial,
+            FrontBottomMaterial = Formex.DefaultWallMaterial,
+            BackTopMaterial = Formex.DefaultWallMaterial,
+            BackBottomMaterial = Formex.DefaultWallMaterial,
+            FrontTopColor = Color3.new(1, 1, 1),
+            FrontBottomColor = Color3.new(1, 1, 1),
+            BackTopColor = Color3.new(1, 1, 1),
+            BackBottomColor = Color3.new(1, 1, 1),
+        }
+    end
+
     local height = wallPart:GetAttribute("WallHeight")
     if type(height) ~= "number" then
         height = nil
@@ -308,7 +354,7 @@ local function getWallAppearanceFromPart(wallPart: BasePart)
     }
 end
 
-local function getWallPart(plot: FormexClient.PlotInfo, wallId: number, level: number): BasePart?
+local function getWallPart(plot: FormexClient.PlotInfo, wallId: number, level: number): Model?
     if not plot.PlotPart then
         return nil
     end
@@ -320,9 +366,9 @@ local function getWallPart(plot: FormexClient.PlotInfo, wallId: number, level: n
     if not wallsFolder then
         return nil
     end
-    local wallPart = wallsFolder:FindFirstChild(tostring(wallId))
-    if wallPart and wallPart:IsA("BasePart") then
-        return wallPart
+    local wallModel = wallsFolder:FindFirstChild(tostring(wallId))
+    if wallModel and wallModel:IsA("Model") then
+        return wallModel
     end
     return nil
 end

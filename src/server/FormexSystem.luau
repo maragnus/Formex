@@ -405,12 +405,12 @@ local function renderWalls(data: RenderState)
     end
 
     for wallId, wallData in data.LevelData.Walls do
-        local part = wallData.Part
-        if not part or not part.Parent then
+        local model = wallData.Part
+        if not model or not model.Parent then
             wallData.Part = nil
-            local newPart = Formex.Walls.Create(wallData, data.PlotPart)
-            if newPart then
-                newPart.Parent = parent
+            local newModel = Formex.Walls.Create(wallData, data.PlotPart)
+            if newModel then
+                newModel.Parent = parent
             end
         else
             Formex.Walls.Edit(wallData, data.PlotPart)

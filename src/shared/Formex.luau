@@ -62,7 +62,8 @@ export type WallData = {
 	BackTopMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
 	BackBottomColor: Color3?, -- <NEW FEATURE>
 	BackBottomMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
-	Part: Part?,
+	Part: Model?,
+	FrontPart: Part?,
 	BackPart: Part?
 }
 

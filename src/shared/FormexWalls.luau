@@ -9,20 +9,10 @@ Formex.Walls = {}
 
 local BACK_PART_NAME = "BackSide"
 Formex.Walls.BackPartName = BACK_PART_NAME
+local FRONT_PART_NAME = "Front"
+Formex.Walls.FrontPartName = FRONT_PART_NAME
 local FRONT_TOP_NAME = "FrontTop"
 local BACK_TOP_NAME = "BackTop"
-
-local function ensureBackPart(frontPart: BasePart): BasePart
-	local existing = frontPart:FindFirstChild(BACK_PART_NAME)
-	if existing and existing:IsA("BasePart") then
-		return existing
-	end
-
-	local backPart = Instance.new("Part")
-	backPart.Name = BACK_PART_NAME
-	backPart.Parent = frontPart
-	return backPart
-end
 
 local function ensureChildPart(parent: Instance, name: string): BasePart
 	local existing = parent:FindFirstChild(name)
@@ -34,6 +24,14 @@ local function ensureChildPart(parent: Instance, name: string): BasePart
 	part.Name = name
 	part.Parent = parent
 	return part
+end
+
+local function ensureFrontPart(model: Model): BasePart
+	return ensureChildPart(model, FRONT_PART_NAME)
+end
+
+local function ensureBackPart(model: Model): BasePart
+	return ensureChildPart(model, BACK_PART_NAME)
 end
 
 local function clearTextures(part: Instance)
@@ -185,20 +183,27 @@ function Formex.IsWallValid(plot: Formex.PlotData, wall: Formex.WallData)
 	return true
 end
 
-function Formex.Walls.Create(wall: Formex.WallData, plotPart: BasePart?): Part
-	local part = Instance.new("Part")
-	part.Name = tostring(wall.WallId)
-	part.Anchored = true
-	part.CollisionGroup = Formex.CollisionGroup.Structure
-	wall.Part = part
+function Formex.Walls.Create(wall: Formex.WallData, plotPart: BasePart?): Model
+	local model = Instance.new("Model")
+	model.Name = tostring(wall.WallId)
+	local frontPart = ensureFrontPart(model)
+	frontPart.Anchored = true
+	frontPart.CollisionGroup = Formex.CollisionGroup.Structure
+	model.PrimaryPart = frontPart
+	wall.Part = model
 	Formex.Walls.Edit(wall, plotPart)
-	return part
+	return model
 end
 
 function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
-	local part = wall.Part
-	if not part or not plotPart then return end
-	local backPart = ensureBackPart(part)
+	local model = wall.Part
+	if not model or not plotPart then return end
+	model.Name = tostring(wall.WallId)
+	local frontPart = ensureFrontPart(model)
+	frontPart.Name = FRONT_PART_NAME
+	local backPart = ensureBackPart(model)
+	model.PrimaryPart = frontPart
+	wall.FrontPart = frontPart
 	wall.BackPart = backPart
 
 	local height = resolveWallHeight(wall.Height)
@@ -226,7 +231,7 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 	local sideOffset = wallThickness / 4
 
 	local wallCFrame = CFrame.lookAt(worldMid, worldMid + worldDir)
-	part.Transparency = 0 -- Disable invisibility in case it was set
+	frontPart.Transparency = 0 -- Disable invisibility in case it was set
 
 	local frontBottomMaterial = normalizeMaterialId(wall.FrontBottomMaterial)
 		or normalizeMaterialId(wall.FrontTopMaterial)
@@ -244,40 +249,40 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 	local backBottomColor = resolveColor(wall.BackBottomColor, wall.BackTopColor)
 	local backTopColor = resolveColor(wall.BackTopColor, backBottomColor)
 
-	part:SetAttribute("WallHeight", height)
-	part:SetAttribute("FrontSplitHeight", frontSplitHeight)
-	part:SetAttribute("BackSplitHeight", backSplitHeight)
-	part:SetAttribute("FrontTopMaterial", frontTopMaterial)
-	part:SetAttribute("FrontBottomMaterial", frontBottomMaterial)
-	part:SetAttribute("BackTopMaterial", backTopMaterial)
-	part:SetAttribute("BackBottomMaterial", backBottomMaterial)
-	part:SetAttribute("FrontTopColor", frontTopColor)
-	part:SetAttribute("FrontBottomColor", frontBottomColor)
-	part:SetAttribute("BackTopColor", backTopColor)
-	part:SetAttribute("BackBottomColor", backBottomColor)
+	frontPart:SetAttribute("WallHeight", height)
+	frontPart:SetAttribute("FrontSplitHeight", frontSplitHeight)
+	frontPart:SetAttribute("BackSplitHeight", backSplitHeight)
+	frontPart:SetAttribute("FrontTopMaterial", frontTopMaterial)
+	frontPart:SetAttribute("FrontBottomMaterial", frontBottomMaterial)
+	frontPart:SetAttribute("BackTopMaterial", backTopMaterial)
+	frontPart:SetAttribute("BackBottomMaterial", backBottomMaterial)
+	frontPart:SetAttribute("FrontTopColor", frontTopColor)
+	frontPart:SetAttribute("FrontBottomColor", frontBottomColor)
+	frontPart:SetAttribute("BackTopColor", backTopColor)
+	frontPart:SetAttribute("BackBottomColor", backBottomColor)
 
-	clearTextures(part)
+	clearTextures(frontPart)
 	clearTextures(backPart)
 
 	local function applySegment(target: BasePart, segmentHeight: number, segmentCenterY: number, offsetX: number)
 		target.Size = Vector3.new(sideThickness, segmentHeight, length)
 		target.CFrame = wallCFrame * CFrame.new(offsetX, segmentCenterY - (levelOffset + height / 2), 0)
-		target.Anchored = part.Anchored
-		target.CollisionGroup = part.CollisionGroup
-		target.CanCollide = part.CanCollide
-		target.CanTouch = part.CanTouch
-		target.CanQuery = part.CanQuery
-		target.CastShadow = part.CastShadow
-		target.Transparency = part.Transparency
+		target.Anchored = frontPart.Anchored
+		target.CollisionGroup = frontPart.CollisionGroup
+		target.CanCollide = frontPart.CanCollide
+		target.CanTouch = frontPart.CanTouch
+		target.CanQuery = frontPart.CanQuery
+		target.CastShadow = frontPart.CastShadow
+		target.Transparency = frontPart.Transparency
 	end
 
 	local function applySide(splitHeight: number?, bottomPart: BasePart, topName: string, offsetX: number, bottomMaterial: number, topMaterial: number, bottomColor: Color3, topColor: Color3)
 		local topPart: BasePart? = nil
 		if splitHeight then
-			topPart = ensureChildPart(part, topName)
+			topPart = ensureChildPart(model, topName)
 			clearTextures(topPart)
 		else
-			local existing = part:FindFirstChild(topName)
+			local existing = model:FindFirstChild(topName)
 			if existing and existing:IsA("BasePart") then
 				existing:Destroy()
 			end
@@ -300,7 +305,7 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 		end
 	end
 
-	applySide(frontSplitHeight, part, FRONT_TOP_NAME, -sideOffset, frontBottomMaterial, frontTopMaterial, frontBottomColor, frontTopColor)
+	applySide(frontSplitHeight, frontPart, FRONT_TOP_NAME, -sideOffset, frontBottomMaterial, frontTopMaterial, frontBottomColor, frontTopColor)
 	applySide(backSplitHeight, backPart, BACK_TOP_NAME, sideOffset, backBottomMaterial, backTopMaterial, backBottomColor, backTopColor)
 end
 
