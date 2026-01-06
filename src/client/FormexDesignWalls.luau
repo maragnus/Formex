@@ -1174,12 +1174,13 @@ end
 function Walls.HandlePrimaryClick(input: any)
 	local actionType = getActionType()
 	if actionType == Enums.ActionType.Select then
+		local hadSelection = getSelectionType() ~= Enums.SelectionType.None
 		local selected = input.Target and select(input.Target) or false
 		if selected then
 			return
 		end
 
-		if getSelectionType() ~= Enums.SelectionType.None then
+		if hadSelection then
 			clearSelection()
 		else
 			Walls.StartWall()

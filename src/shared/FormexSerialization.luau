@@ -208,8 +208,6 @@ local function deserializeLevelDataV1(reader): Formex.LevelArray
 				FloorColor = Color3.new(1, 1, 1),
 				CeilingColor = Color3.new(1, 1, 1),
 				FoundationColor = Color3.new(1, 1, 1),
-				FloorParts = {},
-				CeilingParts = {},
 			}
 		end
 		for index, ceilingMaterial in legacyCeilings do
@@ -233,8 +231,6 @@ local function deserializeLevelDataV1(reader): Formex.LevelArray
 					FloorColor = Color3.new(1, 1, 1),
 					CeilingColor = Color3.new(1, 1, 1),
 					FoundationColor = Color3.new(1, 1, 1),
-					FloorParts = {},
-					CeilingParts = {},
 				}
 			end
 		end
@@ -332,8 +328,6 @@ local function deserializeLevelDataV2(reader): Formex.LevelArray
 				FloorColor = Color3.new(1, 1, 1),
 				CeilingColor = Color3.new(1, 1, 1),
 				FoundationColor = Color3.new(1, 1, 1),
-				FloorParts = {},
-				CeilingParts = {},
 			}
 		end
 
@@ -347,8 +341,6 @@ local function deserializeLevelDataV2(reader): Formex.LevelArray
 				Position = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
 				Rotation = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
 				WallId = reader:ReadU16(),
-				Design = {},
-				Properties = {},
 			}
 
 			while true do

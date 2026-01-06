@@ -540,8 +540,6 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 				FloorColor = floorColor,
 				CeilingColor = ceilingColor,
 				FoundationColor = foundationColor,
-				FloorParts = {},
-				CeilingParts = {},
 				Model = nil,
 			}
 
@@ -557,8 +555,6 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 				FloorColor = floorColor,
 				CeilingColor = ceilingColor,
 				FoundationColor = foundationColor,
-				FloorParts = {},
-				CeilingParts = {},
 				Model = nil,
 			})
 		end
@@ -610,8 +606,6 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 					FloorColor = floorColor,
 					CeilingColor = ceilingColor,
 					FoundationColor = foundationColor,
-					FloorParts = existing.FloorParts or {},
-					CeilingParts = existing.CeilingParts or {},
 					Model = existing.Model,
 				}
 
@@ -627,8 +621,6 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 					FloorColor = updated.FloorColor,
 					CeilingColor = updated.CeilingColor,
 					FoundationColor = updated.FoundationColor,
-					FloorParts = {},
-					CeilingParts = {},
 					Model = nil,
 				})
 			end

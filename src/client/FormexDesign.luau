@@ -165,8 +165,6 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 		FloorColor = floorColor,
 		CeilingColor = ceilingColor,
 		FoundationColor = foundationColor,
-		FloorParts = {},
-		CeilingParts = {},
 		Model = model,
 	}
 end
@@ -196,8 +194,6 @@ local function applySelectedFloorAppearance(overrides: {[string]: any})
 		FloorColor = overrides.FloorColor or current.FloorColor,
 		CeilingColor = overrides.CeilingColor or current.CeilingColor,
 		FoundationColor = overrides.FoundationColor or current.FoundationColor,
-		FloorParts = {},
-		CeilingParts = {},
 		Model = model,
 	}
 
@@ -1011,8 +1007,6 @@ local function buildFloorGhostData(levelIndex: number, tile: Vector2int16): Form
 		FloorColor = floorColor,
 		CeilingColor = ceilingColor,
 		FoundationColor = foundationColor,
-		FloorParts = {},
-		CeilingParts = {},
 		Model = nil,
 	}
 end
