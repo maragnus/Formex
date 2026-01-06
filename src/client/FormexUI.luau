@@ -844,8 +844,6 @@ export type ColorSelectOptions = {
     Colors: {ColorOption}?,
     SelectedColor: Color3?,
     AllowNone: boolean?,
-    ShowLabel: boolean?,
-    ShowValue: boolean?,
 } | CommonOptions
 
 export type ColorSelectHandle = {
@@ -855,11 +853,11 @@ export type ColorSelectHandle = {
 }
 
 function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: Color3?) -> nil)?): ColorSelectHandle
+    options.Label = options.Label or "Color"
     local palette = options.Colors or defaultColorPalette
     local allowNone = options.AllowNone ~= false
     local selectedColor: Color3? = options.SelectedColor
-    local showLabel = options.ShowLabel ~= false
-    local showValue = options.ShowValue ~= false
+    local showLabel = options.Label ~= nil and options.Label ~= ""
     local noChrome = (showLabel == false) and (showValue == false)
     local name = options.Name or options.Label or "ColorSelect"
 
@@ -922,7 +920,7 @@ function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: C
     preview.Name = "Preview"
     preview.BackgroundColor3 = selectedColor or Color3.fromRGB(235, 238, 245)
     preview.BackgroundTransparency = selectedColor and 0 or 0.25
-    preview.Size = noChrome and UDim2.new(1, 0, 1, 0) or (showValue and UDim2.new(0, 28, 0, 28) or UDim2.new(1, 0, 1, 0))
+    preview.Size = noChrome and UDim2.new(1, 28, 1, 0) or (showValue and UDim2.new(0, 28, 0, 28) or UDim2.new(1, 0, 1, 0))
     preview.BorderSizePixel = 0
 
     local previewCorner = Instance.new("UICorner", preview)
@@ -932,36 +930,19 @@ function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: C
     previewStroke.Color = Color3.fromRGB(180, 190, 210)
     previewStroke.Thickness = 1.6
 
-    local selectedLabel: TextLabel? = nil
     local chevron: ImageLabel? = nil
-    if showValue then
-        selectedLabel = Instance.new("TextLabel", row)
-        selectedLabel.Name = "SelectedLabel"
-        selectedLabel.BackgroundTransparency = 1
-        selectedLabel.Size = UDim2.new(1, -60, 1, 0)
-        selectedLabel.Font = Enum.Font.Gotham
-        selectedLabel.Text = "None"
-        selectedLabel.TextSize = 16
-        selectedLabel.TextColor3 = Color3.fromRGB(40, 45, 70)
-        selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
-        selectedLabel.TextYAlignment = Enum.TextYAlignment.Center
-
-        chevron = Instance.new("ImageLabel", row)
-        chevron.Name = "Chevron"
-        chevron.BackgroundTransparency = 1
-        chevron.Size = UDim2.new(0, 14, 0, 14)
-        chevron.ImageContent = Content.fromAssetId(Formex.Icons.ChevronDown or 0)
-        chevron.ImageColor3 = Color3.fromRGB(120, 130, 160)
-        chevron.LayoutOrder = 3
-    end
+    chevron = Instance.new("ImageLabel", row)
+    chevron.Name = "Chevron"
+    chevron.BackgroundTransparency = 1
+    chevron.Size = UDim2.new(0, 14, 0, 14)
+    chevron.ImageContent = Content.fromAssetId(Formex.Icons.ChevronDown or 0)
+    chevron.ImageColor3 = Color3.fromRGB(120, 130, 160)
+    chevron.LayoutOrder = 3
 
     local function applySelected(color: Color3?)
         selectedColor = color
         preview.BackgroundColor3 = color or Color3.fromRGB(235, 238, 245)
         preview.BackgroundTransparency = color and 0 or 0.25
-        if selectedLabel then
-            selectedLabel.Text = formatColorHex(color)
-        end
     end
 
     applySelected(selectedColor)

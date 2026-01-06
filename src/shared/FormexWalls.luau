@@ -43,7 +43,7 @@ local function clearTextures(part: Instance)
 end
 
 local function snapToGrid(value: number): number
-	local grid = Formex.LayoutGridSize
+	local grid = Formex.GridSize
 	return math.round(value / grid) * grid
 end
 
@@ -54,7 +54,7 @@ local function resolveWallHeight(value: number?): number
 	end
 	resolved = resolved or Formex.LevelHeight
 	resolved = snapToGrid(resolved)
-	return math.clamp(resolved, Formex.LayoutGridSize, Formex.LevelHeight)
+	return math.clamp(resolved, Formex.GridSize, Formex.LevelHeight)
 end
 
 local function resolveSplitHeight(height: number, value: number?): number?
@@ -295,13 +295,13 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 			if topPart then
 				applySegment(topPart, topHeight, levelOffset + splitHeight + (topHeight / 2), offsetX)
 			end
+			Formex.Util.ApplyWallMaterial(bottomPart, bottomMaterial, bottomColor)
+			if topPart then
+				Formex.Util.ApplyWallMaterial(topPart, topMaterial, topColor)
+			end
 		else
 			applySegment(bottomPart, height, levelOffset + (height / 2), offsetX)
-		end
-
-		Formex.Util.ApplyWallMaterial(bottomPart, bottomMaterial, bottomColor)
-		if topPart then
-			Formex.Util.ApplyWallMaterial(topPart, topMaterial, topColor)
+			Formex.Util.ApplyWallMaterial(bottomPart, topMaterial, topColor)
 		end
 	end
 

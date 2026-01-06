@@ -171,7 +171,7 @@ local function setIconButtonEnabled(buttonInfo, enabled: boolean)
 end
 
 local function snapToGrid(value: number): number
-    local grid = Formex.LayoutGridSize
+    local grid = Formex.GridSize
     return math.round(value / grid) * grid
 end
 
@@ -180,23 +180,15 @@ local function clampWallHeight(value: number?): number?
 		return nil
 	end
 	local snapped = snapToGrid(value)
-	return math.clamp(snapped, Formex.LayoutGridSize, Formex.LevelHeight)
+	return math.clamp(snapped, Formex.GridSize, Formex.LevelHeight)
 end
 
 local function clampWallSplit(value: number?, height: number?): number?
-	if value == nil then
-		return nil
-	end
-	if value <= 0 then
-		return nil
-	end
-	local maxHeight = height or Formex.LevelHeight
-	if maxHeight <= Formex.LayoutGridSize * 2 then
+	if value == nil or value <= Formex.GridSize or value >= height then
 		return nil
 	end
 	local snapped = snapToGrid(value)
-	local maxSplit = maxHeight - Formex.LayoutGridSize
-	return math.clamp(snapped, Formex.LayoutGridSize, maxSplit)
+	return math.clamp(snapped, 0, height - Formex.GridSize)
 end
 
 local function createMaterialColorRow(options)
@@ -217,14 +209,13 @@ local function createMaterialColorRow(options)
 		Label = options.MaterialLabel or options.Label or "Material",
 		PartType = options.PartType,
 		SelectedMaterial = options.MaterialValue,
-		Size = options.MaterialSize or UDim2.new(0.6, -4, 0, 64),
+		Size = options.MaterialSize or UDim2.new(0.7, -4, 0, 64),
 	}, options.OnMaterialChanged)
 
 	local colorSelect = FormexUI.ColorSelect({
 		Parent = row,
-		Label = options.ColorLabel or "Color",
 		SelectedColor = options.ColorValue,
-		Size = options.ColorSize or UDim2.new(0.4, -4, 0, 64),
+		Size = options.ColorSize or UDim2.new(0.3, -4, 0, 64),
 	}, options.OnColorChanged)
 
 	return {
@@ -469,14 +460,20 @@ local function applySelectedWallAppearance(overrides: {[string]: any})
     FormexClient.BuildWall(serverData, Formex.BuildAction.Edit)
 end
 
-local function updateWallTopVisibility()
+local function updateWallSplitVisibility()
 	if not ui.WallFrontTopRow or not ui.WallBackTopRow then
 		return
 	end
-	local showFrontTop = wallFrontSplitValue ~= nil and wallFrontSplitValue > 0
-	local showBackTop = wallBackSplitValue ~= nil and wallBackSplitValue > 0
-	ui.WallFrontTopRow.Visible = showFrontTop
-	ui.WallBackTopRow.Visible = showBackTop
+	local showFrontBottom = wallFrontSplitValue ~= nil and wallFrontSplitValue > 0
+	local showBackBottom = wallBackSplitValue ~= nil and wallBackSplitValue > 0
+	ui.WallFrontTopRow.Visible = true
+	ui.WallBackTopRow.Visible = true
+	if ui.WallFrontBottomRow then
+		ui.WallFrontBottomRow.Visible = showFrontBottom
+	end
+	if ui.WallBackBottomRow then
+		ui.WallBackBottomRow.Visible = showBackBottom
+	end
 end
 
 local function updateSplitRanges()
@@ -487,9 +484,8 @@ local function updateSplitRanges()
 	if not maxHeight or maxHeight <= 0 then
 		maxHeight = Formex.LevelHeight
 	end
-	local minHeight = Formex.LayoutGridSize
-	ui.WallFrontSplitSlider.SetRange(minHeight, maxHeight)
-	ui.WallBackSplitSlider.SetRange(minHeight, maxHeight)
+	ui.WallFrontSplitSlider.SetRange(0, maxHeight - Formex.GridSize)
+	ui.WallBackSplitSlider.SetRange(0, maxHeight)
 	local clampedFront = wallFrontSplitValue
 	if clampedFront ~= nil then
 		clampedFront = clampWallSplit(clampedFront, wallHeightValue)
@@ -502,7 +498,7 @@ local function updateSplitRanges()
 	wallBackSplitValue = clampedBack
 	ui.WallFrontSplitSlider.SetValue(wallFrontSplitValue)
 	ui.WallBackSplitSlider.SetValue(wallBackSplitValue)
-	updateWallTopVisibility()
+	updateWallSplitVisibility()
 end
 
 local function setCollapsed(collapsed: boolean)
@@ -898,7 +894,7 @@ local function buildSidebar()
     wallHint.Size = UDim2.new(1, 0, 0, 0)
     wallHint.AutomaticSize = Enum.AutomaticSize.Y
     wallHint.Font = Enum.Font.Gotham
-    wallHint.Text = "Select a wall to apply materials."
+    wallHint.Text = "Select a wall to update its properties."
     wallHint.TextSize = 14
     wallHint.TextColor3 = COLORS.Muted
     wallHint.TextWrapped = true
@@ -907,9 +903,9 @@ local function buildSidebar()
     local wallHeightSlider = FormexUI.CreateSlider({
         Parent = wallContent,
         Label = "Wall height (studs)",
-        Min = Formex.LayoutGridSize,
+        Min = Formex.GridSize,
         Max = Formex.LevelHeight,
-        Step = Formex.LayoutGridSize,
+        Step = Formex.GridSize,
         AllowEmpty = true,
         PlaceholderText = "Auto",
     }, function(value)
@@ -927,12 +923,22 @@ local function buildSidebar()
         updateSplitRanges()
     end)
 
-    local wallFrontSplitSlider = FormexUI.CreateSlider({
+    local labelFrontText = Instance.new("TextLabel", wallContent)
+    labelFrontText.BackgroundTransparency = 1
+    labelFrontText.Size = UDim2.new(1, 0, 0, 16)
+    labelFrontText.Font = Enum.Font.GothamSemibold
+    labelFrontText.Text = "Front Side"
+    labelFrontText.TextColor3 = Color3.fromRGB(90, 100, 130)
+    labelFrontText.TextSize = 14
+    labelFrontText.TextXAlignment = Enum.TextXAlignment.Left
+
+    local wallFrontSplitSlider: FormexUI.SliderHandle
+    wallFrontSplitSlider = FormexUI.CreateSlider({
         Parent = wallContent,
         Label = "Front split height (studs)",
-        Min = Formex.LayoutGridSize,
-        Max = Formex.LevelHeight,
-        Step = Formex.LayoutGridSize,
+        Min = 0,
+        Max = Formex.LevelHeight - Formex.GridSize,
+        Step = Formex.GridSize,
         AllowEmpty = true,
         PlaceholderText = "None",
     }, function(value)
@@ -945,14 +951,13 @@ local function buildSidebar()
             wallFrontSplitSlider.SetValue(clamped)
         end
         applySelectedWallAppearance({ FrontSplitHeight = clamped or false })
-        updateWallTopVisibility()
+        updateWallSplitVisibility()
     end)
 
     local wallFrontBottomRow = createMaterialColorRow({
         Parent = wallContent,
         Name = "FrontBottomRow",
         MaterialLabel = "Front bottom material",
-        ColorLabel = "Front bottom color",
         PartType = Formex.PartType.Wall,
         MaterialValue = wallFrontBottomMaterialId,
         ColorValue = wallFrontBottomColor,
@@ -971,7 +976,6 @@ local function buildSidebar()
         Parent = wallContent,
         Name = "FrontTopRow",
         MaterialLabel = "Front top material",
-        ColorLabel = "Front top color",
         PartType = Formex.PartType.Wall,
         MaterialValue = wallFrontTopMaterialId,
         ColorValue = wallFrontTopColor,
@@ -986,12 +990,22 @@ local function buildSidebar()
         end,
     })
 
-    local wallBackSplitSlider = FormexUI.CreateSlider({
+    local labelFrontText = Instance.new("TextLabel", wallContent)
+    labelFrontText.BackgroundTransparency = 1
+    labelFrontText.Size = UDim2.new(1, 0, 0, 16)
+    labelFrontText.Font = Enum.Font.GothamSemibold
+    labelFrontText.Text = "Back Side"
+    labelFrontText.TextColor3 = Color3.fromRGB(90, 100, 130)
+    labelFrontText.TextSize = 14
+    labelFrontText.TextXAlignment = Enum.TextXAlignment.Left
+
+    local wallBackSplitSlider: FormexUI.SliderHandle
+    wallBackSplitSlider = FormexUI.CreateSlider({
         Parent = wallContent,
         Label = "Back split height (studs)",
-        Min = Formex.LayoutGridSize,
-        Max = Formex.LevelHeight,
-        Step = Formex.LayoutGridSize,
+        Min = 0,
+        Max = Formex.LevelHeight - Formex.GridSize,
+        Step = Formex.GridSize,
         AllowEmpty = true,
         PlaceholderText = "None",
     }, function(value)
@@ -1004,14 +1018,13 @@ local function buildSidebar()
             wallBackSplitSlider.SetValue(clamped)
         end
         applySelectedWallAppearance({ BackSplitHeight = clamped or false })
-        updateWallTopVisibility()
+        updateWallSplitVisibility()
     end)
 
     local wallBackBottomRow = createMaterialColorRow({
         Parent = wallContent,
         Name = "BackBottomRow",
         MaterialLabel = "Back bottom material",
-        ColorLabel = "Back bottom color",
         PartType = Formex.PartType.Wall,
         MaterialValue = wallBackBottomMaterialId,
         ColorValue = wallBackBottomColor,
@@ -1030,7 +1043,6 @@ local function buildSidebar()
         Parent = wallContent,
         Name = "BackTopRow",
         MaterialLabel = "Back top material",
-        ColorLabel = "Back top color",
         PartType = Formex.PartType.Wall,
         MaterialValue = wallBackTopMaterialId,
         ColorValue = wallBackTopColor,
@@ -1060,7 +1072,6 @@ local function buildSidebar()
         Parent = floorContent,
         Name = "FloorRow",
         MaterialLabel = "Floor material",
-        ColorLabel = "Floor color",
         PartType = Formex.PartType.Floor,
         MaterialValue = FormexDesign.GetFloorMaterial(),
         ColorValue = FormexDesign.GetFloorColor(),
@@ -1079,7 +1090,6 @@ local function buildSidebar()
         Parent = floorContent,
         Name = "FoundationRow",
         MaterialLabel = "Foundation material",
-        ColorLabel = "Foundation color",
         PartType = Formex.PartType.Wall,
         MaterialValue = FormexDesign.GetFoundationMaterial(),
         ColorValue = FormexDesign.GetFoundationColor(),
@@ -1109,7 +1119,6 @@ local function buildSidebar()
         Parent = ceilingContent,
         Name = "CeilingRow",
         MaterialLabel = "Ceiling material",
-        ColorLabel = "Ceiling color",
         PartType = Formex.PartType.Ceiling,
         MaterialValue = FormexDesign.GetCeilingMaterial(),
         ColorValue = FormexDesign.GetCeilingColor(),
