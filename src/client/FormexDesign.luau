@@ -384,7 +384,7 @@ local function createExpandButton(parent: BasePart, segmentIndex: number)
 	button.Name = "Button"
 	button.Size = UDim2.fromScale(1, 1)
 	button.BackgroundTransparency = 1
-	button.Image = "rbxassetid://88488799504419"
+	button.ImageContent = Content.fromAssetId(88488799504419)
 	button.ImageColor3 = Color3.fromRGB(84, 140, 255)
 end
 

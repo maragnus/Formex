@@ -4,6 +4,7 @@ local DEBUG = true
 local BlurController = require(script.Parent:WaitForChild("BlurController"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 local localPlayer = Players.LocalPlayer
 local Formex = require(ReplicatedStorage:WaitForChild("Formex"):WaitForChild("Formex"))
 local screenGui: ScreenGui = Instance.new("ScreenGui", localPlayer:WaitForChild("PlayerGui"))
@@ -30,14 +31,6 @@ end
 
 local function darken(color: Color3, amount: number): Color3
     return color:Lerp(Color3.new(0, 0, 0), math.clamp(amount, 0, 1))
-end
-
-local function normalizeAsset(assetId: string): string
-    if not assetId or assetId == "" then return "rbxassetid://0" end
-    if string.find(assetId, "^rbxassetid://") then
-        return assetId
-    end
-    return "rbxassetid://" .. assetId
 end
 
 export type FlexItemOptions = {
@@ -188,7 +181,7 @@ FormexUI.ButtonStyle = table.freeze({
 export type ButtonOptions = {
     Parent: Instance,
     Text: string?,
-    Icon: string?,
+    Icon: number?,
     Type: ButtonType?,
     Style: ButtonStyle?,
     IsPressed: boolean?, -- Appears pressed for toggle button style
@@ -243,7 +236,7 @@ function FormexUI.CreateButton(options: ButtonOptions, action: (GuiButton) -> bo
         iconImage.Name = "Icon"
         iconImage.BackgroundTransparency = 1
         iconImage.Size = UDim2.new(0, 18, 0, 18)
-        iconImage.Image = normalizeAsset(options.Icon)
+        iconImage.ImageContent = Content.fromAssetId(options.Icon or 0)
         iconImage.ScaleType = Enum.ScaleType.Fit
     end
 
@@ -461,6 +454,664 @@ function FormexUI.CreateTextInput(options: TextInputOptions, onChanged: ((value:
     return input
 end
 
+export type SliderOptions = {
+    Parent: Instance,
+    Label: string?,
+    Min: number,
+    Max: number,
+    Step: number?,
+    Value: number?,
+    AllowEmpty: boolean?,
+    PlaceholderText: string?,
+} | CommonOptions
+
+export type SliderHandle = {
+    Frame: Frame,
+    Input: TextBox,
+    SetValue: (value: number?) -> nil,
+    GetValue: () -> number?,
+    SetRange: (min: number, max: number) -> nil,
+}
+
+function FormexUI.CreateSlider(options: SliderOptions, onChanged: ((value: number?) -> nil)?): SliderHandle
+    local name = options.Name or options.Label or "Slider"
+    local min = options.Min or 0
+    local max = options.Max or 1
+    if max < min then
+        min, max = max, min
+    end
+    local step = options.Step
+    if step ~= nil and step <= 0 then
+        step = nil
+    end
+    local allowEmpty = options.AllowEmpty == true
+    local placeholderText = options.PlaceholderText or ""
+    local currentValue: number? = options.Value
+    if currentValue == nil and not allowEmpty then
+        currentValue = min
+    end
+
+    local container = Instance.new("Frame", options.Parent)
+    container.Name = name .. "Container"
+    container.Active = true
+    container.Size = UDim2.new(1, 0, 0, 64)
+    container.AutomaticSize = Enum.AutomaticSize.None
+    container.BackgroundColor3 = Color3.fromRGB(246, 248, 255)
+    container.BackgroundTransparency = 0
+    container.BorderSizePixel = 0
+
+    local containerCorner = Instance.new("UICorner", container)
+    containerCorner.CornerRadius = UDim.new(0, 10)
+
+    local containerStroke = Instance.new("UIStroke", container)
+    containerStroke.Color = Color3.fromRGB(205, 210, 230)
+    containerStroke.Thickness = 1.8
+
+    local containerPadding = Instance.new("UIPadding", container)
+    containerPadding.PaddingTop = UDim.new(0, 8)
+    containerPadding.PaddingBottom = UDim.new(0, 8)
+    containerPadding.PaddingLeft = UDim.new(0, 12)
+    containerPadding.PaddingRight = UDim.new(0, 12)
+
+    local containerLayout = Instance.new("UIListLayout", container)
+    containerLayout.FillDirection = Enum.FillDirection.Vertical
+    containerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    containerLayout.Padding = UDim.new(0, 4)
+
+    local labelText = Instance.new("TextLabel", container)
+    labelText.Name = name .. "Label"
+    labelText.BackgroundTransparency = 1
+    labelText.Size = UDim2.new(1, 0, 0, 16)
+    labelText.Font = Enum.Font.GothamMedium
+    labelText.Text = options.Label or ""
+    labelText.TextColor3 = Color3.fromRGB(90, 100, 130)
+    labelText.TextSize = 13
+    labelText.TextXAlignment = Enum.TextXAlignment.Left
+
+    local row = Instance.new("Frame", container)
+    row.Name = name .. "Row"
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, 28)
+
+    local rowLayout = Instance.new("UIListLayout", row)
+    rowLayout.FillDirection = Enum.FillDirection.Horizontal
+    rowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    rowLayout.Padding = UDim.new(0, 10)
+    rowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+    local trackContainer = Instance.new("Frame", row)
+    trackContainer.Name = "TrackContainer"
+    trackContainer.BackgroundTransparency = 1
+    trackContainer.Size = UDim2.new(1, -72, 1, 0)
+
+    local track = Instance.new("ImageButton", trackContainer)
+    track.Name = "Track"
+    track.AutoButtonColor = false
+    track.BackgroundColor3 = Color3.fromRGB(220, 226, 242)
+    track.BackgroundTransparency = 0
+    track.BorderSizePixel = 0
+    track.Size = UDim2.new(1, 0, 0, 12)
+    track.Position = UDim2.new(0, 0, 0.5, -6)
+
+    local trackCorner = Instance.new("UICorner", track)
+    trackCorner.CornerRadius = UDim.new(0, 6)
+
+    local fill = Instance.new("Frame", track)
+    fill.Name = "Fill"
+    fill.BackgroundColor3 = Color3.fromRGB(88, 118, 255)
+    fill.BackgroundTransparency = 0
+    fill.BorderSizePixel = 0
+    fill.Size = UDim2.new(0, 0, 1, 0)
+
+    local fillCorner = Instance.new("UICorner", fill)
+    fillCorner.CornerRadius = UDim.new(0, 6)
+
+    local handle = Instance.new("Frame", track)
+    handle.Name = "Handle"
+    handle.Size = UDim2.new(0, 16, 0, 16)
+    handle.AnchorPoint = Vector2.new(0.5, 0.5)
+    handle.Position = UDim2.new(0, 0, 0.5, 0)
+    handle.BackgroundColor3 = Color3.fromRGB(250, 252, 255)
+    handle.BackgroundTransparency = 0
+    handle.BorderSizePixel = 0
+    handle.ZIndex = 2
+
+    local handleCorner = Instance.new("UICorner", handle)
+    handleCorner.CornerRadius = UDim.new(1, 0)
+
+    local handleStroke = Instance.new("UIStroke", handle)
+    handleStroke.Color = Color3.fromRGB(160, 170, 205)
+    handleStroke.Thickness = 1.4
+
+    local input = Instance.new("TextBox", row)
+    input.Name = name
+    input.Text = ""
+    input.Size = UDim2.new(0, 60, 0, 28)
+    input.BackgroundColor3 = container.BackgroundColor3
+    input.BackgroundTransparency = 0
+    input.BorderSizePixel = 0
+    input.TextColor3 = Color3.fromRGB(40, 45, 70)
+    input.PlaceholderText = placeholderText
+    input.ClearTextOnFocus = false
+    input.Font = Enum.Font.Gotham
+    input.TextSize = 16
+    input.TextXAlignment = Enum.TextXAlignment.Center
+    input.TextYAlignment = Enum.TextYAlignment.Center
+
+    local defaultStrokeColor = containerStroke.Color
+    local focusStrokeColor = Color3.fromRGB(120, 170, 255)
+    local isFocused = false
+    local internalUpdate = false
+
+    local function setFocusState(focused: boolean)
+        containerStroke.Color = focused and focusStrokeColor or defaultStrokeColor
+        containerStroke.Thickness = focused and 3 or 1.8
+        labelText.TextColor3 = focused and Color3.fromRGB(60, 80, 140) or Color3.fromRGB(90, 100, 130)
+    end
+
+    local function coerceValue(value: number?): number?
+        if value == nil then
+            return nil
+        end
+        local resolved = value
+        if step ~= nil and step > 0 then
+            local steps = math.round((resolved - min) / step)
+            resolved = min + steps * step
+        end
+        return math.clamp(resolved, min, max)
+    end
+
+    local function formatValue(value: number?): string
+        if value == nil then
+            return ""
+        end
+        if step ~= nil and step >= 1 then
+            return tostring(math.round(value))
+        end
+        return tostring(value)
+    end
+
+    local function updateVisual()
+        local range = max - min
+        local alpha = 0
+        if currentValue ~= nil and range > 0 then
+            alpha = (currentValue - min) / range
+        end
+        alpha = math.clamp(alpha, 0, 1)
+        fill.Size = UDim2.new(alpha, 0, 1, 0)
+        handle.Position = UDim2.new(alpha, 0, 0.5, 0)
+        local hasValue = currentValue ~= nil
+        fill.Visible = hasValue
+        handle.Visible = hasValue
+    end
+
+    local function setValueInternal(value: number?, emit: boolean?)
+        if value == nil then
+            if allowEmpty then
+                currentValue = nil
+            else
+                currentValue = min
+            end
+        else
+            currentValue = coerceValue(value)
+        end
+        updateVisual()
+        if not isFocused then
+            internalUpdate = true
+            input.Text = formatValue(currentValue)
+            internalUpdate = false
+        end
+        if emit and onChanged then
+            onChanged(currentValue)
+        end
+    end
+
+    local function setRange(newMin: number, newMax: number)
+        min = newMin
+        max = newMax
+        if max < min then
+            min, max = max, min
+        end
+        if currentValue ~= nil then
+            currentValue = coerceValue(currentValue)
+        elseif not allowEmpty then
+            currentValue = min
+        end
+        updateVisual()
+        if not isFocused then
+            internalUpdate = true
+            input.Text = formatValue(currentValue)
+            internalUpdate = false
+        end
+    end
+
+    local function parseInput(text: string): (number?, boolean)
+        local trimmed = string.gsub(text or "", "%s", "")
+        if trimmed == "" then
+            return nil, true
+        end
+        local value = tonumber(trimmed)
+        if not value then
+            return nil, false
+        end
+        return value, true
+    end
+
+    local function applyInput(emit: boolean?)
+        local value, valid = parseInput(input.Text)
+        if not valid then
+            if not isFocused then
+                internalUpdate = true
+                input.Text = formatValue(currentValue)
+                internalUpdate = false
+            end
+            return
+        end
+        if value == nil and not allowEmpty then
+            setValueInternal(currentValue or min, false)
+            return
+        end
+        setValueInternal(value, emit)
+    end
+
+    local function updateFromScreenX(x: number)
+        local width = track.AbsoluteSize.X
+        if width <= 0 then
+            return
+        end
+        local alpha = (x - track.AbsolutePosition.X) / width
+        alpha = math.clamp(alpha, 0, 1)
+        local value = min + (max - min) * alpha
+        setValueInternal(value, true)
+    end
+
+    local dragging = false
+
+    track.InputBegan:Connect(function(inputObj)
+        if inputObj.UserInputType == Enum.UserInputType.MouseButton1 or inputObj.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            updateFromScreenX(inputObj.Position.X)
+        end
+    end)
+
+    track.InputEnded:Connect(function(inputObj)
+        if inputObj.UserInputType == Enum.UserInputType.MouseButton1 or inputObj.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(inputObj)
+        if not dragging then
+            return
+        end
+        if inputObj.UserInputType == Enum.UserInputType.MouseMovement or inputObj.UserInputType == Enum.UserInputType.Touch then
+            updateFromScreenX(inputObj.Position.X)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(inputObj)
+        if inputObj.UserInputType == Enum.UserInputType.MouseButton1 or inputObj.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    container.InputBegan:Connect(function(inputObj)
+        if inputObj.UserInputType == Enum.UserInputType.MouseButton1 or inputObj.UserInputType == Enum.UserInputType.Touch then
+            input:CaptureFocus()
+        end
+    end)
+
+    labelText.InputBegan:Connect(function(inputObj)
+        if inputObj.UserInputType == Enum.UserInputType.MouseButton1 or inputObj.UserInputType == Enum.UserInputType.Touch then
+            input:CaptureFocus()
+        end
+    end)
+
+    input.Focused:Connect(function()
+        isFocused = true
+        setFocusState(true)
+    end)
+
+    input.FocusLost:Connect(function()
+        isFocused = false
+        setFocusState(false)
+        applyInput(true)
+    end)
+
+    input:GetPropertyChangedSignal("Text"):Connect(function()
+        if internalUpdate then
+            return
+        end
+        if not isFocused then
+            return
+        end
+        applyInput(true)
+    end)
+
+    track:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateVisual)
+
+    setFocusState(false)
+    setValueInternal(currentValue, false)
+
+    return {
+        Frame = container,
+        Input = input,
+        SetValue = function(value: number?)
+            setValueInternal(value, false)
+        end,
+        GetValue = function()
+            return currentValue
+        end,
+        SetRange = setRange,
+    }
+end
+
+
+type ColorOption = { Name: string, Color: Color3 }
+
+local defaultColorPalette: {ColorOption} = {
+    { Name = "White", Color = Color3.fromRGB(255, 255, 255) },
+    { Name = "Light Gray", Color = Color3.fromRGB(222, 226, 235) },
+    { Name = "Gray", Color = Color3.fromRGB(150, 160, 175) },
+    { Name = "Charcoal", Color = Color3.fromRGB(75, 80, 95) },
+    { Name = "Black", Color = Color3.fromRGB(20, 24, 32) },
+    { Name = "Red", Color = Color3.fromRGB(220, 70, 70) },
+    { Name = "Orange", Color = Color3.fromRGB(235, 150, 90) },
+    { Name = "Gold", Color = Color3.fromRGB(235, 190, 100) },
+    { Name = "Yellow", Color = Color3.fromRGB(245, 215, 120) },
+    { Name = "Lime", Color = Color3.fromRGB(160, 210, 110) },
+    { Name = "Green", Color = Color3.fromRGB(90, 170, 120) },
+    { Name = "Teal", Color = Color3.fromRGB(80, 170, 175) },
+    { Name = "Cyan", Color = Color3.fromRGB(110, 190, 220) },
+    { Name = "Blue", Color = Color3.fromRGB(90, 140, 235) },
+    { Name = "Purple", Color = Color3.fromRGB(140, 110, 205) },
+    { Name = "Magenta", Color = Color3.fromRGB(200, 110, 190) },
+}
+
+local function formatColorHex(color: Color3?): string
+    if not color then
+        return "None"
+    end
+    local r = math.clamp(math.round(color.R * 255), 0, 255)
+    local g = math.clamp(math.round(color.G * 255), 0, 255)
+    local b = math.clamp(math.round(color.B * 255), 0, 255)
+    return string.format("#%02X%02X%02X", r, g, b)
+end
+
+export type ColorSelectOptions = {
+    Parent: Instance,
+    Label: string?,
+    Colors: {ColorOption}?,
+    SelectedColor: Color3?,
+    AllowNone: boolean?,
+    ShowLabel: boolean?,
+    ShowValue: boolean?,
+} | CommonOptions
+
+export type ColorSelectHandle = {
+    Frame: ImageButton,
+    SetSelected: (color: Color3?) -> nil,
+    GetSelected: () -> Color3?,
+}
+
+function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: Color3?) -> nil)?): ColorSelectHandle
+    local palette = options.Colors or defaultColorPalette
+    local allowNone = options.AllowNone ~= false
+    local selectedColor: Color3? = options.SelectedColor
+    local showLabel = options.ShowLabel ~= false
+    local showValue = options.ShowValue ~= false
+    local noChrome = (showLabel == false) and (showValue == false)
+    local name = options.Name or options.Label or "ColorSelect"
+
+    local container = Instance.new("ImageButton", options.Parent)
+    container.Name = name
+    container.AutoButtonColor = false
+    container.BackgroundColor3 = Color3.fromRGB(246, 248, 255)
+    container.BackgroundTransparency = 0
+    container.BorderSizePixel = 0
+    container.Size = options.Size or UDim2.new(1, 0, 0, 64)
+    container.Visible = options.Visible ~= nil and options.Visible or true
+    if options.Position ~= nil then container.Position = options.Position end
+    if options.LayoutOrder ~= nil then container.LayoutOrder = options.LayoutOrder end
+    if options.Selectable ~= nil then container.Selectable = options.Selectable end
+    if options.AutomaticSize ~= nil then container.AutomaticSize = options.AutomaticSize end
+
+    local corner = Instance.new("UICorner", container)
+    corner.CornerRadius = UDim.new(0, 10)
+
+    local stroke = Instance.new("UIStroke", container)
+    stroke.Color = Color3.fromRGB(205, 210, 230)
+    stroke.Thickness = 1.8
+
+    local padding = Instance.new("UIPadding", container)
+    padding.PaddingTop = UDim.new(0, noChrome and 0 or 8)
+    padding.PaddingBottom = UDim.new(0, noChrome and 0 or 8)
+    padding.PaddingLeft = UDim.new(0, noChrome and 0 or 12)
+    padding.PaddingRight = UDim.new(0, noChrome and 0 or 12)
+
+    local layout = Instance.new("UIListLayout", container)
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 4)
+
+    local labelText: TextLabel? = nil
+    if showLabel then
+        labelText = Instance.new("TextLabel", container)
+        labelText.Name = "Label"
+        labelText.BackgroundTransparency = 1
+        labelText.Size = UDim2.new(1, 0, 0, 16)
+        labelText.Font = Enum.Font.GothamMedium
+        labelText.Text = options.Label or "Color"
+        labelText.TextColor3 = Color3.fromRGB(90, 100, 130)
+        labelText.TextSize = 13
+        labelText.TextXAlignment = Enum.TextXAlignment.Left
+    end
+
+    local row = Instance.new("Frame", container)
+    row.Name = name .. "Row"
+    row.BackgroundTransparency = 1
+    row.Size = noChrome and UDim2.new(1, 0, 1, 0) or UDim2.new(1, 0, 0, 26)
+
+    local rowLayout = Instance.new("UIListLayout", row)
+    rowLayout.FillDirection = Enum.FillDirection.Horizontal
+    rowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    rowLayout.Padding = UDim.new(0, noChrome and 0 or (showValue and 10 or 0))
+    rowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+    local preview = Instance.new("Frame", row)
+    preview.Name = "Preview"
+    preview.BackgroundColor3 = selectedColor or Color3.fromRGB(235, 238, 245)
+    preview.BackgroundTransparency = selectedColor and 0 or 0.25
+    preview.Size = noChrome and UDim2.new(1, 0, 1, 0) or (showValue and UDim2.new(0, 28, 0, 28) or UDim2.new(1, 0, 1, 0))
+    preview.BorderSizePixel = 0
+
+    local previewCorner = Instance.new("UICorner", preview)
+    previewCorner.CornerRadius = UDim.new(0, 8)
+
+    local previewStroke = Instance.new("UIStroke", preview)
+    previewStroke.Color = Color3.fromRGB(180, 190, 210)
+    previewStroke.Thickness = 1.6
+
+    local selectedLabel: TextLabel? = nil
+    local chevron: ImageLabel? = nil
+    if showValue then
+        selectedLabel = Instance.new("TextLabel", row)
+        selectedLabel.Name = "SelectedLabel"
+        selectedLabel.BackgroundTransparency = 1
+        selectedLabel.Size = UDim2.new(1, -60, 1, 0)
+        selectedLabel.Font = Enum.Font.Gotham
+        selectedLabel.Text = "None"
+        selectedLabel.TextSize = 16
+        selectedLabel.TextColor3 = Color3.fromRGB(40, 45, 70)
+        selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
+        selectedLabel.TextYAlignment = Enum.TextYAlignment.Center
+
+        chevron = Instance.new("ImageLabel", row)
+        chevron.Name = "Chevron"
+        chevron.BackgroundTransparency = 1
+        chevron.Size = UDim2.new(0, 14, 0, 14)
+        chevron.ImageContent = Content.fromAssetId(Formex.Icons.ChevronDown or 0)
+        chevron.ImageColor3 = Color3.fromRGB(120, 130, 160)
+        chevron.LayoutOrder = 3
+    end
+
+    local function applySelected(color: Color3?)
+        selectedColor = color
+        preview.BackgroundColor3 = color or Color3.fromRGB(235, 238, 245)
+        preview.BackgroundTransparency = color and 0 or 0.25
+        if selectedLabel then
+            selectedLabel.Text = formatColorHex(color)
+        end
+    end
+
+    applySelected(selectedColor)
+
+    local function getTextColor(bg: Color3): Color3
+        local luminance = 0.299 * bg.R + 0.587 * bg.G + 0.114 * bg.B
+        if luminance > 0.55 then
+            return Color3.fromRGB(35, 40, 60)
+        end
+        return Color3.fromRGB(245, 248, 255)
+    end
+
+    local function openDialog()
+        local clearResult = "__ClearColor__"
+        local chosen = FormexUI.Dialog({
+            Name = name .. "Dialog",
+            Title = options.Label or "Select Color",
+            Size = "Medium",
+            Scrolling = Enum.ScrollingDirection.Y,
+            Buttons = {
+                { Text = "Cancel", Result = nil, Type = FormexUI.ButtonType.Secondary, Style = FormexUI.ButtonStyle.Outline }
+            }
+        }, function(dialog)
+            local gridFrame = Instance.new("Frame", dialog.ContentFrame)
+            gridFrame.Name = "ColorGrid"
+            gridFrame.BackgroundTransparency = 1
+            gridFrame.Size = UDim2.new(1, 0, 0, 0)
+            gridFrame.AutomaticSize = Enum.AutomaticSize.Y
+
+            local gridLayout = Instance.new("UIGridLayout", gridFrame)
+            gridLayout.CellSize = UDim2.new(0, 120, 0, 80)
+            gridLayout.CellPadding = UDim2.new(0, 8, 0, 8)
+            gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            gridLayout.FillDirectionMaxCells = 4
+
+            gridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                gridFrame.Size = UDim2.new(1, 0, 0, gridLayout.AbsoluteContentSize.Y)
+            end)
+
+            if allowNone then
+                local noneTile = Instance.new("ImageButton", gridFrame)
+                noneTile.Name = "None"
+                noneTile.AutoButtonColor = false
+                noneTile.BackgroundColor3 = Color3.fromRGB(245, 246, 252)
+                noneTile.BorderSizePixel = 0
+                noneTile.Size = UDim2.new(0, 120, 0, 80)
+
+                local noneCorner = Instance.new("UICorner", noneTile)
+                noneCorner.CornerRadius = UDim.new(0, 10)
+
+                local noneStroke = Instance.new("UIStroke", noneTile)
+                noneStroke.Color = Color3.fromRGB(210, 216, 235)
+                noneStroke.Thickness = 1.4
+
+                local noneLabel = Instance.new("TextLabel", noneTile)
+                noneLabel.Name = "NoneLabel"
+                noneLabel.BackgroundTransparency = 1
+                noneLabel.Size = UDim2.new(1, -12, 1, 0)
+                noneLabel.Position = UDim2.new(0, 6, 0, 0)
+                noneLabel.Font = Enum.Font.GothamSemibold
+                noneLabel.Text = "No color"
+                noneLabel.TextColor3 = Color3.fromRGB(70, 80, 115)
+                noneLabel.TextSize = 16
+                noneLabel.TextWrapped = true
+
+                noneTile.Activated:Connect(function()
+                    dialog.Close(clearResult)
+                end)
+            end
+
+            for _, entry in ipairs(palette) do
+                local tile = Instance.new("ImageButton", gridFrame)
+                tile.Name = "Color_" .. entry.Name
+                tile.AutoButtonColor = false
+                tile.BackgroundColor3 = entry.Color
+                tile.BorderSizePixel = 0
+                tile.Size = UDim2.new(0, 120, 0, 80)
+
+                local tileCorner = Instance.new("UICorner", tile)
+                tileCorner.CornerRadius = UDim.new(0, 10)
+
+                local tileStroke = Instance.new("UIStroke", tile)
+                tileStroke.Color = Color3.fromRGB(210, 216, 235)
+                tileStroke.Thickness = 1.4
+
+                local nameLabel = Instance.new("TextLabel", tile)
+                nameLabel.Name = "Name"
+                nameLabel.BackgroundTransparency = 1
+                nameLabel.Size = UDim2.new(1, -12, 1, 0)
+                nameLabel.Position = UDim2.new(0, 6, 0, 0)
+                nameLabel.Font = Enum.Font.GothamSemibold
+                nameLabel.Text = entry.Name .. "\n" .. formatColorHex(entry.Color)
+                nameLabel.TextSize = 14
+                nameLabel.TextColor3 = getTextColor(entry.Color)
+                nameLabel.TextWrapped = true
+
+                tile.Activated:Connect(function()
+                    dialog.Close(entry.Color)
+                end)
+            end
+        end)
+
+        if chosen == nil then
+            return
+        end
+        if chosen == clearResult then
+            applySelected(nil)
+            if onChanged then
+                onChanged(nil)
+            end
+            return
+        end
+        if typeof(chosen) == "Color3" then
+            applySelected(chosen :: Color3)
+            if onChanged then
+                onChanged(selectedColor)
+            end
+        end
+    end
+
+    local function setFocusState(isFocused: boolean)
+        stroke.Color = isFocused and Color3.fromRGB(120, 170, 255) or Color3.fromRGB(205, 210, 230)
+        stroke.Thickness = isFocused and 3 or 1.8
+        if labelText then
+            labelText.TextColor3 = isFocused and Color3.fromRGB(60, 80, 140) or Color3.fromRGB(90, 100, 130)
+        end
+    end
+
+    container.MouseEnter:Connect(function()
+        setFocusState(true)
+    end)
+
+    container.MouseLeave:Connect(function()
+        setFocusState(false)
+    end)
+
+    container.Activated:Connect(openDialog)
+
+    return {
+        Frame = container,
+        SetSelected = function(color: Color3?)
+            applySelected(color)
+        end,
+        GetSelected = function()
+            return selectedColor
+        end,
+    }
+end
+
+
 type MaterialPartType = "Wall" | "Floor" | "Ceiling" | "Object" | nil
 type MaterialInfo = {
     Name: string,
@@ -567,7 +1218,7 @@ function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((ma
     chevron.Name = "Chevron"
     chevron.BackgroundTransparency = 1
     chevron.Size = UDim2.new(0, 14, 0, 14)
-    chevron.Image = normalizeAsset(tostring(Formex.Icons.ChevronDown or 0))
+    chevron.ImageContent = Content.fromAssetId(Formex.Icons.ChevronDown or 0)
     chevron.ImageColor3 = Color3.fromRGB(120, 130, 160)
     chevron.LayoutOrder = 3
 
@@ -577,10 +1228,10 @@ function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((ma
         if materialInfo then
             selectedLabel.Text = materialInfo.Name
             local previewId = (materialInfo :: any)[previewKey]
-            preview.Image = normalizeAsset(tostring(previewId or 0))
+            preview.ImageContent = Content.fromAssetId(previewId or 0)
         else
             selectedLabel.Text = "None"
-            preview.Image = normalizeAsset("0")
+            preview.ImageContent = Content.fromAssetId(0)
         end
     end
 
@@ -640,7 +1291,7 @@ function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((ma
                 image.BackgroundTransparency = 1
                 image.Size = UDim2.new(0, 64, 0, 64)
                 local previewId = (materialInfo :: any)[previewKey]
-                image.Image = normalizeAsset(tostring(previewId or 0))
+                image.ImageContent = Content.fromAssetId(previewId or 0)
                 image.ScaleType = Enum.ScaleType.Fit
 
                 local nameLabel = Instance.new("TextLabel", tile)
@@ -1000,6 +1651,7 @@ function FormexUI.Alert(title: string, message: string, type: ButtonType, alertT
     local palette = FormexUI.GetButtonPalette(type)
     local buttons = FormexUI.ButtonGroups[alertType]
     local icon = alertIcons[type]
+    local iconId = tonumber(icon) or 0
 
     return FormexUI.Dialog({
         Name = "AlertDialog",
@@ -1023,7 +1675,7 @@ function FormexUI.Alert(title: string, message: string, type: ButtonType, alertT
         iconImage.Name = "IconImage"
         iconImage.BackgroundTransparency = 1
         iconImage.Size = UDim2.new(0, 48, 0, 48)
-        iconImage.Image = normalizeAsset(icon)
+        iconImage.ImageContent = Content.fromAssetId(iconId)
         iconImage.ImageColor3 = palette.Base
         iconImage.ScaleType = Enum.ScaleType.Fit
 

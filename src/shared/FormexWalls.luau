@@ -60,17 +60,13 @@ local function resolveWallHeight(value: number?): number
 end
 
 local function resolveSplitHeight(height: number, value: number?): number?
-	if not value or value <= 0 then
-		return nil
-	end
-
-	if height <= Formex.LayoutGridSize * 2 then
+	if not value or value <= Formex.GridSize then
 		return nil
 	end
 
 	local snapped = snapToGrid(value)
-	local maxSplit = height - Formex.LayoutGridSize
-	return math.clamp(snapped, Formex.LayoutGridSize, maxSplit)
+	local maxSplit = height - Formex.GridSize
+	return math.clamp(snapped, Formex.GridSize, maxSplit)
 end
 
 local function resolveColor(primary: Color3?, fallback: Color3?): Color3

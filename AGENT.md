@@ -58,10 +58,12 @@ A **Plot** has a permissions list of other players that can interact with it. Th
     - If a floor is added, it also adds the respective ceiling. Likewise for adding a ceiling. Except on the Level 1 and level `Formex.MaxPlotSize.Levels`.
 - Shared `Formex` provides a shared interface to create Wall and Floor/Ceiling parts for server-side geometry and client-side ghosts for designing.
 
-## Optimizations
+## Coding Standards
 
-**Problem:** A 100% full building can have 9,216 Floor/Ceiling parts
-**Solution:** Server can optimize a floor by converting large consecutive tiles into a single Part that represents all of them. Single this may be an expensive optimization, this optimization should be suspended while a player is in design mode. This means that a player needs to request "Design Mode" from the server.
+Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Content.fromAssetId` and avoid unnecessary wrapper functions.
+- `ImageLabel`:
+`imageLabel.ImageContent = Content.fromAssetId(assetId: number)`
+- `Texture`: `texture.ColorMapContent = Content.fromAssetId(assetId: number)` 
 
 ## Autosave
 Any **Plot** with a selected **Save Slot** will have autosave enabled. Some changes save immediately, Others create a 60 second timer to accumulate changes. After a save, the next change will create a new timer.
