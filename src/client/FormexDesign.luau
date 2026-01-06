@@ -128,6 +128,82 @@ local selectionColor = Color3.fromRGB(255, 201, 107)
 local ghostValidColor = Color3.fromRGB(84, 140, 255)
 local ghostInvalidColor = Color3.fromRGB(245, 110, 110)
 
+local function getSelectedFloorModel(): Model?
+	if selectionType ~= FormexDesign.SelectionType.Floor then
+		return nil
+	end
+	if selectionPart and selectionPart:IsA("Model") then
+		return selectionPart
+	end
+	if selectionPart then
+		local model = selectionPart:FindFirstAncestorOfClass("Model")
+		if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then
+			return model
+		end
+	end
+	return nil
+end
+
+local function getFloorDataFromModel(model: Model): Formex.FloorData
+	local points = Formex.DecodeFloorPoints(model:GetAttribute("Points"))
+	local floorMaterial = model:GetAttribute("FloorMaterial") or Formex.DefaultFloorMaterial
+	local ceilingMaterial = model:GetAttribute("CeilingMaterial") or floorMaterial
+	local foundationMaterial = model:GetAttribute("FoundationMaterial") or Formex.DefaultFoundationMaterial
+	local floorColor = model:GetAttribute("FloorColor") or Color3.new(1, 1, 1)
+	local ceilingColor = model:GetAttribute("CeilingColor") or floorColor
+	local foundationColor = model:GetAttribute("FoundationColor") or floorColor
+	local levelIndex = tonumber(model.Parent.Parent.Name) or currentLevel
+	local floorId = tonumber(model.Name) or 0
+
+	return {
+		FloorId = floorId,
+		LevelIndex = levelIndex,
+		Points = points,
+		FloorMaterial = floorMaterial,
+		CeilingMaterial = ceilingMaterial,
+		FoundationMaterial = foundationMaterial,
+		FloorColor = floorColor,
+		CeilingColor = ceilingColor,
+		FoundationColor = foundationColor,
+		FloorParts = {},
+		CeilingParts = {},
+		Model = model,
+	}
+end
+
+local function applySelectedFloorAppearance(overrides: {[string]: any})
+	local model = getSelectedFloorModel()
+	if not model then
+		return
+	end
+
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid then
+		return
+	end
+
+	local current = getFloorDataFromModel(model)
+	if not current.Points or #current.Points < 3 then
+		return
+	end
+	local updated = {
+		FloorId = current.FloorId,
+		LevelIndex = current.LevelIndex,
+		Points = current.Points,
+		FloorMaterial = overrides.FloorMaterial or current.FloorMaterial,
+		CeilingMaterial = overrides.CeilingMaterial or current.CeilingMaterial,
+		FoundationMaterial = overrides.FoundationMaterial or current.FoundationMaterial,
+		FloorColor = overrides.FloorColor or current.FloorColor,
+		CeilingColor = overrides.CeilingColor or current.CeilingColor,
+		FoundationColor = overrides.FoundationColor or current.FoundationColor,
+		FloorParts = {},
+		CeilingParts = {},
+		Model = model,
+	}
+
+	FormexClient.BuildFloor(updated, Formex.BuildAction.Edit)
+end
+
 local function notifyDesignModeChange()
 	FormexClient.FireEvent("DesignModeChanged")
 end
@@ -164,6 +240,9 @@ end
 
 function FormexDesign.SetFloorMaterial(materialId: number)
 	floorMaterialId = materialId
+	if selectionType == FormexDesign.SelectionType.Floor then
+		applySelectedFloorAppearance({ FloorMaterial = materialId })
+	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
 	and ghostFloorData then
@@ -178,6 +257,9 @@ end
 
 function FormexDesign.SetCeilingMaterial(materialId: number)
 	ceilingMaterialId = materialId
+	if selectionType == FormexDesign.SelectionType.Floor then
+		applySelectedFloorAppearance({ CeilingMaterial = materialId })
+	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
 	and ghostFloorData then
@@ -192,6 +274,9 @@ end
 
 function FormexDesign.SetFloorColor(color: Color3)
 	floorColor = color
+	if selectionType == FormexDesign.SelectionType.Floor then
+		applySelectedFloorAppearance({ FloorColor = color })
+	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
 	and ghostFloorData then
@@ -206,6 +291,9 @@ end
 
 function FormexDesign.SetCeilingColor(color: Color3)
 	ceilingColor = color
+	if selectionType == FormexDesign.SelectionType.Floor then
+		applySelectedFloorAppearance({ CeilingColor = color })
+	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
 	and ghostFloorData then
@@ -220,6 +308,9 @@ end
 
 function FormexDesign.SetFoundationMaterial(materialId: number)
 	foundationMaterialId = materialId
+	if selectionType == FormexDesign.SelectionType.Floor then
+		applySelectedFloorAppearance({ FoundationMaterial = materialId })
+	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
 	and ghostFloorData then
@@ -234,6 +325,9 @@ end
 
 function FormexDesign.SetFoundationColor(color: Color3)
 	foundationColor = color
+	if selectionType == FormexDesign.SelectionType.Floor then
+		applySelectedFloorAppearance({ FoundationColor = color })
+	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
 	and ghostFloorData then
@@ -1146,6 +1240,15 @@ function FormexDesign.Select(part: Instance)
 		selectionData = nil -- TODO
 		selectionPart = selectionTarget
 		currentLevel = level
+		if selectionKind == FormexDesign.SelectionType.Floor and selectionTarget:IsA("Model") then
+			local floorData = getFloorDataFromModel(selectionTarget)
+			floorMaterialId = floorData.FloorMaterial
+			ceilingMaterialId = floorData.CeilingMaterial
+			foundationMaterialId = floorData.FoundationMaterial
+			floorColor = floorData.FloorColor
+			ceilingColor = floorData.CeilingColor
+			foundationColor = floorData.FoundationColor
+		end
 		notifyDesignModeChange()
 		updateHighlightTarget()
 		local plotInfo = FormexClient.CurrentPlot
