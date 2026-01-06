@@ -1,6 +1,7 @@
 --!strict
 
 local Formex = require(script.Parent:FindFirstChild("Formex"))
+local FormexFloors = require(script.Parent:FindFirstChild("FormexFloors"))
 
 local DATA_VERSION: number = 3
 local INITIAL_BUFFER_SIZE: number = 1024
@@ -82,7 +83,7 @@ function FormexSerialization.SerializeLevelData(levels: Formex.LevelArray): stri
 
 			-- Floors
 			for floorId, floor in levelData.Floors do
-				local points = floor.Points or {}
+				local points = FormexFloors.CleanPolygon(floor.Points or {})
 				writer:WriteU16(floorId)
 				writeMaterialId(writer, floor.FloorMaterial)
 				writeMaterialId(writer, floor.CeilingMaterial)

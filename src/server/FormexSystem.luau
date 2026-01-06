@@ -373,26 +373,28 @@ local function renderFloors(data: RenderState)
 
     local floors = data.LevelData.Floors
 
-    for _, child in parent:GetChildren() do
-        local floorId = tonumber(child.Name)
-        if floorId and not floors[floorId] then
-            child:Destroy()
-        end
-    end
+	for _, child in parent:GetChildren() do
+		local floorId = tonumber(child.Name)
+		if floorId and not floors[floorId] then
+			child:Destroy()
+		end
+	end
 
-    for floorId, floorData in floors do
-        if floorData.Model and floorData.Model.Parent then
-            floorData.Model:Destroy()
-            floorData.Model = nil
-        end
+	for floorId, floorData in floors do
+		if not floorData.Model or not floorData.Model.Parent then
+			local existing = parent:FindFirstChild(tostring(floorId))
+			if existing and existing:IsA("Model") then
+				floorData.Model = existing
+			end
+		end
 
-        floorData.LevelIndex = data.LevelIndex
-        local model = Formex.Floors.Create(floorData, data.PlotPart, parent)
-        if model then
-            model.Parent = parent
-            floorData.Model = model
-        end
-    end
+		floorData.LevelIndex = data.LevelIndex
+		local model = Formex.Floors.Create(floorData, data.PlotPart, parent, data.PlotData)
+		if model then
+			model.Parent = parent
+			floorData.Model = model
+		end
+	end
 end
 
 local function renderWalls(data: RenderState)

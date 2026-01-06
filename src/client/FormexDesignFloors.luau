@@ -578,7 +578,16 @@ end
 function Floors.HandlePrimaryClick(input: any)
 	local actionType = getActionType()
 	if actionType == Enums.ActionType.Select then
-		local hadSelection = getSelectionType() ~= Enums.SelectionType.None
+		local currentSelection = getSelectionPart()
+		local hadSelection = getSelectionType() ~= Enums.SelectionType.None or currentSelection ~= nil
+		if hadSelection and input.Target and currentSelection then
+			if input.Target == currentSelection
+			or input.Target:IsDescendantOf(currentSelection)
+			or currentSelection:IsDescendantOf(input.Target) then
+				return
+			end
+		end
+
 		local selected = input.Target and select(input.Target) or false
 		if selected then return end
 

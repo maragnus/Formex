@@ -4,10 +4,26 @@ local Formex = require(script.Parent:FindFirstChild("Formex"))
 Formex.Math = require(script.Parent:FindFirstChild("FormexMath"))
 
 local EPSILON = Formex.EPSILON
+local MAX_TRIANGLES = 64 -- Make sure that a single floor does not exceed this triangle count for performance.
 
 Formex.Floors = {}
 
-function Formex.EncodeFloorPoints(points: {Vector2int16}): string
+type Edge = { A: Vector2, B: Vector2 }
+type Triangle = { Vector2 }
+
+-- Wedge orientation options keep wedges axis aligned while flipping the hypotenuse.
+local WEDGE_ROTATIONS = {
+	RightTop = {
+		CFrame.Angles(0, math.rad(180), math.rad(90)),
+		CFrame.Angles(0, 0, math.rad(-90)),
+	},
+	LeftTop = {
+		CFrame.Angles(0, 0, math.rad(-90)),
+		CFrame.Angles(0, math.rad(180), math.rad(-90)),
+	},
+}
+
+function Formex.EncodeFloorPoints(points: { Vector2int16 }): string
 	local encoded = {}
 	for _, point in ipairs(points) do
 		table.insert(encoded, string.format("%d,%d", point.X, point.Y))
@@ -15,7 +31,7 @@ function Formex.EncodeFloorPoints(points: {Vector2int16}): string
 	return table.concat(encoded, ";")
 end
 
-function Formex.DecodeFloorPoints(value: string?): {Vector2int16}
+function Formex.DecodeFloorPoints(value: string?): { Vector2int16 }
 	local points = {}
 	if not value or value == "" then
 		return points
@@ -31,26 +47,6 @@ function Formex.DecodeFloorPoints(value: string?): {Vector2int16}
 	return points
 end
 
-local function isLayoutGridSnapped(value: number): boolean
-	local scaled = value / Formex.LayoutGridSize
-	return math.abs(scaled - math.round(scaled)) <= EPSILON
-end
-
-local function isPointLayoutGridSnapped(point: Vector2): boolean
-	return isLayoutGridSnapped(point.X) and isLayoutGridSnapped(point.Y)
-end
-
-local function getPlotPartFromInstance(instance: Instance): BasePart?
-	local current: Instance? = instance
-	while current do
-		if current:IsA("BasePart") and current:GetAttribute("PlotId") then
-			return current
-		end
-		current = current.Parent
-	end
-	return nil
-end
-
 local function toVector2(point: Vector2 | Vector2int16): Vector2
 	if typeof(point) == "Vector2" then
 		return point
@@ -58,279 +54,376 @@ local function toVector2(point: Vector2 | Vector2int16): Vector2
 	return Vector2.new(point.X, point.Y)
 end
 
-local function polygonArea(points: {Vector2}): number
+local function toVector2int16(point: Vector2): Vector2int16
+	return Vector2int16.new(math.round(point.X), math.round(point.Y))
+end
+
+local function cross2(a: Vector2, b: Vector2): number
+	return a.X * b.Y - a.Y * b.X
+end
+
+local function polygonArea(points: { Vector2 }): number
 	local total = 0
-	for i = 1, #points do
-		local a = points[i]
-		local b = points[(i % #points) + 1]
+	for index = 1, #points do
+		local a = points[index]
+		local b = points[(index % #points) + 1]
 		total += (a.X * b.Y) - (b.X * a.Y)
 	end
 	return total / 2
 end
 
-local function quantize(value: number): number
-	return math.round(value / EPSILON) * EPSILON
+local function isSamePoint(a: Vector2int16, b: Vector2int16): boolean
+	return a.X == b.X and a.Y == b.Y
 end
 
-local function addUniqueNumber(values: {number}, value: number): boolean
-	value = quantize(value)
-	for _, existing in ipairs(values) do
-		if math.abs(existing - value) <= EPSILON then
-			return false
+local function areCollinear(a: Vector2, b: Vector2, c: Vector2): boolean
+	return math.abs(cross2(b - a, c - b)) <= EPSILON
+end
+
+local function reversePoints(points: { Vector2int16 }): { Vector2int16 }
+	local reversed = table.create(#points)
+	for i = #points, 1, -1 do
+		table.insert(reversed, points[i])
+	end
+	return reversed
+end
+
+
+local function toVector2Array(points: { Vector2int16 }): { Vector2 }
+	local result = table.create(#points)
+	for _, point in ipairs(points) do
+		table.insert(result, Vector2.new(point.X, point.Y))
+	end
+	return result
+end
+
+
+function Formex.Floors.CleanPolygon(points: { Vector2int16 }): { Vector2int16 }
+	if #points == 0 then
+		return {}
+	end
+
+	local deduped = {}
+	for _, point in ipairs(points) do
+		local last = deduped[#deduped]
+		if not last or not isSamePoint(last, point) then
+			table.insert(deduped, point)
 		end
 	end
-	table.insert(values, value)
-	return true
-end
-
-local function addUniquePoint(points: {Vector2}, point: Vector2): boolean
-	point = Vector2.new(quantize(point.X), quantize(point.Y))
-	for _, existing in ipairs(points) do
-		if (existing - point).Magnitude <= EPSILON then
-			return false
-		end
+	if #deduped > 1 and isSamePoint(deduped[1], deduped[#deduped]) then
+		table.remove(deduped, #deduped)
 	end
-	table.insert(points, point)
-	return true
-end
 
-local function isPointInPolygon(point: Vector2, polygon: {Vector2}): boolean
-	local inside = false
-	for i = 1, #polygon do
-		local a = polygon[i]
-		local b = polygon[(i % #polygon) + 1]
-		if Formex.Plot.IsPointOnSegment(point, a, b) then
-			return true
-		end
-		if (a.Y > point.Y) ~= (b.Y > point.Y) then
-			local x = (b.X - a.X) * (point.Y - a.Y) / (b.Y - a.Y) + a.X
-			if point.X < x then
-				inside = not inside
+	if #deduped < 3 then
+		return deduped
+	end
+
+	local cleaned = deduped
+	local changed = true
+	while changed and #cleaned >= 3 do
+		changed = false
+		local nextPass = {}
+		for i = 1, #cleaned do
+			local prev = toVector2(cleaned[(i - 2 + #cleaned) % #cleaned + 1])
+			local current = toVector2(cleaned[i])
+			local nxt = toVector2(cleaned[(i % #cleaned) + 1])
+			if not areCollinear(prev, current, nxt) then
+				table.insert(nextPass, cleaned[i])
+			else
+				changed = true
 			end
 		end
+		cleaned = nextPass
 	end
-	return inside
+
+	if #cleaned < 3 then
+		return cleaned
+	end
+
+	local area = polygonArea(toVector2Array(cleaned))
+	local ccwPoints = cleaned
+	if area < 0 then
+		ccwPoints = reversePoints(cleaned)
+	end
+
+	return ccwPoints
 end
 
-local function getEdgeParam(a: Vector2, b: Vector2, point: Vector2): number
-	local dx = b.X - a.X
-	local dy = b.Y - a.Y
-	if math.abs(dx) >= math.abs(dy) then
-		if math.abs(dx) <= EPSILON then
-			return 0
-		end
-		return (point.X - a.X) / dx
-	end
-	if math.abs(dy) <= EPSILON then
+local function orientation(a: Vector2, b: Vector2, c: Vector2): number
+	local value = (b.Y - a.Y) * (c.X - b.X) - (b.X - a.X) * (c.Y - b.Y)
+	if math.abs(value) <= EPSILON then
 		return 0
 	end
-	return (point.Y - a.Y) / dy
+	return value > 0 and 1 or 2
 end
 
-local function buildPolygonGrid(points: {Vector2}): ({number}, {number})
-	local xs = {}
-	local ys = {}
+local function onSegment(a: Vector2, b: Vector2, c: Vector2): boolean
+	return math.min(a.X, c.X) - EPSILON <= b.X and b.X <= math.max(a.X, c.X) + EPSILON
+		and math.min(a.Y, c.Y) - EPSILON <= b.Y and b.Y <= math.max(a.Y, c.Y) + EPSILON
+end
+
+local function segmentsIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2): boolean
+	local o1 = orientation(p1, p2, q1)
+	local o2 = orientation(p1, p2, q2)
+	local o3 = orientation(q1, q2, p1)
+	local o4 = orientation(q1, q2, p2)
+
+	if o1 ~= o2 and o3 ~= o4 then
+		return true
+	end
+
+	if o1 == 0 and onSegment(p1, q1, p2) then return true end
+	if o2 == 0 and onSegment(p1, q2, p2) then return true end
+	if o3 == 0 and onSegment(q1, p1, q2) then return true end
+	if o4 == 0 and onSegment(q1, p2, q2) then return true end
+
+	return false
+end
+
+local function isSimplePolygon(points: { Vector2 }): boolean
+	local count = #points
+	if count < 3 then
+		return false
+	end
+
+	for i = 1, count do
+		local a1 = points[i]
+		local a2 = points[(i % count) + 1]
+		for j = i + 1, count do
+			local b1 = points[j]
+			local b2 = points[(j % count) + 1]
+
+			local isAdjacent = j == i + 1 or (i == 1 and j == count)
+			if not isAdjacent and segmentsIntersect(a1, a2, b1, b2) then
+				return false
+			end
+		end
+	end
+
+	return true
+end
+
+local function getBoundsRectangle(points: { Vector2int16 }): { Vector2int16 }
+	if #points == 0 then
+		return {}
+	end
+
+	local minX = points[1].X
+	local maxX = points[1].X
+	local minY = points[1].Y
+	local maxY = points[1].Y
+
+	for i = 2, #points do
+		local point = points[i]
+		minX = math.min(minX, point.X)
+		maxX = math.max(maxX, point.X)
+		minY = math.min(minY, point.Y)
+		maxY = math.max(maxY, point.Y)
+	end
+
+	if math.abs(maxX - minX) <= EPSILON or math.abs(maxY - minY) <= EPSILON then
+		return {}
+	end
+
+	return {
+		Vector2int16.new(minX, minY),
+		Vector2int16.new(maxX, minY),
+		Vector2int16.new(maxX, maxY),
+		Vector2int16.new(minX, maxY),
+	}
+end
+
+function Formex.Floors.IsValid(plot: Formex.PlotData, floor: Formex.FloorData): boolean
+	local cleaned = Formex.Floors.CleanPolygon(floor.Points or {})
+	local count = #cleaned
+	if count < 3 or count > Formex.MaxFloorPoints then
+		return false
+	end
+
+	local polygon = toVector2Array(cleaned)
+	if polygonArea(polygon) <= EPSILON then
+		return false
+	end
+
+	if not isSimplePolygon(polygon) then
+		return false
+	end
+
+	for i = 1, count do
+		local a = polygon[i]
+		local b = polygon[(i % count) + 1]
+		if not Formex.Plot.IsLineWithinUnlockedSegments(a, b, plot.SegmentsUnlocked) then
+			return false
+		end
+	end
+
+	return true
+end
+
+local function collectUniqueXs(points: { Vector2 }): { number }
+	local values = {}
 	for _, point in ipairs(points) do
-		addUniqueNumber(xs, point.X)
-		addUniqueNumber(ys, point.Y)
-	end
-	table.sort(xs, function(a, b) return a < b end)
-	table.sort(ys, function(a, b) return a < b end)
-
-	local guard = 0
-	local changed = true
-	while changed and guard < 256 do
-		guard += 1
-		changed = false
-		for i = 1, #points do
-			local a = points[i]
-			local b = points[(i % #points) + 1]
-			local dx = b.X - a.X
-			local dy = b.Y - a.Y
-			if math.abs(dx) > EPSILON then
-				local minX = math.min(a.X, b.X)
-				local maxX = math.max(a.X, b.X)
-				for _, x in ipairs(xs) do
-					if x > minX + EPSILON and x < maxX - EPSILON then
-						local t = (x - a.X) / dx
-						local y = a.Y + t * dy
-						if addUniqueNumber(ys, y) then
-							changed = true
-						end
-					end
-				end
-			end
-			if math.abs(dy) > EPSILON then
-				local minY = math.min(a.Y, b.Y)
-				local maxY = math.max(a.Y, b.Y)
-				for _, y in ipairs(ys) do
-					if y > minY + EPSILON and y < maxY - EPSILON then
-						local t = (y - a.Y) / dy
-						local x = a.X + t * dx
-						if addUniqueNumber(xs, x) then
-							changed = true
-						end
-					end
-				end
+		local existing = nil
+		for _, value in ipairs(values) do
+			if math.abs(value - point.X) <= EPSILON then
+				existing = value
+				break
 			end
 		end
-
-		if changed then
-			table.sort(xs, function(a, b) return a < b end)
-			table.sort(ys, function(a, b) return a < b end)
+		if not existing then
+			table.insert(values, point.X)
 		end
 	end
-
-	return xs, ys
-end
-
-local function getEdgePoints(a: Vector2, b: Vector2, xs: {number}, ys: {number}): {Vector2}
-	local points = {}
-	addUniquePoint(points, a)
-	addUniquePoint(points, b)
-
-	local dx = b.X - a.X
-	local dy = b.Y - a.Y
-
-	if math.abs(dx) > EPSILON then
-		local minX = math.min(a.X, b.X)
-		local maxX = math.max(a.X, b.X)
-		for _, x in ipairs(xs) do
-			if x > minX + EPSILON and x < maxX - EPSILON then
-				local t = (x - a.X) / dx
-				local y = a.Y + t * dy
-				addUniquePoint(points, Vector2.new(x, y))
-			end
-		end
-	end
-
-	if math.abs(dy) > EPSILON then
-		local minY = math.min(a.Y, b.Y)
-		local maxY = math.max(a.Y, b.Y)
-		for _, y in ipairs(ys) do
-			if y > minY + EPSILON and y < maxY - EPSILON then
-				local t = (y - a.Y) / dy
-				local x = a.X + t * dx
-				addUniquePoint(points, Vector2.new(x, y))
-			end
-		end
-	end
-
-	table.sort(points, function(p1, p2)
-		return getEdgeParam(a, b, p1) < getEdgeParam(a, b, p2)
+	table.sort(values, function(a, b)
+		return a < b
 	end)
-	return points
+	return values
 end
 
-local function segmentPolygonEdges(points: {Vector2}, xs: {number}, ys: {number}): {{A: Vector2, B: Vector2}}
-	local segments = {}
+local function buildEdges(points: { Vector2 }): { Edge }
+	local edges = {}
 	for i = 1, #points do
 		local a = points[i]
 		local b = points[(i % #points) + 1]
-		local edgePoints = getEdgePoints(a, b, xs, ys)
-		for index = 1, #edgePoints - 1 do
-			local p1 = edgePoints[index]
-			local p2 = edgePoints[index + 1]
-			if (p2 - p1).Magnitude > EPSILON then
-				table.insert(segments, { A = p1, B = p2 })
+		table.insert(edges, { A = a, B = b })
+	end
+	return edges
+end
+
+local function evaluateEdgeAtX(edge: Edge, x: number): number?
+	local dx = edge.B.X - edge.A.X
+	if math.abs(dx) <= EPSILON then
+		return nil
+	end
+	local t = (x - edge.A.X) / dx
+	return edge.A.Y + t * (edge.B.Y - edge.A.Y)
+end
+
+local function gatherIntersections(edges: { Edge }, x: number): { { Y: number, EdgeIndex: number } }
+	local intersections = {}
+	for index, edge in ipairs(edges) do
+		local minX = math.min(edge.A.X, edge.B.X)
+		local maxX = math.max(edge.A.X, edge.B.X)
+		if math.abs(maxX - minX) > EPSILON then
+			local crosses = (edge.A.X <= x and edge.B.X > x) or (edge.B.X <= x and edge.A.X > x)
+			if crosses then
+				local y = evaluateEdgeAtX(edge, x)
+				if y then
+					table.insert(intersections, { Y = y, EdgeIndex = index })
+				end
 			end
 		end
 	end
-	return segments
+
+	table.sort(intersections, function(a, b)
+		return a.Y < b.Y
+	end)
+	return intersections
 end
 
-local function findNumberIndex(values: {number}, value: number): number?
-	for index, existing in ipairs(values) do
-		if math.abs(existing - value) <= EPSILON then
-			return index
-		end
+local function addTriangle(triangles: { Triangle }, a: Vector2, b: Vector2, c: Vector2)
+	local area = cross2(b - a, c - a) / 2
+	if math.abs(area) <= EPSILON then
+		return
 	end
-	return nil
+	if area < 0 then
+		b, c = c, b
+	end
+	table.insert(triangles, { a, b, c })
 end
 
-local function buildDiagonalMap(segments: {{A: Vector2, B: Vector2}}, xs: {number}, ys: {number}): {[number]: {[number]: string}}
-	local diagonals = {}
-	for _, segment in ipairs(segments) do
-		local a = segment.A
-		local b = segment.B
-		if math.abs(a.X - b.X) <= EPSILON or math.abs(a.Y - b.Y) <= EPSILON then
-			continue
-		end
-
-		local i1 = findNumberIndex(xs, a.X)
-		local i2 = findNumberIndex(xs, b.X)
-		local j1 = findNumberIndex(ys, a.Y)
-		local j2 = findNumberIndex(ys, b.Y)
-		if not i1 or not i2 or not j1 or not j2 then
-			continue
-		end
-
-		if math.abs(i1 - i2) == 1 and math.abs(j1 - j2) == 1 then
-			local iCell = math.min(i1, i2)
-			local jCell = math.min(j1, j2)
-			local orientation = ((i1 < i2 and j1 < j2) or (i1 > i2 and j1 > j2)) and "BLTR" or "BRTL"
-			diagonals[iCell] = diagonals[iCell] or {}
-			diagonals[iCell][jCell] = orientation
-		end
+local function addSpanTriangles(
+	triangles: { Triangle },
+	x0: number,
+	x1: number,
+	bottom0: number,
+	bottom1: number,
+	top0: number,
+	top1: number
+)
+	if x1 - x0 <= EPSILON then
+		return
 	end
 
-	return diagonals
+	if bottom0 < bottom1 - EPSILON then
+		addTriangle(triangles,
+			Vector2.new(x0, bottom0),
+			Vector2.new(x1, bottom1),
+			Vector2.new(x0, bottom1))
+	elseif bottom0 > bottom1 + EPSILON then
+		addTriangle(triangles,
+			Vector2.new(x1, bottom1),
+			Vector2.new(x0, bottom0),
+			Vector2.new(x1, bottom0))
+	end
+
+	if top0 > top1 + EPSILON then
+		addTriangle(triangles,
+			Vector2.new(x0, top0),
+			Vector2.new(x0, top1),
+			Vector2.new(x1, top1))
+	elseif top0 < top1 - EPSILON then
+		addTriangle(triangles,
+			Vector2.new(x1, top1),
+			Vector2.new(x1, top0),
+			Vector2.new(x0, top0))
+	end
+
+	local bottomFlat = math.max(bottom0, bottom1)
+	local topFlat = math.min(top0, top1)
+	if topFlat - bottomFlat > EPSILON then
+		addTriangle(triangles,
+			Vector2.new(x0, bottomFlat),
+			Vector2.new(x1, bottomFlat),
+			Vector2.new(x1, topFlat))
+		addTriangle(triangles,
+			Vector2.new(x0, bottomFlat),
+			Vector2.new(x1, topFlat),
+			Vector2.new(x0, topFlat))
+	end
 end
 
--- Tessellate into axis-aligned right triangles to keep wedge rotations on-grid.
-local function triangulatePolygon(points: {Vector2}): {{Vector2}}
-	local triangles = {}
+local function triangulateVerticalSlices(points: { Vector2 }): { Triangle }
 	if #points < 3 then
-		return triangles
+		return {}
 	end
 
-	local xs, ys = buildPolygonGrid(points)
-	local segments = segmentPolygonEdges(points, xs, ys)
-	local diagonals = buildDiagonalMap(segments, xs, ys)
+	local xs = collectUniqueXs(points)
+	if #xs < 2 then
+		return {}
+	end
+
+	local edges = buildEdges(points)
+	local triangles = {}
 
 	for i = 1, #xs - 1 do
-		local x0, x1 = xs[i], xs[i + 1]
-		if (x1 - x0) <= EPSILON then
+		local x0 = xs[i]
+		local x1 = xs[i + 1]
+		if x1 - x0 <= EPSILON then
 			continue
 		end
-		for j = 1, #ys - 1 do
-			local y0, y1 = ys[j], ys[j + 1]
-			if (y1 - y0) <= EPSILON then
+
+		local sampleX = (x0 + x1) / 2
+		local intersections = gatherIntersections(edges, sampleX)
+		for j = 1, #intersections, 2 do
+			local lower = intersections[j]
+			local upper = intersections[j + 1]
+			if not upper then
+				break
+			end
+
+			local bottomEdge = edges[lower.EdgeIndex]
+			local topEdge = edges[upper.EdgeIndex]
+			local bottom0 = evaluateEdgeAtX(bottomEdge, x0) or lower.Y
+			local bottom1 = evaluateEdgeAtX(bottomEdge, x1) or lower.Y
+			local top0 = evaluateEdgeAtX(topEdge, x0) or upper.Y
+			local top1 = evaluateEdgeAtX(topEdge, x1) or upper.Y
+
+			if top0 <= bottom0 + EPSILON and top1 <= bottom1 + EPSILON then
 				continue
 			end
 
-			local bl = Vector2.new(x0, y0)
-			local br = Vector2.new(x1, y0)
-			local tr = Vector2.new(x1, y1)
-			local tl = Vector2.new(x0, y1)
-
-			local diagonal = diagonals[i] and diagonals[i][j] or nil
-			if diagonal then
-				local tri1
-				local tri2
-				if diagonal == "BLTR" then
-					tri1 = { bl, br, tr }
-					tri2 = { bl, tr, tl }
-				else
-					tri1 = { br, tr, tl }
-					tri2 = { br, tl, bl }
-				end
-
-				local center1 = (tri1[1] + tri1[2] + tri1[3]) / 3
-				local center2 = (tri2[1] + tri2[2] + tri2[3]) / 3
-				if isPointInPolygon(center1, points) then
-					table.insert(triangles, tri1)
-				end
-				if isPointInPolygon(center2, points) then
-					table.insert(triangles, tri2)
-				end
-			else
-				local center = Vector2.new((x0 + x1) / 2, (y0 + y1) / 2)
-				if isPointInPolygon(center, points) then
-					table.insert(triangles, { bl, br, tr })
-					table.insert(triangles, { bl, tr, tl })
-				end
-			end
+			addSpanTriangles(triangles, x0, x1, bottom0, bottom1, top0, top1)
 		end
 	end
 
@@ -344,8 +437,8 @@ local function getFloorThickness(levelIndex: number): number
 	return Formex.SegmentSize.Interfloor
 end
 
-local function resolveColor(value: Color3?): Color3
-	return value or Color3.new(1, 1, 1)
+local function resolveColor(value: Color3?, fallback: Color3?): Color3
+	return value or fallback or Color3.new(1, 1, 1)
 end
 
 local function normalizeMaterialId(value: number?): number?
@@ -371,132 +464,180 @@ local function applyTextureOffset(plotPart: BasePart, part: BasePart, texture: T
 	texture.OffsetStudsV = localCFrame.Position.Z + (Formex.Dimensions.Depth / 2)
 end
 
-local function createWedgePart(plotPart: BasePart, parent: Instance, origin: Vector2, legA: Vector2, legB: Vector2, levelIndex: number): Part
+local function ensureFloorModel(floor: Formex.FloorData, parent: Instance?): Model
+	local model = floor.Model
+	if not model or not model.Parent then
+		model = Instance.new("Model")
+		model.Name = tostring(floor.FloorId)
+		model.Parent = parent
+		floor.Model = model
+	else
+		model.Name = tostring(floor.FloorId)
+		if parent and model.Parent ~= parent then
+			model.Parent = parent
+		end
+	end
+	return model
+end
+
+local function getPlotPartFromInstance(instance: Instance?): BasePart?
+	local current = instance
+	while current do
+		if current:IsA("BasePart") and current:GetAttribute("PlotId") then
+			return current
+		end
+		current = current.Parent
+	end
+	return nil
+end
+
+local function getExistingParts(model: Model): { Part }
+	local parts = {}
+	for _, child in ipairs(model:GetChildren()) do
+		if child:IsA("BasePart") then
+			table.insert(parts, child)
+		end
+	end
+	table.sort(parts, function(a, b)
+		return a.Name < b.Name
+	end)
+	return parts
+end
+
+local function getTriangleLegs(triangle: Triangle): (Vector2?, Vector2?, Vector2?)
+	local vx1, vx2, vy1, vy2 = nil, nil, nil, nil
+	for i = 1, 3 do
+		for j = i + 1, 3 do
+			if math.abs(triangle[i].X - triangle[j].X) <= EPSILON then
+				vx1, vx2 = i, j
+			end
+			if math.abs(triangle[i].Y - triangle[j].Y) <= EPSILON then
+				vy1, vy2 = i, j
+			end
+		end
+	end
+
+	if not vx1 or not vx2 or not vy1 or not vy2 then
+		return nil, nil, nil
+	end
+
+	local originIndex
+	if vx1 == vy1 or vx1 == vy2 then
+		originIndex = vx1
+	elseif vx2 == vy1 or vx2 == vy2 then
+		originIndex = vx2
+	end
+
+	if not originIndex then
+		return nil, nil, nil
+	end
+
+	local verticalIndex = vx1 == originIndex and vx2 or vx1
+	local horizontalIndex = vy1 == originIndex and vy2 or vy1
+
+	local origin = triangle[originIndex]
+	local legA = triangle[horizontalIndex] - origin
+	local legB = triangle[verticalIndex] - origin
+
+	if legA.Magnitude <= EPSILON or legB.Magnitude <= EPSILON then
+		return nil, nil, nil
+	end
+
+	return origin, legA, legB
+end
+
+local function applyTriangleToPart(
+	part: Part,
+	plotPart: BasePart,
+	origin: Vector2,
+	legA: Vector2,
+	legB: Vector2,
+	levelIndex: number,
+	index: number
+)
 	local thickness = getFloorThickness(levelIndex)
 	local levelTop = Formex.LevelHeight * (levelIndex - 1)
 	local centerY = levelTop - (thickness / 2)
 
-	local lengthA = legA.Magnitude
-	local lengthB = legB.Magnitude
-	local axisA = legA.Magnitude > EPSILON and legA.Unit or Vector2.new(1, 0)
-	local axisB = legB.Magnitude > EPSILON and legB.Unit or Vector2.new(0, 1)
-
 	local center = Vector3.new(
-		origin.X + axisA.X * (lengthA / 2) + axisB.X * (lengthB / 2),
+		origin.X + (legA.X / 2) + (legB.X / 2),
 		centerY,
-		origin.Y + axisA.Y * (lengthA / 2) + axisB.Y * (lengthB / 2)
+		origin.Y + (legA.Y / 2) + (legB.Y / 2)
+	)
+
+	local axisA = Vector2.new(
+		math.abs(legA.X) > EPSILON and (legA.X > 0 and 1 or -1) or 0,
+		math.abs(legA.Y) > EPSILON and (legA.Y > 0 and 1 or -1) or 0
+	)
+	local axisB = Vector2.new(
+		math.abs(legB.X) > EPSILON and (legB.X > 0 and 1 or -1) or 0,
+		math.abs(legB.Y) > EPSILON and (legB.Y > 0 and 1 or -1) or 0
 	)
 
 	local yAxis = Vector3.new(axisA.X, 0, axisA.Y)
 	local zAxis = Vector3.new(-axisB.X, 0, -axisB.Y)
-	-- Wedge triangle uses local +Y and -Z legs; pick the right-handed X axis to set the top side.
 	local xAxis = yAxis:Cross(zAxis)
-	if xAxis.Magnitude > EPSILON then
-		xAxis = xAxis.Unit
+	if xAxis.Magnitude <= EPSILON then
+		xAxis = Vector3.new(0, 1, 0)
 	else
-		xAxis = Vector3.yAxis
+		xAxis = xAxis.Unit
 	end
-	local part = Instance.new("Part")
+
 	part.Shape = Enum.PartType.Wedge
+	part.Name = tostring(index)
 	part.Anchored = true
 	part.CollisionGroup = Formex.CollisionGroup.Structure
-	part.Size = Vector3.new(thickness, lengthA, lengthB)
+	part.Size = Vector3.new(thickness, math.abs(legA.Magnitude), math.abs(legB.Magnitude))
 	part.CFrame = plotPart.CFrame * CFrame.fromMatrix(center, xAxis, yAxis, zAxis)
-	part.Parent = parent
-	return part
 end
 
-local function createTriangleWedges(plotPart: BasePart, parent: Instance, a: Vector2, b: Vector2, c: Vector2, levelIndex: number): {Part}
-	local function tryRightTriangle(origin: Vector2, p1: Vector2, p2: Vector2): (Vector2?, Vector2?, Vector2?)
-		if math.abs(p1.Y - origin.Y) <= EPSILON and math.abs(p2.X - origin.X) <= EPSILON then
-			return origin, p1 - origin, p2 - origin
-		end
-		if math.abs(p2.Y - origin.Y) <= EPSILON and math.abs(p1.X - origin.X) <= EPSILON then
-			return origin, p2 - origin, p1 - origin
-		end
-		return nil, nil, nil
+local function updateTextures(
+	part: Part,
+	plotPart: BasePart,
+	floorMaterial: number?,
+	ceilingMaterial: number?,
+	foundationMaterial: number?,
+	floorColor: Color3,
+	ceilingColor: Color3,
+	foundationColor: Color3,
+	levelIndex: number
+)
+	applyFoundationMaterial(part, foundationMaterial, foundationColor, levelIndex)
+
+	local floorFace = Enum.NormalId.Left
+	local ceilingFace = Enum.NormalId.Right
+	if part.CFrame.RightVector.Y > 0 then
+		floorFace = Enum.NormalId.Right
+		ceilingFace = Enum.NormalId.Left
 	end
 
-	local origin, legA, legB = tryRightTriangle(a, b, c)
-	if not origin then
-		origin, legA, legB = tryRightTriangle(b, a, c)
-	end
-	if not origin then
-		origin, legA, legB = tryRightTriangle(c, a, b)
-	end
-	if not origin or not legA or not legB then
+	local floorTexture = Formex.Util.EnsureTexture(part, "Floor", floorFace)
+	local ceilingTexture = Formex.Util.EnsureTexture(part, "Ceiling", ceilingFace)
+
+	Formex.UpdateTexture(part, floorTexture, floorMaterial, floorColor)
+	Formex.UpdateTexture(part, ceilingTexture, ceilingMaterial, ceilingColor)
+	applyTextureOffset(plotPart, part, floorTexture)
+	applyTextureOffset(plotPart, part, ceilingTexture)
+end
+
+local function buildTriangles(points: { Vector2int16 }): { Triangle }
+	local cleaned = Formex.Floors.CleanPolygon(points)
+	if #cleaned < 3 then
 		return {}
 	end
 
-	if legA.Magnitude <= EPSILON or legB.Magnitude <= EPSILON then
-		return {}
-	end
-
-	local part = createWedgePart(plotPart, parent, origin, legA, legB, levelIndex)
-	if not part then
-		return {}
-	end
-	return { part }
+	local polygon = toVector2Array(cleaned)
+	return triangulateVerticalSlices(polygon)
 end
 
-function Formex.Floors.IsValid(plot: Formex.PlotData, floor: Formex.FloorData)
-	if not floor or not floor.Points or #floor.Points < 3 then
-		return false
-	end
-
-	local points = floor.Points
-	local polygon = {}
-	for _, point in ipairs(points) do
-		if not isPointLayoutGridSnapped(point) then
-			return false
-		end
-		if not Formex.Plot.IsPointInUnlockedSegments(point, plot.SegmentsUnlocked) then
-			return false
-		end
-		table.insert(polygon, toVector2(point))
-	end
-
-	for i = 1, #polygon do
-		local startPoint = polygon[i]
-		local endPoint = polygon[(i % #polygon) + 1]
-		if not Formex.Plot.IsLineWithinUnlockedSegments(startPoint, endPoint, plot.SegmentsUnlocked) then
-			return false
-		end
-	end
-
-	local area = math.abs(polygonArea(polygon))
-	if area <= EPSILON then
-		return false
-	end
-
-	return true
-end
-
-function Formex.Floors.Create(floor: Formex.FloorData, plotPartOverride: BasePart?, parentOverride: Instance?): Model?
-	if not floor or not floor.Points or #floor.Points < 3 then
-		return nil
-	end
-
-	local parent = parentOverride
-	local plotPart = plotPartOverride
-	if not plotPart and parent then
-		plotPart = getPlotPartFromInstance(parent)
-	end
-	if not plotPart then
-		return nil
-	end
-
-	local model = Instance.new("Model")
-	model.Name = tostring(floor.FloorId)
-	model.Parent = parent
-	floor.Model = model
-
+local function applyFloorAttributes(model: Model, floor: Formex.FloorData)
 	local floorMaterial = normalizeMaterialId(floor.FloorMaterial) or Formex.DefaultFloorMaterial
 	local ceilingMaterial = normalizeMaterialId(floor.CeilingMaterial) or floorMaterial
 	local foundationMaterial = normalizeMaterialId(floor.FoundationMaterial) or Formex.DefaultFoundationMaterial
-	local floorColor = resolveColor(floor.FloorColor)
-	local ceilingColor = resolveColor(floor.CeilingColor)
-	local foundationColor = resolveColor(floor.FoundationColor)
+
+	local floorColor = resolveColor(floor.FloorColor, nil)
+	local ceilingColor = resolveColor(floor.CeilingColor, floorColor)
+	local foundationColor = resolveColor(floor.FoundationColor, floorColor)
 
 	model:SetAttribute("FloorMaterial", floorMaterial)
 	model:SetAttribute("CeilingMaterial", ceilingMaterial)
@@ -506,33 +647,88 @@ function Formex.Floors.Create(floor: Formex.FloorData, plotPartOverride: BasePar
 	model:SetAttribute("FoundationColor", foundationColor)
 	model:SetAttribute("Points", Formex.EncodeFloorPoints(floor.Points))
 
-	local points = {}
-	for _, point in ipairs(floor.Points) do
-		table.insert(points, toVector2(point))
+	return floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor
+end
+
+local function ensureValidShape(plot: Formex.PlotData?, floor: Formex.FloorData, cleaned: { Vector2int16 }): { Vector2int16 }
+	if not plot then
+		return cleaned
 	end
 
-	local triangles = triangulatePolygon(points)
+	if Formex.Floors.IsValid(plot, { Points = cleaned } :: any) then
+		return cleaned
+	end
 
-	for _, triangle in ipairs(triangles) do
-		local wedges = createTriangleWedges(plotPart, model, triangle[1], triangle[2], triangle[3], floor.LevelIndex)
-		for _, part in ipairs(wedges) do
-			applyFoundationMaterial(part, foundationMaterial, foundationColor, floor.LevelIndex)
-			local floorFace = Enum.NormalId.Left
-			local ceilingFace = Enum.NormalId.Right
-			if part.CFrame.RightVector.Y > 0 then
-				floorFace = Enum.NormalId.Right
-				ceilingFace = Enum.NormalId.Left
-			end
-			local floorTexture = Formex.Util.EnsureTexture(part, "Floor", floorFace)
-			local ceilingTexture = Formex.Util.EnsureTexture(part, "Ceiling", ceilingFace)
-			Formex.UpdateTexture(part, floorTexture, floorMaterial, floorColor)
-			Formex.UpdateTexture(part, ceilingTexture, ceilingMaterial, ceilingColor)
-			applyTextureOffset(plotPart, part, floorTexture)
-			applyTextureOffset(plotPart, part, ceilingTexture)
+	local bounds = getBoundsRectangle(floor.Points or {})
+	if #bounds >= 3 then
+		return Formex.Floors.CleanPolygon(bounds)
+	end
+
+	return {}
+end
+
+function Formex.Floors.Edit(
+	floor: Formex.FloorData,
+	plotPartOverride: BasePart?,
+	parentOverride: Instance?,
+	plotData: Formex.PlotData?
+): Model?
+	if not floor or not floor.Points then
+		return nil
+	end
+
+	local parent = parentOverride or (floor.Model and floor.Model.Parent) or nil
+	local plotPart = plotPartOverride or getPlotPartFromInstance(parent)
+	if not plotPart then
+		return nil
+	end
+
+	local model = ensureFloorModel(floor, parent)
+	model.Name = tostring(floor.FloorId)
+
+	local cleaned = Formex.Floors.CleanPolygon(floor.Points)
+	local usablePoints = ensureValidShape(plotData, floor, cleaned)
+	if #usablePoints < 3 then
+		for _, leftover in ipairs(getExistingParts(model)) do
+			leftover:Destroy()
+		end
+		return model
+	end
+
+	local floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor =
+		applyFloorAttributes(model, floor)
+
+	local triangles = buildTriangles(usablePoints)
+	local existing = getExistingParts(model)
+
+	for index, triangle in ipairs(triangles) do
+		local origin, legA, legB = getTriangleLegs(triangle)
+		if origin and legA and legB then
+			local part = table.remove(existing, 1) or Instance.new("Part")
+			part.Parent = model
+			applyTriangleToPart(part, plotPart, origin, legA, legB, floor.LevelIndex, index)
+			updateTextures(part, plotPart, floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor, floor.LevelIndex)
 		end
 	end
 
+	for _, leftover in ipairs(existing) do
+		leftover:Destroy()
+	end
+
 	return model
+end
+
+function Formex.Floors.Create(
+	floor: Formex.FloorData,
+	plotPartOverride: BasePart?,
+	parentOverride: Instance?,
+	plotData: Formex.PlotData?
+): Model?
+	if not floor or not floor.Points then
+		return nil
+	end
+
+	return Formex.Floors.Edit(floor, plotPartOverride, parentOverride, plotData)
 end
 
 return Formex.Floors
