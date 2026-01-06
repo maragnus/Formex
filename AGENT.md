@@ -17,6 +17,8 @@ Do not use `pcall`. While developing, errors need to propogate normally to find 
 - a **Plot** can define permissions for other **Players**, even including sharing owner status.
 - A **Plot** starts off owning one segment. Players can upgrade their plot by adding segments and levels (building stories)
 - A **Save Slot** defines the building on a plot. If no **Save** is loaded, then the PlotPlaceholder is empty and cannot be updating until a **Save** is loaded or new one is created.
+- Implement with an emphasis on KISS and DRY principals. 
+- Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
 
 ## Ideal flow
 
@@ -65,9 +67,6 @@ Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Cont
 `imageLabel.ImageContent = Content.fromAssetId(assetId: number)`
 - `Texture`: `texture.ColorMapContent = Content.fromAssetId(assetId: number)` 
 
-## Autosave
-Any **Plot** with a selected **Save Slot** will have autosave enabled. Some changes save immediately, Others create a 60 second timer to accumulate changes. After a save, the next change will create a new timer.
-
 ## Modules
 - `Formex` is the shared interface between client and server
 
@@ -79,8 +78,8 @@ Any **Plot** with a selected **Save Slot** will have autosave enabled. Some chan
 ### Client-side
 - `FormexCamera`: manages camera modes
 - `FormexClient`: core management for the Formex state
-- `FormexDesign`: design mode functionality (floors, walls, objects)
-- `FormexFooter`: UI for the footer menu
+- `FormexDesign`: design mode functionality (floors, walls, objects) and all the 3D design tools
+- `FormexSidebar`: UI for the sidebar menu
 - `FormexPrompts`: UI popups
 - `FormexUI`: custom UI component library
 

@@ -491,9 +491,6 @@ function Formex.Floors.Create(floor: Formex.FloorData, plotPartOverride: BasePar
 	model.Parent = parent
 	floor.Model = model
 
-	floor.FloorParts = {}
-	floor.CeilingParts = {}
-
 	local floorMaterial = normalizeMaterialId(floor.FloorMaterial) or Formex.DefaultFloorMaterial
 	local ceilingMaterial = normalizeMaterialId(floor.CeilingMaterial) or floorMaterial
 	local foundationMaterial = normalizeMaterialId(floor.FoundationMaterial) or Formex.DefaultFoundationMaterial
@@ -532,8 +529,6 @@ function Formex.Floors.Create(floor: Formex.FloorData, plotPartOverride: BasePar
 			Formex.UpdateTexture(part, ceilingTexture, ceilingMaterial, ceilingColor)
 			applyTextureOffset(plotPart, part, floorTexture)
 			applyTextureOffset(plotPart, part, ceilingTexture)
-			table.insert(floor.FloorParts, part)
-			table.insert(floor.CeilingParts, part)
 		end
 	end
 

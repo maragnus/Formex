@@ -148,8 +148,6 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 		FloorColor = floorColor,
 		CeilingColor = ceilingColor,
 		FoundationColor = foundationColor,
-		FloorParts = {},
-		CeilingParts = {},
 		Model = model,
 	}
 end
@@ -301,8 +299,6 @@ local function finalizeMove(plotInfo: any)
 			FloorColor = shared.FloorColor,
 			CeilingColor = shared.CeilingColor,
 			FoundationColor = shared.FoundationColor,
-			FloorParts = {},
-			CeilingParts = {},
 			Model = nil,
 		}
 		table.insert(updates, modelData)
@@ -349,8 +345,6 @@ local function handlePointMove(plotInfo: any, input: any)
 			Points = movePreviewPoints,
 			FloorMaterial = Formex.DefaultFloorMaterial,
 			CeilingMaterial = Formex.DefaultFloorMaterial,
-			FloorParts = {},
-			CeilingParts = {},
 		}, movePreviewPoints)
 	end
 end
@@ -380,8 +374,6 @@ local function createFloorFromTile(plotInfo: any, tile: Vector2int16)
 		FloorColor = floorColor,
 		CeilingColor = ceilingColor,
 		FoundationColor = foundationColor,
-		FloorParts = {},
-		CeilingParts = {},
 		Model = nil,
 	}
 
@@ -407,8 +399,6 @@ local function onFloorHandleClicked(info: any)
 			Points = floorData.Points,
 			FloorMaterial = floorData.FloorMaterial,
 			CeilingMaterial = floorData.CeilingMaterial,
-			FloorParts = {},
-			CeilingParts = {},
 		}, Formex.BuildAction.Delete)
 		clearSelection()
 		return
@@ -588,8 +578,14 @@ end
 function Floors.HandlePrimaryClick(input: any)
 	local actionType = getActionType()
 	if actionType == Enums.ActionType.Select then
+		local hadSelection = getSelectionType() ~= Enums.SelectionType.None
 		local selected = input.Target and select(input.Target) or false
 		if selected then return end
+
+		if hadSelection then
+			clearSelection()
+			return
+		end
 
 		if input.LayoutTile then
 			createFloorFromTile(input.PlotInfo, input.LayoutTile)

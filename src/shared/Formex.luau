@@ -51,17 +51,17 @@ export type WallData = {
 	Level: number,
 	Start: Vector2int16,
 	End: Vector2int16,
-	Height: number?, -- studs <NEW FEATURE>
-	FrontSplitHeight: number?, -- studs <NEW FEATURE>
-	FrontTopColor: Color3?, -- <NEW FEATURE>
-	FrontTopMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
-	FrontBottomColor: Color3?, -- <NEW FEATURE>
-	FrontBottomMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
-	BackSplitHeight: number?, -- studs <NEW FEATURE>
-	BackTopColor: Color3?, -- <NEW FEATURE>
-	BackTopMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
-	BackBottomColor: Color3?, -- <NEW FEATURE>
-	BackBottomMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
+	Height: number?, -- studs
+	FrontSplitHeight: number?, -- studs
+	FrontTopColor: Color3?,
+	FrontTopMaterial: number?, -- Formex.WallMaterials[index]
+	FrontBottomColor: Color3?,
+	FrontBottomMaterial: number?, -- Formex.WallMaterials[index]
+	BackSplitHeight: number?, -- studs
+	BackTopColor: Color3?,
+	BackTopMaterial: number?, -- Formex.WallMaterials[index]
+	BackBottomColor: Color3?,
+	BackBottomMaterial: number?, -- Formex.WallMaterials[index]
 	Part: Model?,
 	FrontPart: Part?,
 	BackPart: Part?
@@ -71,14 +71,13 @@ export type FloorData = {
 	FloorId: number,
 	LevelIndex: number,
 	Points: {Vector2int16},
+	RaiseHeight: number?, -- studs NEW FEATURE to create raised floors and stages
 	FloorMaterial: number?, -- Formex.FloorMaterials[index]
-	FloorColor: Color3?, -- <NEW FEATURE>
+	FloorColor: Color3?,
 	CeilingMaterial: number?, -- Formex.FloorMaterials[index]
-	CeilingColor: Color3?, -- <NEW FEATURE>
-	FoundationMaterial: number?, -- Formex.WallMaterials[index] <NEW FEATURE>
-	FoundationColor: Color3?, -- <NEW FEATURE>
-	FloorParts: {Part},
-	CeilingParts: {Part},
+	CeilingColor: Color3?,
+	FoundationMaterial: number?, -- Formex.WallMaterials[index]
+	FoundationColor: Color3?,
 	Model: Model?,
 }
 
@@ -159,6 +158,7 @@ Formex.FoundationHeight = 8 -- studs (thickness of foundation floor)
 Formex.LevelHeight = 12 -- studs (top of floor to top of floor)
 Formex.WallThickness = 0.5 -- studs
 Formex.SegmenteSize = 64 -- studs (square)
+Formex.MaxFloorPoints = 16 -- per floor
 Formex.WallTopMaterial = 1
 Formex.DefaultFloorMaterial = 2
 Formex.DefaultCeilingMaterial = 2
