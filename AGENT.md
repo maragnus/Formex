@@ -41,24 +41,24 @@ A **Plot** has a permissions list of other players that can interact with it. Th
     Workspace\Formex: Folder\Plots: Folder
         PlotPlaceholder: Part
             {levelId: number}: Part
-                Walls (Folder)
-                    {WallId}: Part
-                Floors (Folder)
-                    {FloorId}: Part
-                Ceilings (Folder)
-                    {CeilingId}: Part
+                Walls: Folder
+                    {WallId}: Model
+                        Parts...
+                Floors: Folder
+                    {FloorId}: Model
+                        Parts...
                 Objects: Folder
-                    {ObjectId}: Part
-- Wall and Floor/Ceiling parts
-  - Use `Texture` children with `Texture.Side` to represent `MaterialInfo`
-- Wall is a `Part` with a thickness of `Formex.WallThickness` and height of `Formex.LevelHeight`
-  - Wall has `FrontMaterial`, `BackMaterial`, `StartMaterial`, and `EndMaterial` that represents `Formex.Materials` used on the sides and end caps of the wall.
-  - Top of walls uses `Formex.WallTopMaterial`
-- Floor and Ceilings are a grid of `Formex.LayoutGrid` size, and `Formex.FoundationHeight` for Level 1, and `Formex.InterfloorHeight` at upper levels.
-- Floors and ceilings are complicated
-    - One `Part` represents both the floor and the ceiling of the adjacent level.
-    - If a floor is added, it also adds the respective ceiling. Likewise for adding a ceiling. Except on the Level 1 and level `Formex.MaxPlotSize.Levels`.
-- Shared `Formex` provides a shared interface to create Wall and Floor/Ceiling parts for server-side geometry and client-side ghosts for designing.
+                    {ObjectId}: Model
+                        Parts...
+- Walls are divided into front-side and back-side Block-shaped parts, and also top and bottom parts if the wall has a split height.
+  - Walls use Material/MaterialVariant and Color for design
+  - Wall is total thickness of `Formex.WallThickness` and maximum height of `Formex.LevelHeight`, but is user adjustable
+- Floors are simple polygons made up of Wedge-shaped parts turned on their side to create axis-aligned right triangles.
+  - Floors use `Texture` children with `Texture.Side` to represent color and design of their floor (top) and ceiling (bottom)
+  - Floors also use Material/MaterialVariant and Color for design of their sides
+  - Floor and Ceilings are a grid of `Formex.LayoutGrid` size, and `Formex.FoundationHeight` for Level 1, and `Formex.InterfloorHeight` at upper levels.
+  - Floors uses a complex algorithm to triangulate the polygon into a collection axis-aligned right triangles.
+- Shared module `Formex.luau` provides a shared interface to create Wall and Floor parts for server-side geometry and client-side ghosts for designing as well as confirm validity.
 
 ## Coding Standards
 
@@ -67,8 +67,14 @@ Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Cont
 `imageLabel.ImageContent = Content.fromAssetId(assetId: number)`
 - `Texture`: `texture.ColorMapContent = Content.fromAssetId(assetId: number)` 
 
-## Modules
-- `Formex` is the shared interface between client and server
+Always update `FormexSerialization.luau` when changing `Formex.PlotData`, `Formex.LevelData`, `Formex.WallData`, `Formex.FloorData`, `Formex.ObjectData`
+
+## Shared Modules
+- `Formex.luau` is the shared interface between client and server, contains constants and utilities, hub of related modules
+  - `Formex.Walls` is provided by `FormexWalls.luau` for created, updating, and validating walls
+  - `Formex.Floors` is provided by `FormexFloors.luau` for created, updating, and validating floors
+  - `Formex.Plot` is provided by `FormexPlot.luau` for maintaining the plot itself
+  - `Formex.Serialization` is provided by `FormexSerialization.luau` is responsible for the save format of `Formex.PlotData`
 
 ### Server-side
 - `FormexSystem`: manage core plot ownership and common systems

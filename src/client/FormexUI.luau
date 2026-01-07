@@ -1114,10 +1114,7 @@ export type MaterialSelectHandle = {
 }
 
 local function resolveMaterialList(partType: MaterialPartType?): ({[number]: MaterialInfo}, string)
-    if partType == "Wall" then
-        return Formex.WallMaterials, "PreviewAssetId"
-    end
-    return Formex.FloorMaterials, "AssetId"
+    return Formex.WallMaterials, "PreviewAssetId"
 end
 
 function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((materialId: number?) -> nil)?): MaterialSelectHandle

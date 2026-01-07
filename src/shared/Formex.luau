@@ -72,9 +72,9 @@ export type FloorData = {
 	LevelIndex: number,
 	Points: {Vector2int16},
 	RaiseHeight: number?, -- studs NEW FEATURE to create raised floors and stages
-	FloorMaterial: number?, -- Formex.FloorMaterials[index]
+	FloorMaterial: number?, -- Formex.WallMaterials[index]
 	FloorColor: Color3?,
-	CeilingMaterial: number?, -- Formex.FloorMaterials[index]
+	CeilingMaterial: number?, -- Formex.WallMaterials[index]
 	CeilingColor: Color3?,
 	FoundationMaterial: number?, -- Formex.WallMaterials[index]
 	FoundationColor: Color3?,

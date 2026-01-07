@@ -84,6 +84,134 @@ end
 
 local permissionId = "U_" .. tostring(Players.LocalPlayer.UserId)
 
+local floorSubscriptions = {} :: {
+    [Model]: {
+        PointsKey: string,
+        Connections: {[string]: RBXScriptConnection},
+    }
+}
+local watchedLevels = {} :: {[Instance]: boolean}
+local watchedFloorFolders = {} :: {[Instance]: boolean}
+
+local floorAttributeNames = {
+    "FloorMaterial",
+    "CeilingMaterial",
+    "FoundationMaterial",
+    "FloorColor",
+    "CeilingColor",
+    "FoundationColor",
+}
+
+local function unsubscribeFloorModel(model: Model)
+    local state = floorSubscriptions[model]
+    if not state then
+        return
+    end
+    for _, connection in pairs(state.Connections) do
+        connection:Disconnect()
+    end
+    floorSubscriptions[model] = nil
+    Formex.Floors.DestroyClientMeshes(model)
+end
+
+local function subscribeFloorModel(plotPart: BasePart, model: Model)
+    if floorSubscriptions[model] then
+        return
+    end
+
+    -- Floors are attribute-driven: geometry only updates on Points changes,
+    -- while materials/colors can change independently for fast client prediction.
+    local state = {
+        PointsKey = model:GetAttribute("Points") or "",
+        Connections = {},
+    }
+    floorSubscriptions[model] = state
+
+    local function refreshGeometry()
+        Formex.Floors.RenderClientMeshes(model, plotPart)
+        state.PointsKey = model:GetAttribute("Points") or ""
+    end
+
+    local function refreshAppearance()
+        -- ApplyClientMaterials normalizes attributes via applyFloorAttributes and updates mesh materials.
+        Formex.Floors.ApplyClientMaterials(model)
+    end
+
+    refreshGeometry()
+    refreshAppearance()
+
+    state.Connections.Points = model:GetAttributeChangedSignal("Points"):Connect(function()
+        local pointsKey = model:GetAttribute("Points") or ""
+        if pointsKey == state.PointsKey then
+            return
+        end
+        state.PointsKey = pointsKey
+        refreshGeometry()
+    end)
+
+    for _, attributeName in ipairs(floorAttributeNames) do
+        state.Connections[attributeName] = model:GetAttributeChangedSignal(attributeName):Connect(refreshAppearance)
+    end
+end
+
+local function watchFloorFolder(plotPart: BasePart, folder: Folder)
+    if watchedFloorFolders[folder] then
+        return
+    end
+    watchedFloorFolders[folder] = true
+
+    for _, child in ipairs(folder:GetChildren()) do
+        if child:IsA("Model") then
+            subscribeFloorModel(plotPart, child)
+        end
+    end
+
+    folder.ChildAdded:Connect(function(child)
+        if child:IsA("Model") then
+            subscribeFloorModel(plotPart, child)
+        end
+    end)
+
+    folder.ChildRemoved:Connect(function(child)
+        if child:IsA("Model") then
+            unsubscribeFloorModel(child)
+        end
+    end)
+end
+
+local function watchLevelPart(plotPart: BasePart, levelPart: BasePart)
+    if watchedLevels[levelPart] then
+        return
+    end
+    watchedLevels[levelPart] = true
+
+    local floorsFolder = levelPart:FindFirstChild("Floors")
+    if floorsFolder and floorsFolder:IsA("Folder") then
+        watchFloorFolder(plotPart, floorsFolder)
+    end
+
+    levelPart.ChildAdded:Connect(function(child)
+        if child.Name ~= "Floors" or not child:IsA("Folder") then
+            return
+        end
+        watchFloorFolder(plotPart, child)
+    end)
+end
+
+local function watchPlotFloors(plotPart: BasePart)
+    for _, child in ipairs(plotPart:GetChildren()) do
+        if child:IsA("BasePart") then
+            watchLevelPart(plotPart, child)
+        end
+    end
+
+    plotPart.ChildAdded:Connect(function(child)
+        if child:IsA("BasePart") then
+            watchLevelPart(plotPart, child)
+        end
+    end)
+end
+
 local function subscribeToPlot(plotPart: Part)
     -- CHECK: Wait for attribute using GetAttributeChangedSignal?
     local plotId = plotPart:GetAttribute("PlotId") or 0
@@ -162,6 +290,7 @@ local function subscribeToPlot(plotPart: Part)
         notifyPlotChange(plotId)
     end)
 
+    watchPlotFloors(plotPart)
     notifyPlotChange(plotId)
 
     return info

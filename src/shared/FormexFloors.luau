@@ -3,27 +3,31 @@
 local Formex = require(script.Parent:FindFirstChild("Formex"))
 Formex.Math = require(script.Parent:FindFirstChild("FormexMath"))
 
+local AssetService = game:GetService("AssetService")
+
 local EPSILON = Formex.EPSILON
 local MAX_TRIANGLES = 64 -- Make sure that a single floor does not exceed this triangle count for performance.
+local CLIENT_MESH_FOLDER_NAME = "ClientMeshes"
+local SURFACE_UV_SCALE = (type(Formex.LayoutGridSize) == "number" and Formex.LayoutGridSize > 0)
+	and Formex.LayoutGridSize
+	or 1
+local MESH_PART_NAMES = {
+	Floor = "Floor",
+	Foundation = "Foundation",
+	Ceiling = "Ceiling",
+}
 
 Formex.Floors = {}
 
-type Edge = { A: Vector2, B: Vector2 }
 type Triangle = { Vector2 }
 
--- Wedge orientation options keep wedges axis aligned while flipping the hypotenuse.
-local WEDGE_ROTATIONS = {
-	RightTop = {
-		CFrame.Angles(0, math.rad(180), math.rad(90)),
-		CFrame.Angles(0, 0, math.rad(-90)),
-	},
-	LeftTop = {
-		CFrame.Angles(0, 0, math.rad(-90)),
-		CFrame.Angles(0, math.rad(180), math.rad(-90)),
-	},
-}
+-- Triangulation overview (ear clipping):
+-- We clean the polygon to enforce CCW winding and remove collinear points, then iteratively clip "ears"
+-- (convex vertices whose triangle does not contain any other vertex) until only triangles remain.
+
 
 function Formex.EncodeFloorPoints(points: { Vector2int16 }): string
+	-- Convert points to a compact string so floor data can be stored on attributes.
 	local encoded = {}
 	for _, point in ipairs(points) do
 		table.insert(encoded, string.format("%d,%d", point.X, point.Y))
@@ -32,6 +36,7 @@ function Formex.EncodeFloorPoints(points: { Vector2int16 }): string
 end
 
 function Formex.DecodeFloorPoints(value: string?): { Vector2int16 }
+	-- Restore points from the attribute string during selection/editing.
 	local points = {}
 	if not value or value == "" then
 		return points
@@ -48,21 +53,20 @@ function Formex.DecodeFloorPoints(value: string?): { Vector2int16 }
 end
 
 local function toVector2(point: Vector2 | Vector2int16): Vector2
+	-- Normalize point types for shared math helpers.
 	if typeof(point) == "Vector2" then
 		return point
 	end
 	return Vector2.new(point.X, point.Y)
 end
 
-local function toVector2int16(point: Vector2): Vector2int16
-	return Vector2int16.new(math.round(point.X), math.round(point.Y))
-end
-
 local function cross2(a: Vector2, b: Vector2): number
+	-- 2D cross product for orientation/area tests.
 	return a.X * b.Y - a.Y * b.X
 end
 
 local function polygonArea(points: { Vector2 }): number
+	-- Compute signed area so we can enforce CCW winding.
 	local total = 0
 	for index = 1, #points do
 		local a = points[index]
@@ -73,14 +77,17 @@ local function polygonArea(points: { Vector2 }): number
 end
 
 local function isSamePoint(a: Vector2int16, b: Vector2int16): boolean
+	-- Compare discrete floor points without float tolerance.
 	return a.X == b.X and a.Y == b.Y
 end
 
 local function areCollinear(a: Vector2, b: Vector2, c: Vector2): boolean
+	-- Remove redundant points that do not change the polygon shape.
 	return math.abs(cross2(b - a, c - b)) <= EPSILON
 end
 
 local function reversePoints(points: { Vector2int16 }): { Vector2int16 }
+	-- Reverse winding to enforce CCW orientation.
 	local reversed = table.create(#points)
 	for i = #points, 1, -1 do
 		table.insert(reversed, points[i])
@@ -88,8 +95,8 @@ local function reversePoints(points: { Vector2int16 }): { Vector2int16 }
 	return reversed
 end
 
-
 local function toVector2Array(points: { Vector2int16 }): { Vector2 }
+	-- Promote integer grid points to Vector2 for math.
 	local result = table.create(#points)
 	for _, point in ipairs(points) do
 		table.insert(result, Vector2.new(point.X, point.Y))
@@ -97,8 +104,8 @@ local function toVector2Array(points: { Vector2int16 }): { Vector2 }
 	return result
 end
 
-
 function Formex.Floors.CleanPolygon(points: { Vector2int16 }): { Vector2int16 }
+	-- Remove duplicates/collinear points and normalize winding before triangulation.
 	if #points == 0 then
 		return {}
 	end
@@ -150,6 +157,7 @@ function Formex.Floors.CleanPolygon(points: { Vector2int16 }): { Vector2int16 }
 end
 
 local function orientation(a: Vector2, b: Vector2, c: Vector2): number
+	-- Helper for segment intersection tests.
 	local value = (b.Y - a.Y) * (c.X - b.X) - (b.X - a.X) * (c.Y - b.Y)
 	if math.abs(value) <= EPSILON then
 		return 0
@@ -158,11 +166,13 @@ local function orientation(a: Vector2, b: Vector2, c: Vector2): number
 end
 
 local function onSegment(a: Vector2, b: Vector2, c: Vector2): boolean
+	-- Bounds check for collinear segment intersection handling.
 	return math.min(a.X, c.X) - EPSILON <= b.X and b.X <= math.max(a.X, c.X) + EPSILON
 		and math.min(a.Y, c.Y) - EPSILON <= b.Y and b.Y <= math.max(a.Y, c.Y) + EPSILON
 end
 
 local function segmentsIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2): boolean
+	-- Detect self-intersections so floors stay simple.
 	local o1 = orientation(p1, p2, q1)
 	local o2 = orientation(p1, p2, q2)
 	local o3 = orientation(q1, q2, p1)
@@ -181,6 +191,7 @@ local function segmentsIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vect
 end
 
 local function isSimplePolygon(points: { Vector2 }): boolean
+	-- Reject polygons with self-intersection before building wedges.
 	local count = #points
 	if count < 3 then
 		return false
@@ -204,6 +215,7 @@ local function isSimplePolygon(points: { Vector2 }): boolean
 end
 
 local function getBoundsRectangle(points: { Vector2int16 }): { Vector2int16 }
+	-- Fallback to a rectangle if the polygon is invalid or degenerate.
 	if #points == 0 then
 		return {}
 	end
@@ -233,7 +245,27 @@ local function getBoundsRectangle(points: { Vector2int16 }): { Vector2int16 }
 	}
 end
 
+local function isPolygonValid(points: { Vector2int16 }): boolean
+	-- Geometry-only validation used when plot data is not available.
+	local count = #points
+	if count < 3 or count > Formex.MaxFloorPoints then
+		return false
+	end
+
+	local polygon = toVector2Array(points)
+	if polygonArea(polygon) <= EPSILON then
+		return false
+	end
+
+	if not isSimplePolygon(polygon) then
+		return false
+	end
+
+	return true
+end
+
 function Formex.Floors.IsValid(plot: Formex.PlotData, floor: Formex.FloorData): boolean
+	-- Full validation including plot boundaries.
 	local cleaned = Formex.Floors.CleanPolygon(floor.Points or {})
 	local count = #cleaned
 	if count < 3 or count > Formex.MaxFloorPoints then
@@ -260,170 +292,92 @@ function Formex.Floors.IsValid(plot: Formex.PlotData, floor: Formex.FloorData): 
 	return true
 end
 
-local function collectUniqueXs(points: { Vector2 }): { number }
-	local values = {}
-	for _, point in ipairs(points) do
-		local existing = nil
-		for _, value in ipairs(values) do
-			if math.abs(value - point.X) <= EPSILON then
-				existing = value
-				break
-			end
-		end
-		if not existing then
-			table.insert(values, point.X)
-		end
-	end
-	table.sort(values, function(a, b)
-		return a < b
-	end)
-	return values
-end
-
-local function buildEdges(points: { Vector2 }): { Edge }
-	local edges = {}
-	for i = 1, #points do
-		local a = points[i]
-		local b = points[(i % #points) + 1]
-		table.insert(edges, { A = a, B = b })
-	end
-	return edges
-end
-
-local function evaluateEdgeAtX(edge: Edge, x: number): number?
-	local dx = edge.B.X - edge.A.X
-	if math.abs(dx) <= EPSILON then
-		return nil
-	end
-	local t = (x - edge.A.X) / dx
-	return edge.A.Y + t * (edge.B.Y - edge.A.Y)
-end
-
-local function gatherIntersections(edges: { Edge }, x: number): { { Y: number, EdgeIndex: number } }
-	local intersections = {}
-	for index, edge in ipairs(edges) do
-		local minX = math.min(edge.A.X, edge.B.X)
-		local maxX = math.max(edge.A.X, edge.B.X)
-		if math.abs(maxX - minX) > EPSILON then
-			local crosses = (edge.A.X <= x and edge.B.X > x) or (edge.B.X <= x and edge.A.X > x)
-			if crosses then
-				local y = evaluateEdgeAtX(edge, x)
-				if y then
-					table.insert(intersections, { Y = y, EdgeIndex = index })
-				end
-			end
-		end
+local function addTriangle(triangles: { Triangle }, a: Vector2, b: Vector2, c: Vector2, maxTriangles: number): boolean
+	-- Insert a CCW triangle if it has area, while respecting the max triangle budget.
+	if #triangles >= maxTriangles then
+		return false
 	end
 
-	table.sort(intersections, function(a, b)
-		return a.Y < b.Y
-	end)
-	return intersections
-end
-
-local function addTriangle(triangles: { Triangle }, a: Vector2, b: Vector2, c: Vector2)
 	local area = cross2(b - a, c - a) / 2
 	if math.abs(area) <= EPSILON then
-		return
+		return true
 	end
 	if area < 0 then
 		b, c = c, b
 	end
 	table.insert(triangles, { a, b, c })
+	return #triangles < maxTriangles
 end
 
-local function addSpanTriangles(
-	triangles: { Triangle },
-	x0: number,
-	x1: number,
-	bottom0: number,
-	bottom1: number,
-	top0: number,
-	top1: number
-)
-	if x1 - x0 <= EPSILON then
-		return
-	end
-
-	if bottom0 < bottom1 - EPSILON then
-		addTriangle(triangles,
-			Vector2.new(x0, bottom0),
-			Vector2.new(x1, bottom1),
-			Vector2.new(x0, bottom1))
-	elseif bottom0 > bottom1 + EPSILON then
-		addTriangle(triangles,
-			Vector2.new(x1, bottom1),
-			Vector2.new(x0, bottom0),
-			Vector2.new(x1, bottom0))
-	end
-
-	if top0 > top1 + EPSILON then
-		addTriangle(triangles,
-			Vector2.new(x0, top0),
-			Vector2.new(x0, top1),
-			Vector2.new(x1, top1))
-	elseif top0 < top1 - EPSILON then
-		addTriangle(triangles,
-			Vector2.new(x1, top1),
-			Vector2.new(x1, top0),
-			Vector2.new(x0, top0))
-	end
-
-	local bottomFlat = math.max(bottom0, bottom1)
-	local topFlat = math.min(top0, top1)
-	if topFlat - bottomFlat > EPSILON then
-		addTriangle(triangles,
-			Vector2.new(x0, bottomFlat),
-			Vector2.new(x1, bottomFlat),
-			Vector2.new(x1, topFlat))
-		addTriangle(triangles,
-			Vector2.new(x0, bottomFlat),
-			Vector2.new(x1, topFlat),
-			Vector2.new(x0, topFlat))
-	end
+local function isPointInTriangle(point: Vector2, a: Vector2, b: Vector2, c: Vector2): boolean
+	local ab = cross2(b - a, point - a)
+	local bc = cross2(c - b, point - b)
+	local ca = cross2(a - c, point - c)
+	return ab >= -EPSILON and bc >= -EPSILON and ca >= -EPSILON
 end
 
-local function triangulateVerticalSlices(points: { Vector2 }): { Triangle }
+local function triangulateEarClipping(points: { Vector2int16 }, maxTriangles: number): { Triangle }
+	-- Clip convex ears until the polygon is fully triangulated.
 	if #points < 3 then
 		return {}
 	end
 
-	local xs = collectUniqueXs(points)
-	if #xs < 2 then
-		return {}
+	local polygon = toVector2Array(points)
+	if polygonArea(polygon) < 0 then
+		local reversed = table.create(#polygon)
+		for i = #polygon, 1, -1 do
+			table.insert(reversed, polygon[i])
+		end
+		polygon = reversed
 	end
 
-	local edges = buildEdges(points)
-	local triangles = {}
+	local indices = table.create(#polygon)
+	for i = 1, #polygon do
+		indices[i] = i
+	end
 
-	for i = 1, #xs - 1 do
-		local x0 = xs[i]
-		local x1 = xs[i + 1]
-		if x1 - x0 <= EPSILON then
-			continue
+	local triangles = {}
+	local guard = 0
+	local maxGuard = #polygon * #polygon
+
+	while #indices >= 3 and #triangles < maxTriangles and guard < maxGuard do
+		guard += 1
+		local earFound = false
+
+		for i = 1, #indices do
+			local prevIndex = indices[(i - 2 + #indices) % #indices + 1]
+			local currIndex = indices[i]
+			local nextIndex = indices[(i % #indices) + 1]
+
+			local a = polygon[prevIndex]
+			local b = polygon[currIndex]
+			local c = polygon[nextIndex]
+
+			if cross2(b - a, c - b) > EPSILON then
+				local hasPointInside = false
+				for j = 1, #indices do
+					local idx = indices[j]
+					if idx ~= prevIndex and idx ~= currIndex and idx ~= nextIndex then
+						if isPointInTriangle(polygon[idx], a, b, c) then
+							hasPointInside = true
+							break
+						end
+					end
+				end
+
+				if not hasPointInside then
+					if not addTriangle(triangles, a, b, c, maxTriangles) then
+						return triangles
+					end
+					table.remove(indices, i)
+					earFound = true
+					break
+				end
+			end
 		end
 
-		local sampleX = (x0 + x1) / 2
-		local intersections = gatherIntersections(edges, sampleX)
-		for j = 1, #intersections, 2 do
-			local lower = intersections[j]
-			local upper = intersections[j + 1]
-			if not upper then
-				break
-			end
-
-			local bottomEdge = edges[lower.EdgeIndex]
-			local topEdge = edges[upper.EdgeIndex]
-			local bottom0 = evaluateEdgeAtX(bottomEdge, x0) or lower.Y
-			local bottom1 = evaluateEdgeAtX(bottomEdge, x1) or lower.Y
-			local top0 = evaluateEdgeAtX(topEdge, x0) or upper.Y
-			local top1 = evaluateEdgeAtX(topEdge, x1) or upper.Y
-
-			if top0 <= bottom0 + EPSILON and top1 <= bottom1 + EPSILON then
-				continue
-			end
-
-			addSpanTriangles(triangles, x0, x1, bottom0, bottom1, top0, top1)
+		if not earFound then
+			break
 		end
 	end
 
@@ -431,40 +385,28 @@ local function triangulateVerticalSlices(points: { Vector2 }): { Triangle }
 end
 
 local function getFloorThickness(levelIndex: number): number
+	-- Floor thickness depends on whether this is the foundation level.
 	if levelIndex == 1 then
-		return Formex.SegmentSize.Foundation
+		return Formex.FoundationHeight
 	end
-	return Formex.SegmentSize.Interfloor
+	return Formex.InterfloorHeight
 end
 
 local function resolveColor(value: Color3?, fallback: Color3?): Color3
+	-- Normalize optional colors so downstream code can always use a Color3.
 	return value or fallback or Color3.new(1, 1, 1)
 end
 
 local function normalizeMaterialId(value: number?): number?
+	-- Treat 0/invalid material ids as nil.
 	if type(value) ~= "number" or value <= 0 then
 		return nil
 	end
 	return value
 end
 
-local function applyFoundationMaterial(part: BasePart, foundationMaterial: number?, foundationColor: Color3?, levelIndex: number)
-	if levelIndex == 1 then
-		Formex.Util.ApplyWallMaterial(part, foundationMaterial, foundationColor)
-	else
-		part.Material = Enum.Material.SmoothPlastic
-		part.MaterialVariant = ""
-		part.Color = Color3.new(1, 1, 1)
-	end
-end
-
-local function applyTextureOffset(plotPart: BasePart, part: BasePart, texture: Texture)
-	local localCFrame = plotPart.CFrame:ToObjectSpace(part.CFrame)
-	texture.OffsetStudsU = localCFrame.Position.X + (Formex.Dimensions.Width / 2)
-	texture.OffsetStudsV = localCFrame.Position.Z + (Formex.Dimensions.Depth / 2)
-end
-
 local function ensureFloorModel(floor: Formex.FloorData, parent: Instance?): Model
+	-- Reuse or create the floor container model for mesh parts.
 	local model = floor.Model
 	if not model or not model.Parent then
 		model = Instance.new("Model")
@@ -481,6 +423,7 @@ local function ensureFloorModel(floor: Formex.FloorData, parent: Instance?): Mod
 end
 
 local function getPlotPartFromInstance(instance: Instance?): BasePart?
+	-- Walk up the hierarchy to locate the plot root part.
 	local current = instance
 	while current do
 		if current:IsA("BasePart") and current:GetAttribute("PlotId") then
@@ -491,146 +434,310 @@ local function getPlotPartFromInstance(instance: Instance?): BasePart?
 	return nil
 end
 
-local function getExistingParts(model: Model): { Part }
-	local parts = {}
+local function ensureClientMeshFolder(model: Model): Folder
+	-- Client-only mesh parts live under a dedicated folder to avoid touching server instances.
+	local folder = model:FindFirstChild(CLIENT_MESH_FOLDER_NAME)
+	if folder and folder:IsA("Folder") then
+		return folder
+	end
+	folder = Instance.new("Folder")
+	folder.Name = CLIENT_MESH_FOLDER_NAME
+	folder.Parent = model
+	return folder
+end
+
+local function hideServerMeshes(model: Model)
 	for _, child in ipairs(model:GetChildren()) do
+		if child:IsA("MeshPart") then
+			child.LocalTransparencyModifier = 1
+		end
+	end
+end
+
+local function clearMeshParts(parent: Instance)
+	for _, child in ipairs(parent:GetChildren()) do
 		if child:IsA("BasePart") then
-			table.insert(parts, child)
+			child:Destroy()
 		end
 	end
-	table.sort(parts, function(a, b)
-		return a.Name < b.Name
-	end)
-	return parts
 end
 
-local function getTriangleLegs(triangle: Triangle): (Vector2?, Vector2?, Vector2?)
-	local vx1, vx2, vy1, vy2 = nil, nil, nil, nil
-	for i = 1, 3 do
-		for j = i + 1, 3 do
-			if math.abs(triangle[i].X - triangle[j].X) <= EPSILON then
-				vx1, vx2 = i, j
-			end
-			if math.abs(triangle[i].Y - triangle[j].Y) <= EPSILON then
-				vy1, vy2 = i, j
-			end
-		end
-	end
-
-	if not vx1 or not vx2 or not vy1 or not vy2 then
-		return nil, nil, nil
-	end
-
-	local originIndex
-	if vx1 == vy1 or vx1 == vy2 then
-		originIndex = vx1
-	elseif vx2 == vy1 or vx2 == vy2 then
-		originIndex = vx2
-	end
-
-	if not originIndex then
-		return nil, nil, nil
-	end
-
-	local verticalIndex = vx1 == originIndex and vx2 or vx1
-	local horizontalIndex = vy1 == originIndex and vy2 or vy1
-
-	local origin = triangle[originIndex]
-	local legA = triangle[horizontalIndex] - origin
-	local legB = triangle[verticalIndex] - origin
-
-	if legA.Magnitude <= EPSILON or legB.Magnitude <= EPSILON then
-		return nil, nil, nil
-	end
-
-	return origin, legA, legB
+local function applySurfaceMaterial(part: BasePart, materialId: number?, color: Color3?)
+	Formex.Util.ApplyWallMaterial(part, materialId, color)
 end
 
-local function applyTriangleToPart(
-	part: Part,
-	plotPart: BasePart,
-	origin: Vector2,
-	legA: Vector2,
-	legB: Vector2,
-	levelIndex: number,
-	index: number
+local function addFace(
+	editableMesh: EditableMesh,
+	a: Vector3,
+	b: Vector3,
+	c: Vector3,
+	normalId: number,
+	colorId: number,
+	uvA: Vector2,
+	uvB: Vector2,
+	uvC: Vector2
 )
-	local thickness = getFloorThickness(levelIndex)
-	local levelTop = Formex.LevelHeight * (levelIndex - 1)
-	local centerY = levelTop - (thickness / 2)
-
-	local center = Vector3.new(
-		origin.X + (legA.X / 2) + (legB.X / 2),
-		centerY,
-		origin.Y + (legA.Y / 2) + (legB.Y / 2)
-	)
-
-	local axisA = Vector2.new(
-		math.abs(legA.X) > EPSILON and (legA.X > 0 and 1 or -1) or 0,
-		math.abs(legA.Y) > EPSILON and (legA.Y > 0 and 1 or -1) or 0
-	)
-	local axisB = Vector2.new(
-		math.abs(legB.X) > EPSILON and (legB.X > 0 and 1 or -1) or 0,
-		math.abs(legB.Y) > EPSILON and (legB.Y > 0 and 1 or -1) or 0
-	)
-
-	local yAxis = Vector3.new(axisA.X, 0, axisA.Y)
-	local zAxis = Vector3.new(-axisB.X, 0, -axisB.Y)
-	local xAxis = yAxis:Cross(zAxis)
-	if xAxis.Magnitude <= EPSILON then
-		xAxis = Vector3.new(0, 1, 0)
-	else
-		xAxis = xAxis.Unit
-	end
-
-	part.Shape = Enum.PartType.Wedge
-	part.Name = tostring(index)
-	part.Anchored = true
-	part.CollisionGroup = Formex.CollisionGroup.Structure
-	part.Size = Vector3.new(thickness, math.abs(legA.Magnitude), math.abs(legB.Magnitude))
-	part.CFrame = plotPart.CFrame * CFrame.fromMatrix(center, xAxis, yAxis, zAxis)
+	local vA = editableMesh:AddVertex(a)
+	local vB = editableMesh:AddVertex(b)
+	local vC = editableMesh:AddVertex(c)
+	local faceId = editableMesh:AddTriangle(vA, vB, vC)
+	editableMesh:SetFaceNormals(faceId, { normalId, normalId, normalId })
+	local uvIdA = editableMesh:AddUV(uvA)
+	local uvIdB = editableMesh:AddUV(uvB)
+	local uvIdC = editableMesh:AddUV(uvC)
+	editableMesh:SetFaceUVs(faceId, { uvIdA, uvIdB, uvIdC })
+	editableMesh:SetFaceColors(faceId, { colorId, colorId, colorId })
 end
 
-local function updateTextures(
-	part: Part,
+local function appendTopFaces(editableMesh: EditableMesh, triangles: { Triangle }, y: number, uvScale: number): number
+	local normalId = editableMesh:AddNormal(Vector3.new(0, 1, 0))
+	local colorId = editableMesh:AddColor(Color3.new(1, 1, 1), 1)
+	local faceCount = 0
+
+	for _, triangle in ipairs(triangles) do
+		local a = triangle[1]
+		local b = triangle[2]
+		local c = triangle[3]
+		local posA = Vector3.new(a.X, y, a.Y)
+		local posB = Vector3.new(b.X, y, b.Y)
+		local posC = Vector3.new(c.X, y, c.Y)
+		local uvA = Vector2.new(a.X / uvScale, a.Y / uvScale)
+		local uvB = Vector2.new(b.X / uvScale, b.Y / uvScale)
+		local uvC = Vector2.new(c.X / uvScale, c.Y / uvScale)
+		addFace(editableMesh, posA, posC, posB, normalId, colorId, uvA, uvC, uvB)
+		faceCount += 1
+	end
+
+	return faceCount
+end
+
+local function appendBottomFaces(editableMesh: EditableMesh, triangles: { Triangle }, y: number, uvScale: number): number
+	local normalId = editableMesh:AddNormal(Vector3.new(0, -1, 0))
+	local colorId = editableMesh:AddColor(Color3.new(1, 1, 1), 1)
+	local faceCount = 0
+
+	for _, triangle in ipairs(triangles) do
+		local a = triangle[1]
+		local b = triangle[2]
+		local c = triangle[3]
+		local posA = Vector3.new(a.X, y, a.Y)
+		local posB = Vector3.new(b.X, y, b.Y)
+		local posC = Vector3.new(c.X, y, c.Y)
+		local uvA = Vector2.new(a.X / uvScale, a.Y / uvScale)
+		local uvB = Vector2.new(b.X / uvScale, b.Y / uvScale)
+		local uvC = Vector2.new(c.X / uvScale, c.Y / uvScale)
+		addFace(editableMesh, posA, posB, posC, normalId, colorId, uvA, uvB, uvC)
+		faceCount += 1
+	end
+
+	return faceCount
+end
+
+local function appendSideFaces(editableMesh: EditableMesh, points: { Vector2int16 }, yTop: number, yBottom: number, uvScale: number): number
+	local colorId = editableMesh:AddColor(Color3.new(1, 1, 1), 1)
+	local faceCount = 0
+	local thickness = math.abs(yTop - yBottom)
+
+	for i = 1, #points do
+		local startPoint = points[i]
+		local endPoint = points[(i % #points) + 1]
+		local dx = endPoint.X - startPoint.X
+		local dz = endPoint.Y - startPoint.Y
+		local length = math.sqrt((dx * dx) + (dz * dz))
+		if length <= EPSILON then
+			continue
+		end
+
+		local normal = Vector3.new(dz, 0, -dx)
+		if normal.Magnitude <= EPSILON then
+			continue
+		end
+		local normalId = editableMesh:AddNormal(normal.Unit)
+
+		local u1 = length / uvScale
+		local v1 = thickness / uvScale
+
+		local topA = Vector3.new(startPoint.X, yTop, startPoint.Y)
+		local topB = Vector3.new(endPoint.X, yTop, endPoint.Y)
+		local bottomB = Vector3.new(endPoint.X, yBottom, endPoint.Y)
+		local bottomA = Vector3.new(startPoint.X, yBottom, startPoint.Y)
+
+		addFace(
+			editableMesh,
+			topA,
+			topB,
+			bottomB,
+			normalId,
+			colorId,
+			Vector2.new(0, 0),
+			Vector2.new(u1, 0),
+			Vector2.new(u1, v1)
+		)
+		addFace(
+			editableMesh,
+			topA,
+			bottomB,
+			bottomA,
+			normalId,
+			colorId,
+			Vector2.new(0, 0),
+			Vector2.new(u1, v1),
+			Vector2.new(0, v1)
+		)
+		faceCount += 2
+	end
+
+	return faceCount
+end
+
+local function createMeshPart(
+	name: string,
 	plotPart: BasePart,
+	parent: Instance,
+	canCollide: boolean,
+	canQuery: boolean,
+	buildFaces: (EditableMesh) -> number
+): MeshPart?
+	local editableMesh = AssetService:CreateEditableMesh()
+	local faceCount = buildFaces(editableMesh)
+	if faceCount <= 0 then
+		editableMesh:Destroy()
+		return nil
+	end
+
+	editableMesh:RemoveUnused()
+	local fixedSizeMesh = AssetService:CreateEditableMeshAsync(Content.fromObject(editableMesh), { FixedSize = true })
+	editableMesh:Destroy()
+
+	local meshPart = AssetService:CreateMeshPartAsync(
+		Content.fromObject(fixedSizeMesh),
+		{ CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition }
+	)
+
+	meshPart.Name = name
+	meshPart.Anchored = true
+	meshPart.CanCollide = canCollide
+	meshPart.CanQuery = canQuery
+	meshPart.CanTouch = canCollide
+	if canCollide then
+		meshPart.CollisionGroup = Formex.CollisionGroup.Structure
+	end
+	meshPart.CFrame = plotPart.CFrame
+	meshPart.Parent = parent
+	meshPart.Destroying:Connect(function()
+		fixedSizeMesh:Destroy()
+		print("Destroyed mesh part and its mesh asset.", name, parent.Name, parent.Parent and parent.Parent.Name)
+	end)
+	return meshPart
+end
+
+local function applyMeshMaterials(
+	parent: Instance,
+	levelIndex: number,
+	floorMaterial: number?,
+	ceilingMaterial: number?,
+	foundationMaterial: number?,
+	floorColor: Color3,
+	ceilingColor: Color3,
+	foundationColor: Color3
+)
+	local floorPart = parent:FindFirstChild(MESH_PART_NAMES.Floor)
+	if floorPart and floorPart:IsA("BasePart") then
+		applySurfaceMaterial(floorPart, floorMaterial, floorColor)
+	end
+
+	local foundationPart = parent:FindFirstChild(MESH_PART_NAMES.Foundation)
+	if foundationPart and foundationPart:IsA("BasePart") then
+		applySurfaceMaterial(foundationPart, foundationMaterial, foundationColor)
+	end
+
+	local ceilingPart = parent:FindFirstChild(MESH_PART_NAMES.Ceiling)
+	if levelIndex == 1 then
+		if ceilingPart and ceilingPart:IsA("BasePart") then
+			ceilingPart:Destroy()
+		end
+	elseif ceilingPart and ceilingPart:IsA("BasePart") then
+		applySurfaceMaterial(ceilingPart, ceilingMaterial, ceilingColor)
+	end
+end
+
+local function buildSurfaceMeshes(
+	parent: Instance,
+	plotPart: BasePart,
+	points: { Vector2int16 },
+	triangles: { Triangle },
+	levelIndex: number,
 	floorMaterial: number?,
 	ceilingMaterial: number?,
 	foundationMaterial: number?,
 	floorColor: Color3,
 	ceilingColor: Color3,
 	foundationColor: Color3,
-	levelIndex: number
+	canCollide: boolean,
+	canQuery: boolean
 )
-	applyFoundationMaterial(part, foundationMaterial, foundationColor, levelIndex)
+	clearMeshParts(parent)
 
-	local floorFace = Enum.NormalId.Left
-	local ceilingFace = Enum.NormalId.Right
-	if part.CFrame.RightVector.Y > 0 then
-		floorFace = Enum.NormalId.Right
-		ceilingFace = Enum.NormalId.Left
+	local thickness = getFloorThickness(levelIndex)
+	local levelTop = Formex.LevelHeight * (levelIndex - 1)
+	local yTop = levelTop
+	local yBottom = levelTop - thickness
+
+	local floorPart = createMeshPart(
+		MESH_PART_NAMES.Floor,
+		plotPart,
+		parent,
+		canCollide,
+		canQuery,
+		function(editableMesh)
+			return appendTopFaces(editableMesh, triangles, yTop, SURFACE_UV_SCALE)
+		end
+	)
+	if floorPart then
+		applySurfaceMaterial(floorPart, floorMaterial, floorColor)
 	end
 
-	local floorTexture = Formex.Util.EnsureTexture(part, "Floor", floorFace)
-	local ceilingTexture = Formex.Util.EnsureTexture(part, "Ceiling", ceilingFace)
+	local foundationPart = createMeshPart(
+		MESH_PART_NAMES.Foundation,
+		plotPart,
+		parent,
+		canCollide,
+		canQuery,
+		function(editableMesh)
+			return appendSideFaces(editableMesh, points, yTop, yBottom, SURFACE_UV_SCALE)
+		end
+	)
+	if foundationPart then
+		applySurfaceMaterial(foundationPart, foundationMaterial, foundationColor)
+	end
 
-	Formex.UpdateTexture(part, floorTexture, floorMaterial, floorColor)
-	Formex.UpdateTexture(part, ceilingTexture, ceilingMaterial, ceilingColor)
-	applyTextureOffset(plotPart, part, floorTexture)
-	applyTextureOffset(plotPart, part, ceilingTexture)
+	if levelIndex > 1 then
+		local ceilingPart = createMeshPart(
+			MESH_PART_NAMES.Ceiling,
+			plotPart,
+			parent,
+			canCollide,
+			canQuery,
+			function(editableMesh)
+				return appendBottomFaces(editableMesh, triangles, yBottom, SURFACE_UV_SCALE)
+			end
+		)
+		if ceilingPart then
+			applySurfaceMaterial(ceilingPart, ceilingMaterial, ceilingColor)
+		end
+	end
 end
 
 local function buildTriangles(points: { Vector2int16 }): { Triangle }
-	local cleaned = Formex.Floors.CleanPolygon(points)
-	if #cleaned < 3 then
+	-- Convert the polygon into triangles for mesh surfaces.
+	if #points < 3 then
 		return {}
 	end
 
-	local polygon = toVector2Array(cleaned)
-	return triangulateVerticalSlices(polygon)
+	return triangulateEarClipping(points, MAX_TRIANGLES)
 end
 
-local function applyFloorAttributes(model: Model, floor: Formex.FloorData)
+local function resolveFloorAppearance(floor: Formex.FloorData)
 	local floorMaterial = normalizeMaterialId(floor.FloorMaterial) or Formex.DefaultFloorMaterial
 	local ceilingMaterial = normalizeMaterialId(floor.CeilingMaterial) or floorMaterial
 	local foundationMaterial = normalizeMaterialId(floor.FoundationMaterial) or Formex.DefaultFoundationMaterial
@@ -638,6 +745,70 @@ local function applyFloorAttributes(model: Model, floor: Formex.FloorData)
 	local floorColor = resolveColor(floor.FloorColor, nil)
 	local ceilingColor = resolveColor(floor.CeilingColor, floorColor)
 	local foundationColor = resolveColor(floor.FoundationColor, floorColor)
+
+	return floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor
+end
+
+type AppearanceAttributes = {
+	FloorMaterial: number?,
+	CeilingMaterial: number?,
+	FoundationMaterial: number?,
+	FloorColor: Color3?,
+	CeilingColor: Color3?,
+	FoundationColor: Color3?,
+}
+
+local function readFloorAppearanceAttributes(model: Model): AppearanceAttributes
+	return {
+		FloorMaterial = model:GetAttribute("FloorMaterial"),
+		CeilingMaterial = model:GetAttribute("CeilingMaterial"),
+		FoundationMaterial = model:GetAttribute("FoundationMaterial"),
+		FloorColor = model:GetAttribute("FloorColor"),
+		CeilingColor = model:GetAttribute("CeilingColor"),
+		FoundationColor = model:GetAttribute("FoundationColor"),
+	}
+end
+
+local function resolveFloorAppearanceFromAttributes(attributes: AppearanceAttributes)
+	local floorMaterial = normalizeMaterialId(attributes.FloorMaterial) or Formex.DefaultFloorMaterial
+	local ceilingMaterial = normalizeMaterialId(attributes.CeilingMaterial) or floorMaterial
+	local foundationMaterial = normalizeMaterialId(attributes.FoundationMaterial) or Formex.DefaultFoundationMaterial
+
+	local floorColor = resolveColor(attributes.FloorColor, nil)
+	local ceilingColor = resolveColor(attributes.CeilingColor, floorColor)
+	local foundationColor = resolveColor(attributes.FoundationColor, floorColor)
+
+	return floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor
+end
+
+local function getLevelIndexFromModel(model: Model): number
+	local parent = model.Parent
+	if parent and parent.Parent and parent.Parent:IsA("BasePart") then
+		return tonumber(parent.Parent.Name) or 1
+	end
+	return 1
+end
+
+local function buildFloorDataFromAttributes(model: Model): Formex.FloorData
+	local points = Formex.DecodeFloorPoints(model:GetAttribute("Points"))
+	return {
+		FloorId = tonumber(model.Name) or 0,
+		LevelIndex = getLevelIndexFromModel(model),
+		Points = points,
+		FloorMaterial = model:GetAttribute("FloorMaterial"),
+		CeilingMaterial = model:GetAttribute("CeilingMaterial"),
+		FoundationMaterial = model:GetAttribute("FoundationMaterial"),
+		FloorColor = model:GetAttribute("FloorColor"),
+		CeilingColor = model:GetAttribute("CeilingColor"),
+		FoundationColor = model:GetAttribute("FoundationColor"),
+		Model = model,
+	}
+end
+
+local function applyFloorAttributes(model: Model, floor: Formex.FloorData)
+	-- Store material/color attributes for selection and serialization.
+	local floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor =
+		resolveFloorAppearance(floor)
 
 	model:SetAttribute("FloorMaterial", floorMaterial)
 	model:SetAttribute("CeilingMaterial", ceilingMaterial)
@@ -651,11 +822,13 @@ local function applyFloorAttributes(model: Model, floor: Formex.FloorData)
 end
 
 local function ensureValidShape(plot: Formex.PlotData?, floor: Formex.FloorData, cleaned: { Vector2int16 }): { Vector2int16 }
-	if not plot then
-		return cleaned
+	-- Ensure points are valid or fall back to a bounds rectangle.
+	local isValid = isPolygonValid(cleaned)
+	if isValid and plot then
+		isValid = Formex.Floors.IsValid(plot, { Points = cleaned } :: any)
 	end
 
-	if Formex.Floors.IsValid(plot, { Points = cleaned } :: any) then
+	if isValid then
 		return cleaned
 	end
 
@@ -673,6 +846,7 @@ function Formex.Floors.Edit(
 	parentOverride: Instance?,
 	plotData: Formex.PlotData?
 ): Model?
+	-- Main entry point to create/update floor mesh parts in-place.
 	if not floor or not floor.Points then
 		return nil
 	end
@@ -685,37 +859,134 @@ function Formex.Floors.Edit(
 
 	local model = ensureFloorModel(floor, parent)
 	model.Name = tostring(floor.FloorId)
+	local previousPointsKey = model:GetAttribute("Points") or ""
 
 	local cleaned = Formex.Floors.CleanPolygon(floor.Points)
 	local usablePoints = ensureValidShape(plotData, floor, cleaned)
+
+	applyFloorAttributes(model, floor)
+	local pointsKey = model:GetAttribute("Points") or ""
+	local floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor =
+		resolveFloorAppearanceFromAttributes(readFloorAppearanceAttributes(model))
+	local levelIndex = floor.LevelIndex or 1
+
 	if #usablePoints < 3 then
-		for _, leftover in ipairs(getExistingParts(model)) do
-			leftover:Destroy()
-		end
+		clearMeshParts(model)
 		return model
 	end
 
-	local floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor =
-		applyFloorAttributes(model, floor)
+	local geometryChanged = pointsKey ~= previousPointsKey
+	local floorPart = model:FindFirstChild(MESH_PART_NAMES.Floor)
+	local hasGeometry = floorPart ~= nil and floorPart:IsA("BasePart")
+	if not geometryChanged and hasGeometry then
+		applyMeshMaterials(
+			model,
+			levelIndex,
+			floorMaterial,
+			ceilingMaterial,
+			foundationMaterial,
+			floorColor,
+			ceilingColor,
+			foundationColor
+		)
+		return model
+	end
 
 	local triangles = buildTriangles(usablePoints)
-	local existing = getExistingParts(model)
-
-	for index, triangle in ipairs(triangles) do
-		local origin, legA, legB = getTriangleLegs(triangle)
-		if origin and legA and legB then
-			local part = table.remove(existing, 1) or Instance.new("Part")
-			part.Parent = model
-			applyTriangleToPart(part, plotPart, origin, legA, legB, floor.LevelIndex, index)
-			updateTextures(part, plotPart, floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor, floor.LevelIndex)
-		end
-	end
-
-	for _, leftover in ipairs(existing) do
-		leftover:Destroy()
-	end
+	buildSurfaceMeshes(
+		model,
+		plotPart,
+		usablePoints,
+		triangles,
+		levelIndex,
+		floorMaterial,
+		ceilingMaterial,
+		foundationMaterial,
+		floorColor,
+		ceilingColor,
+		foundationColor,
+		true,
+		true
+	)
 
 	return model
+end
+
+function Formex.Floors.RenderClientMeshes(model: Model, plotPartOverride: BasePart?): Model?
+	if not model or not model:IsA("Model") then
+		return nil
+	end
+
+	local plotPart = plotPartOverride or getPlotPartFromInstance(model)
+	if not plotPart then
+		return nil
+	end
+
+	local meshParent = ensureClientMeshFolder(model)
+	hideServerMeshes(model)
+
+	local floorData = buildFloorDataFromAttributes(model)
+	local cleaned = Formex.Floors.CleanPolygon(floorData.Points)
+	local usablePoints = ensureValidShape(nil, floorData, cleaned)
+	local levelIndex = getLevelIndexFromModel(model)
+	local floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor =
+		resolveFloorAppearanceFromAttributes(readFloorAppearanceAttributes(model))
+
+	if #usablePoints < 3 then
+		clearMeshParts(meshParent)
+		return model
+	end
+
+	local triangles = buildTriangles(usablePoints)
+	buildSurfaceMeshes(
+		meshParent,
+		plotPart,
+		usablePoints,
+		triangles,
+		levelIndex,
+		floorMaterial,
+		ceilingMaterial,
+		foundationMaterial,
+		floorColor,
+		ceilingColor,
+		foundationColor,
+		false,
+		true
+	)
+
+	return model
+end
+
+function Formex.Floors.ApplyClientMaterials(model: Model)
+	local meshParent = model:FindFirstChild(CLIENT_MESH_FOLDER_NAME)
+	if not (meshParent and meshParent:IsA("Folder")) then
+		return
+	end
+
+	local floorData = buildFloorDataFromAttributes(model)
+	local floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor =
+		applyFloorAttributes(model, floorData)
+	local levelIndex = floorData.LevelIndex or getLevelIndexFromModel(model)
+	applyMeshMaterials(
+		meshParent,
+		levelIndex,
+		floorMaterial,
+		ceilingMaterial,
+		foundationMaterial,
+		floorColor,
+		ceilingColor,
+		foundationColor
+	)
+end
+
+function Formex.Floors.DestroyClientMeshes(model: Model)
+	if not model or model.Parent == nil then
+		return
+	end
+	local folder = model:FindFirstChild(CLIENT_MESH_FOLDER_NAME)
+	if folder and folder:IsA("Folder") then
+		folder:Destroy()
+	end
 end
 
 function Formex.Floors.Create(
@@ -724,6 +995,7 @@ function Formex.Floors.Create(
 	parentOverride: Instance?,
 	plotData: Formex.PlotData?
 ): Model?
+	-- Create is currently an alias to Edit to reuse mesh generation logic.
 	if not floor or not floor.Points then
 		return nil
 	end

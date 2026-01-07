@@ -2,29 +2,6 @@
 
 local Formex = require(script.Parent:FindFirstChild("Formex"))
 
-Formex.Materials = { -- Deprecated: use WallMaterials/FloorMaterials instead.
-	{
-		Name = "Structure",
-		Material = Enum.Material.Wood,
-		StudsPerTile = 4,
-		AssetId = 10536172711,
-	},
-	{
-		Name = "Checked Tile",
-		Material = Enum.Material.CeramicTiles,
-		AssetId = 10536172734,
-		StudsPerTile = 8,
-		Categories = { "Floor", "Wall", "Ceiling" }
-	},
-	{
-		Name = "Beige Tile",
-		Material = Enum.Material.CeramicTiles,
-		AssetId = 125491924817688,
-		StudsPerTile = 4,
-		Categories = { "Floor" }
-	}
-} :: {number: Formex.MaterialInfo}
-
 -- Represented as Part.MaterialVariant
 Formex.WallMaterials = {
 	{
@@ -140,6 +117,7 @@ Formex.Icons = { -- Content.fromAssetId(...)
 	Confirm = 116875236311469,
 	Cancel = 92308571652477,
     Refresh = 123101975679190,
+	DirectionIndicator = 81358910239829,
     AddItem = 128647721275129,
     MoveItem = 83970836971222,
 	RotateItem = 101431557821612,
@@ -154,6 +132,7 @@ Formex.Icons = { -- Content.fromAssetId(...)
     PlotRelease = 137711830774408,
     PlotPermissions = 83277863761797,
     DesignStart = 78727585562674,
+	DesignSelect = 129357891944983,
     DesignFurniture = 120639802680464,
     DesignCeilings = 86944909652185,
     DesignFloors = 136537860205120,
