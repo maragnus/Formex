@@ -1189,7 +1189,7 @@ function Walls.HandlePrimaryClick(input: any)
 			return
 		end
 
-		if hadSelection then
+		if getSelectionType() ~= Enums.SelectionType.None then
 			clearSelection()
 		else
 			Walls.StartWall()

@@ -19,6 +19,8 @@ Do not use `pcall`. While developing, errors need to propogate normally to find 
 - A **Save Slot** defines the building on a plot. If no **Save** is loaded, then the PlotPlaceholder is empty and cannot be updating until a **Save** is loaded or new one is created.
 - Implement with an emphasis on KISS and DRY principals. 
 - Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
+- Implement with an emphasis on KISS and DRY principals. 
+- Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
 
 ## Ideal flow
 
@@ -75,6 +77,9 @@ Always update `FormexSerialization.luau` when changing `Formex.PlotData`, `Forme
   - `Formex.Floors` is provided by `FormexFloors.luau` for created, updating, and validating floors
   - `Formex.Plot` is provided by `FormexPlot.luau` for maintaining the plot itself
   - `Formex.Serialization` is provided by `FormexSerialization.luau` is responsible for the save format of `Formex.PlotData`
+
+## Modules
+- `Formex` is the shared interface between client and server
 
 ### Server-side
 - `FormexSystem`: manage core plot ownership and common systems

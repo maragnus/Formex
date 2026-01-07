@@ -596,6 +596,11 @@ function Floors.HandlePrimaryClick(input: any)
 			return
 		end
 
+		if hadSelection then
+			clearSelection()
+			return
+		end
+
 		if input.LayoutTile then
 			createFloorFromTile(input.PlotInfo, input.LayoutTile)
 		end
