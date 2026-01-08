@@ -150,8 +150,7 @@ end)
 
 createButton("Delete", "Delete", nil, function()
     local mode = FormexDesign.GetDesignMode()
-    if mode == FormexDesign.DesignMode.Floor
-    or mode == FormexDesign.DesignMode.Ceiling then
+    if mode == FormexDesign.DesignMode.Floor then
         FormexDesign.SetFloorMaterial(0)
         return
     end

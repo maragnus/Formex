@@ -46,14 +46,13 @@ type ViewSettings = {
 	ShowOtherLevels: boolean,
 }
 
-export type DesignMode = "Play" | "Design" | "Select" | "Expand" | "Floor" | "Ceiling" | "Wall" | "Object" | "Paint"
+export type DesignMode = "Play" | "Design" | "Select" | "Expand" | "Floor" | "Wall" | "Object" | "Paint"
 FormexDesign.DesignMode = table.freeze({
 	Play = "Play",
 	Design = "Design",
 	Select = "Select",
 	Expand = "Expand",
 	Floor = "Floor",
-	Ceiling = "Ceiling",
 	Wall = "Wall",
 	Object = "Object",
 	Paint = "Paint"
@@ -431,14 +430,6 @@ local designModeViewSettings: {DesignMode: ViewSettings} = {
 		HandleLocation = FormexDesign.HandleLocation.Bottom,
 		CameraMode = FormexCamera.CameraMode.TopDown,
 		WallMode = FormexDesign.WallMode.Half,
-		ShowSegments = false,
-		ShowGrid = true,
-		ShowOtherLevels = false
-	},
-	Ceiling = {
-		HandleLocation = FormexDesign.HandleLocation.Middle,
-		CameraMode = FormexCamera.CameraMode.BottomUp,
-		WallMode = FormexDesign.WallMode.Full,
 		ShowSegments = false,
 		ShowGrid = true,
 		ShowOtherLevels = false
@@ -882,8 +873,7 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Ins
 
 	local useGridSegmentsOnly = actionType == FormexDesign.ActionType.Move
 		and (designMode == FormexDesign.DesignMode.Wall
-			or designMode == FormexDesign.DesignMode.Floor
-			or designMode == FormexDesign.DesignMode.Ceiling)
+			or designMode == FormexDesign.DesignMode.Floor)
 
 	if useGridSegmentsOnly then
 		local gridSegments = {}
@@ -1160,9 +1150,6 @@ local allowedSelectionByMode = {
 	[FormexDesign.DesignMode.Floor] = {
 		[FormexDesign.SelectionType.Floor] = true,
 	},
-	[FormexDesign.DesignMode.Ceiling] = {
-		[FormexDesign.SelectionType.Floor] = true,
-	},
 	[FormexDesign.DesignMode.Object] = {
 		[FormexDesign.SelectionType.Object] = true,
 	},
@@ -1356,7 +1343,7 @@ local function handleUpdate()
 		if Walls then
 			Walls.HandleUpdate(input)
 		end
-	elseif designMode == FormexDesign.DesignMode.Floor or designMode == FormexDesign.DesignMode.Ceiling then
+	elseif designMode == FormexDesign.DesignMode.Floor then
 		if Floors then
 			Floors.HandleUpdate(input)
 		end
@@ -1375,7 +1362,7 @@ local function handlePrimaryRelease()
 		if Walls then
 			Walls.HandlePrimaryRelease(input)
 		end
-	elseif designMode == FormexDesign.DesignMode.Floor or designMode == FormexDesign.DesignMode.Ceiling then
+	elseif designMode == FormexDesign.DesignMode.Floor then
 		if Floors then
 			Floors.HandlePrimaryRelease(input)
 		end
@@ -1413,7 +1400,7 @@ local function handlePrimaryClick()
 		if Walls then
 			Walls.HandlePrimaryClick(input)
 		end
-	elseif designMode == FormexDesign.DesignMode.Floor or designMode == FormexDesign.DesignMode.Ceiling then
+	elseif designMode == FormexDesign.DesignMode.Floor then
 		if Floors then
 			Floors.HandlePrimaryClick(input)
 		end

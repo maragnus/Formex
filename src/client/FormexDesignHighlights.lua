@@ -63,7 +63,7 @@ function FormexDesignHighlights.UpdateSelectionHighlight()
 		local designMode = getDesignMode()
 		if designMode == Enums.DesignMode.Wall then
 			highlightEnabled = ENABLE_WALL_SELECTION_HIGHLIGHT
-		elseif designMode == Enums.DesignMode.Floor or designMode == Enums.DesignMode.Ceiling then
+		elseif designMode == Enums.DesignMode.Floor then
 			highlightEnabled = ENABLE_FLOOR_SELECTION_HIGHLIGHT
 		end
 	end

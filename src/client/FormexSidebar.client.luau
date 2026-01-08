@@ -805,26 +805,23 @@ local function buildSidebar()
     modeRowLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
     modeRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 
-    local designModeButtons = {
-        Select = createIconButton(modeRow, "Select", Formex.Icons.DesignSelect, function()
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Select)
-        end),
-        Wall = createIconButton(modeRow, "Wall", Formex.Icons.DesignWalls, function()
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Wall)
-        end),
-        Floor = createIconButton(modeRow, "Floor", Formex.Icons.DesignFloors, function()
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Floor)
-        end),
-        Ceiling = createIconButton(modeRow, "Ceiling", Formex.Icons.DesignCeilings, function()
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Ceiling)
-        end),
-        Object = createIconButton(modeRow, "Object", Formex.Icons.DesignFurniture, function()
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Object)
-        end),
-        Paint = createIconButton(modeRow, "Paint", Formex.Icons.DesignPaint, function()
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Paint)
-        end),
-    }
+	local designModeButtons = {
+		Select = createIconButton(modeRow, "Select", Formex.Icons.DesignSelect, function()
+			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Select)
+		end),
+		Wall = createIconButton(modeRow, "Wall", Formex.Icons.DesignWalls, function()
+			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Wall)
+		end),
+		Floor = createIconButton(modeRow, "Floor", Formex.Icons.DesignFloors, function()
+			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Floor)
+		end),
+		Object = createIconButton(modeRow, "Object", Formex.Icons.DesignFurniture, function()
+			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Object)
+		end),
+		Paint = createIconButton(modeRow, "Paint", Formex.Icons.DesignPaint, function()
+			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Paint)
+		end),
+	}
 
     local undoRow = Instance.new("Frame", designControls)
     undoRow.Name = "UndoRedo"
@@ -1142,35 +1139,6 @@ local function buildSidebar()
         end,
     })
 
-    local ceilingContent = Instance.new("Frame", designContentCard)
-    ceilingContent.Name = "CeilingContent"
-    ceilingContent.BackgroundTransparency = 1
-    ceilingContent.Size = UDim2.new(1, 0, 0, 0)
-    ceilingContent.AutomaticSize = Enum.AutomaticSize.Y
-
-    local ceilingLayout = Instance.new("UIListLayout", ceilingContent)
-    ceilingLayout.FillDirection = Enum.FillDirection.Vertical
-    ceilingLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    ceilingLayout.Padding = UDim.new(0, 8)
-
-    local ceilingRow = createMaterialColorRow({
-        Parent = ceilingContent,
-        Name = "CeilingRow",
-        MaterialLabel = "Ceiling material",
-        PartType = Formex.PartType.Ceiling,
-        MaterialValue = FormexDesign.GetCeilingMaterial(),
-        ColorValue = FormexDesign.GetCeilingColor(),
-        OnMaterialChanged = function(materialId)
-            FormexDesign.SetCeilingMaterial(materialId or Formex.DefaultCeilingMaterial)
-        end,
-        OnColorChanged = function(color)
-            if suppressFloorInputs then
-                return
-            end
-            FormexDesign.SetCeilingColor(color or Color3.new(1, 1, 1))
-        end,
-    })
-
     local objectContent = Instance.new("Frame", designContentCard)
     objectContent.Name = "ObjectContent"
     objectContent.BackgroundTransparency = 1
@@ -1261,18 +1229,14 @@ local function buildSidebar()
     ui.WallFrontTopColorSelect = wallFrontTopRow.Color
     ui.WallBackBottomColorSelect = wallBackBottomRow.Color
     ui.WallBackTopColorSelect = wallBackTopRow.Color
-    ui.FloorContent = floorContent
-    ui.FloorRow = floorRow.Row
-    ui.FloorSelect = floorRow.Material
-    ui.FloorColorSelect = floorRow.Color
-    ui.FloorRaiseSlider = floorRaiseSlider
-    ui.CeilingContent = ceilingContent
-    ui.CeilingRow = ceilingRow.Row
-    ui.CeilingSelect = ceilingRow.Material
-    ui.CeilingColorSelect = ceilingRow.Color
-    ui.FoundationRow = foundationRow.Row
-    ui.FoundationSelect = foundationRow.Material
-    ui.FoundationColorSelect = foundationRow.Color
+	ui.FloorContent = floorContent
+	ui.FloorRow = floorRow.Row
+	ui.FloorSelect = floorRow.Material
+	ui.FloorColorSelect = floorRow.Color
+	ui.FloorRaiseSlider = floorRaiseSlider
+	ui.FoundationRow = foundationRow.Row
+	ui.FoundationSelect = foundationRow.Material
+	ui.FoundationColorSelect = foundationRow.Color
     ui.ObjectContent = objectContent
     ui.PaintContent = paintContent
 
@@ -1333,7 +1297,6 @@ local function refreshUI()
 
     setIconButtonActive(ui.DesignModeButtons.Wall, designMode == FormexDesign.DesignMode.Wall)
     setIconButtonActive(ui.DesignModeButtons.Floor, designMode == FormexDesign.DesignMode.Floor)
-    setIconButtonActive(ui.DesignModeButtons.Ceiling, designMode == FormexDesign.DesignMode.Ceiling)
     setIconButtonActive(ui.DesignModeButtons.Object, designMode == FormexDesign.DesignMode.Object)
     setIconButtonActive(ui.DesignModeButtons.Paint, designMode == FormexDesign.DesignMode.Paint)
     setIconButtonActive(ui.DesignModeButtons.Select, designMode == FormexDesign.DesignMode.Select)
@@ -1378,15 +1341,12 @@ local function refreshUI()
     suppressWallInputs = false
 
     local currentFloorMaterial = FormexDesign.GetFloorMaterial()
-    local currentCeilingMaterial = FormexDesign.GetCeilingMaterial()
     local currentFoundationMaterial = FormexDesign.GetFoundationMaterial()
     floorRaiseHeightValue = FormexDesign.GetFloorRaiseHeight()
     ui.FloorSelect.SetSelected(currentFloorMaterial)
-    ui.CeilingSelect.SetSelected(currentCeilingMaterial)
     ui.FoundationSelect.SetSelected(currentFoundationMaterial)
     suppressFloorInputs = true
     ui.FloorColorSelect.SetSelected(FormexDesign.GetFloorColor())
-    ui.CeilingColorSelect.SetSelected(FormexDesign.GetCeilingColor())
     ui.FoundationColorSelect.SetSelected(FormexDesign.GetFoundationColor())
     if ui.FloorRaiseSlider then
         ui.FloorRaiseSlider.SetValue(floorRaiseHeightValue)
@@ -1395,7 +1355,6 @@ local function refreshUI()
 
     ui.WallContent.Visible = false
     ui.FloorContent.Visible = false
-    ui.CeilingContent.Visible = false
     ui.ObjectContent.Visible = false
     ui.PaintContent.Visible = false
     ui.DesignContentHint.Visible = false
@@ -1410,9 +1369,6 @@ local function refreshUI()
     elseif designMode == FormexDesign.DesignMode.Floor then
         ui.DesignContentTitle.Text = "Floor Materials"
         ui.FloorContent.Visible = true
-    elseif designMode == FormexDesign.DesignMode.Ceiling then
-        ui.DesignContentTitle.Text = "Ceiling Materials"
-        ui.CeilingContent.Visible = true
     elseif designMode == FormexDesign.DesignMode.Object then
         ui.DesignContentTitle.Text = "Objects"
         ui.ObjectContent.Visible = true
