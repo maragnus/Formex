@@ -69,6 +69,24 @@ Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Cont
 `imageLabel.ImageContent = Content.fromAssetId(assetId: number)`
 - `Texture`: `texture.ColorMapContent = Content.fromAssetId(assetId: number)` 
 
+## Paint/Dropper Behavior
+
+- Paint and Dropper are sub-modes only for Wall, Floor, and Object design modes.
+- While in Paint or Dropper, primary clicks never select or start build actions; they only attempt paint or dropper.
+- Dropper:
+  - Walls: copy wall height plus the clicked side's split height, top/bottom material, and top/bottom color into wall paint settings.
+  - Floors: copy raise height, floor/ceiling/foundation materials, and colors into floor paint settings.
+  - After a successful drop, switch to Paint unless AltMode is holding Dropper.
+- Paint:
+  - Walls: apply paint settings to the clicked side only; apply height to the whole wall; never change paint settings.
+  - Floors: apply paint settings to the clicked floor; never change paint settings.
+- Wall side detection comes from the clicked surface (front/back parts or hit position); no wall-side state is stored.
+- AltMode:
+  - Holding Alt while in Normal or Paint forces Dropper mode.
+  - While Alt is held, Dropper does not auto-switch to Paint.
+  - On Alt release, return to the last sub-mode unless the dropper was used; if used, switch to Paint.
+- Wall build settings are separate from wall paint settings; normal-mode edits update build/selection, not paint.
+
 Always update `FormexSerialization.luau` when changing `Formex.PlotData`, `Formex.LevelData`, `Formex.WallData`, `Formex.FloorData`, `Formex.ObjectData`
 
 ## Shared Modules

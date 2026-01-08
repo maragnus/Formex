@@ -636,7 +636,6 @@ local function createMeshPart(
 	meshPart.Parent = parent
 	meshPart.Destroying:Connect(function()
 		fixedSizeMesh:Destroy()
-		print("Destroyed mesh part and its mesh asset.", name, parent.Name, parent.Parent and parent.Parent.Name)
 	end)
 	meshPart.Transparency = isServer and 1 or 0
 	return meshPart

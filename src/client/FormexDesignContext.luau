@@ -52,6 +52,8 @@ export type Context = {
 	GetCeilingColor: () -> Color3,
 	GetFoundationMaterialId: () -> number,
 	GetFoundationColor: () -> Color3,
+	GetWallPaintSettings: () -> any,
+	UpdateDesignState: (any) -> (),
 	NotifyDesignModeChange: () -> (),
 	ClearSelection: () -> (),
 	Select: (Instance) -> boolean,

@@ -42,12 +42,19 @@ local wallBackBottomColor = Color3.new(1, 1, 1)
 local wallHeightValue: number? = nil
 local wallFrontSplitValue: number? = nil
 local wallBackSplitValue: number? = nil
+local wallPaintHeightValue: number? = nil
+local wallPaintSplitValue: number? = nil
+local wallPaintTopMaterialId = Formex.DefaultWallMaterial
+local wallPaintBottomMaterialId = Formex.DefaultWallMaterial
+local wallPaintTopColor = Color3.new(1, 1, 1)
+local wallPaintBottomColor = Color3.new(1, 1, 1)
 local floorRaiseHeightValue: number = 0
 local cachedOwnerUserId = -1
 
 local ui = {}
 local suppressWallInputs = false
 local suppressFloorInputs = false
+local suppressWallSideInputs = false
 
 local function canDesign(plot: FormexClient.PlotInfo): boolean
     return plot.IsValid and plot.SaveId ~= 0
@@ -115,7 +122,7 @@ local function createSection(parent: Instance, name: string, titleText: string?)
     return card, content
 end
 
-local function createIconButton(parent: Instance, name: string, iconId: number, action: (() -> nil)?)
+local function createIconButton(parent: Instance, name: string, iconId: number, action: () -> ()?)
     local button = Instance.new("ImageButton", parent)
     button.Name = name
     button.AutoButtonColor = false
@@ -176,33 +183,12 @@ local function snapToGrid(value: number): number
     return math.round(value / grid) * grid
 end
 
-local function clampWallHeight(value: number?): number?
-	if value == nil then
-		return nil
-	end
-	local snapped = snapToGrid(value)
-	return math.clamp(snapped, Formex.GridSize, Formex.LevelHeight)
-end
-
 local function clampWallSplit(value: number?, height: number?): number?
-	if value == nil or value <= Formex.GridSize or value >= height then
+	if value == nil or not height or value <= Formex.GridSize or value >= height then
 		return nil
 	end
 	local snapped = snapToGrid(value)
 	return math.clamp(snapped, 0, height - Formex.GridSize)
-end
-
-local function clampFloorRaiseHeight(value: number?): number
-	local resolved = value or 0
-	if resolved < 0 then
-		resolved = 0
-	end
-	local snapped = snapToGrid(resolved)
-	local maxHeight = Formex.LevelHeight - Formex.InterfloorHeight
-	if maxHeight < 0 then
-		maxHeight = 0
-	end
-	return math.clamp(snapped, 0, maxHeight)
 end
 
 local function createMaterialColorRow(options)
@@ -237,241 +223,6 @@ local function createMaterialColorRow(options)
 		Material = materialSelect,
 		Color = colorSelect,
 	}
-end
-
-local function getWallFrontPart(instance: Instance?): BasePart?
-    if not instance then
-        return nil
-    end
-    if instance:IsA("BasePart") then
-        return instance
-    end
-    if instance:IsA("Model") then
-        if instance.PrimaryPart then
-            return instance.PrimaryPart
-        end
-        local frontName = Formex.Walls and Formex.Walls.FrontPartName or "Front"
-        local frontPart = instance:FindFirstChild(frontName)
-        if frontPart and frontPart:IsA("BasePart") then
-            return frontPart
-        end
-        for _, child in ipairs(instance:GetChildren()) do
-            if child:IsA("BasePart") then
-                return child
-            end
-        end
-    end
-    return nil
-end
-
-local function getWallEndpoints(plotPart: BasePart, wallModel: Instance): (Vector2int16, Vector2int16)
-    local wallPart = getWallFrontPart(wallModel)
-    if not wallPart then
-        return Vector2int16.new(0, 0), Vector2int16.new(0, 0)
-    end
-    local midLocal = plotPart.CFrame:PointToObjectSpace(wallPart.Position)
-    local dirLocal = plotPart.CFrame:VectorToObjectSpace(wallPart.CFrame.LookVector)
-    dirLocal = Vector3.new(dirLocal.X, 0, dirLocal.Z)
-    if dirLocal.Magnitude <= 1e-4 then
-        dirLocal = Vector3.new(0, 0, 1)
-    else
-        dirLocal = dirLocal.Unit
-    end
-
-    local halfLength = wallPart.Size.Z / 2
-    local startLocal = midLocal - dirLocal * halfLength
-    local endLocal = midLocal + dirLocal * halfLength
-
-    local startPoint = Vector2int16.new(snapToGrid(startLocal.X), snapToGrid(startLocal.Z))
-    local endPoint = Vector2int16.new(snapToGrid(endLocal.X), snapToGrid(endLocal.Z))
-    return startPoint, endPoint
-end
-
-local function getWallAttributeNumber(part: BasePart, name: string): number?
-    local value = part:GetAttribute(name)
-    if type(value) == "number" and value > 0 then
-        return value
-    end
-    return nil
-end
-
-local function getWallAttributeColor(part: BasePart, name: string): Color3?
-    local value = part:GetAttribute(name)
-    if typeof(value) == "Color3" then
-        return value
-    end
-    return nil
-end
-
-local function getWallAppearanceFromPart(wallModel: Instance)
-    local wallPart = getWallFrontPart(wallModel)
-    if not wallPart then
-        return {
-            Height = nil,
-            FrontSplitHeight = nil,
-            BackSplitHeight = nil,
-            FrontTopMaterial = Formex.DefaultWallMaterial,
-            FrontBottomMaterial = Formex.DefaultWallMaterial,
-            BackTopMaterial = Formex.DefaultWallMaterial,
-            BackBottomMaterial = Formex.DefaultWallMaterial,
-            FrontTopColor = Color3.new(1, 1, 1),
-            FrontBottomColor = Color3.new(1, 1, 1),
-            BackTopColor = Color3.new(1, 1, 1),
-            BackBottomColor = Color3.new(1, 1, 1),
-        }
-    end
-
-    local height = wallPart:GetAttribute("WallHeight")
-    if type(height) ~= "number" then
-        height = nil
-    end
-    local frontSplitHeight = wallPart:GetAttribute("FrontSplitHeight")
-    if type(frontSplitHeight) ~= "number" or frontSplitHeight <= 0 then
-        frontSplitHeight = nil
-    end
-    local backSplitHeight = wallPart:GetAttribute("BackSplitHeight")
-    if type(backSplitHeight) ~= "number" or backSplitHeight <= 0 then
-        backSplitHeight = nil
-    end
-
-    local frontTopMaterial = getWallAttributeNumber(wallPart, "FrontTopMaterial") or Formex.DefaultWallMaterial
-    local frontBottomMaterial = getWallAttributeNumber(wallPart, "FrontBottomMaterial") or frontTopMaterial
-    local backTopMaterial = getWallAttributeNumber(wallPart, "BackTopMaterial") or frontTopMaterial
-    local backBottomMaterial = getWallAttributeNumber(wallPart, "BackBottomMaterial") or backTopMaterial
-
-    local frontTopColor = getWallAttributeColor(wallPart, "FrontTopColor") or Color3.new(1, 1, 1)
-    local frontBottomColor = getWallAttributeColor(wallPart, "FrontBottomColor") or frontTopColor
-    local backTopColor = getWallAttributeColor(wallPart, "BackTopColor") or frontTopColor
-    local backBottomColor = getWallAttributeColor(wallPart, "BackBottomColor") or backTopColor
-
-    return {
-        Height = height,
-        FrontSplitHeight = frontSplitHeight,
-        BackSplitHeight = backSplitHeight,
-        FrontTopMaterial = frontTopMaterial,
-        FrontBottomMaterial = frontBottomMaterial,
-        BackTopMaterial = backTopMaterial,
-        BackBottomMaterial = backBottomMaterial,
-        FrontTopColor = frontTopColor,
-        FrontBottomColor = frontBottomColor,
-        BackTopColor = backTopColor,
-        BackBottomColor = backBottomColor,
-    }
-end
-
-local function getWallPart(plot: FormexClient.PlotInfo, wallId: number, level: number): Model?
-    if not plot.PlotPart then
-        return nil
-    end
-    local levelPart = plot.PlotPart:FindFirstChild(tostring(level))
-    if not levelPart then
-        return nil
-    end
-    local wallsFolder = levelPart:FindFirstChild("Walls")
-    if not wallsFolder then
-        return nil
-    end
-    local wallModel = wallsFolder:FindFirstChild(tostring(wallId))
-    if wallModel and wallModel:IsA("Model") then
-        return wallModel
-    end
-    return nil
-end
-
-local function applySelectedWallAppearance(overrides: {[string]: any})
-    local selectionType, wallId, level = FormexDesign.GetSelectionInfo()
-    if selectionType ~= FormexDesign.SelectionType.Wall or not wallId or not level then
-        return
-    end
-
-    local plot = FormexClient.CurrentPlot
-    if not plot or not plot.IsValid or not plot.PlotPart then
-        return
-    end
-
-    local wallPart = getWallPart(plot, wallId, level)
-    if not wallPart then
-        return
-    end
-
-    local startPoint, endPoint = getWallEndpoints(plot.PlotPart, wallPart)
-    local existing = getWallAppearanceFromPart(wallPart)
-
-    local height = existing.Height
-    if overrides.Height ~= nil then
-        height = overrides.Height == false and 0 or clampWallHeight(overrides.Height)
-    end
-
-    local heightForSplit = height == 0 and nil or height
-
-    local frontSplitHeight = existing.FrontSplitHeight
-    if overrides.FrontSplitHeight ~= nil then
-        frontSplitHeight = overrides.FrontSplitHeight == false and 0 or clampWallSplit(overrides.FrontSplitHeight, heightForSplit)
-    end
-
-    local backSplitHeight = existing.BackSplitHeight
-    if overrides.BackSplitHeight ~= nil then
-        backSplitHeight = overrides.BackSplitHeight == false and 0 or clampWallSplit(overrides.BackSplitHeight, heightForSplit)
-    end
-
-    if heightForSplit then
-        if frontSplitHeight ~= 0 then
-            frontSplitHeight = clampWallSplit(frontSplitHeight, heightForSplit)
-        end
-        if backSplitHeight ~= 0 then
-            backSplitHeight = clampWallSplit(backSplitHeight, heightForSplit)
-        end
-    end
-
-    local frontTopMaterial = overrides.FrontTopMaterial or existing.FrontTopMaterial
-    local frontBottomMaterial = overrides.FrontBottomMaterial or existing.FrontBottomMaterial
-    local backTopMaterial = overrides.BackTopMaterial or existing.BackTopMaterial
-    local backBottomMaterial = overrides.BackBottomMaterial or existing.BackBottomMaterial
-
-    local frontTopColor = overrides.FrontTopColor or overrides.FrontColor or existing.FrontTopColor
-    local frontBottomColor = overrides.FrontBottomColor or overrides.FrontColor or existing.FrontBottomColor
-    local backTopColor = overrides.BackTopColor or overrides.BackColor or existing.BackTopColor
-    local backBottomColor = overrides.BackBottomColor or overrides.BackColor or existing.BackBottomColor
-
-    local clientData = {
-        WallId = wallId,
-        Level = level,
-        Start = startPoint,
-        End = endPoint,
-        Height = height,
-        FrontSplitHeight = frontSplitHeight,
-        BackSplitHeight = backSplitHeight,
-        FrontTopMaterial = frontTopMaterial,
-        FrontBottomMaterial = frontBottomMaterial,
-        BackTopMaterial = backTopMaterial,
-        BackBottomMaterial = backBottomMaterial,
-        FrontTopColor = frontTopColor,
-        FrontBottomColor = frontBottomColor,
-        BackTopColor = backTopColor,
-        BackBottomColor = backBottomColor,
-        Part = wallPart,
-    }
-    Formex.Walls.Edit(clientData, plot.PlotPart)
-
-    local serverData = {
-        WallId = wallId,
-        Level = level,
-        Start = startPoint,
-        End = endPoint,
-        Height = height,
-        FrontSplitHeight = frontSplitHeight,
-        BackSplitHeight = backSplitHeight,
-        FrontTopMaterial = frontTopMaterial,
-        FrontBottomMaterial = frontBottomMaterial,
-        BackTopMaterial = backTopMaterial,
-        BackBottomMaterial = backBottomMaterial,
-        FrontTopColor = frontTopColor,
-        FrontBottomColor = frontBottomColor,
-        BackTopColor = backTopColor,
-        BackBottomColor = backBottomColor,
-        Part = nil,
-    }
-    FormexClient.BuildWall(serverData, Formex.BuildAction.Edit)
 end
 
 local function updateWallSplitVisibility()
@@ -513,6 +264,23 @@ local function updateSplitRanges()
 	ui.WallFrontSplitSlider.SetValue(wallFrontSplitValue)
 	ui.WallBackSplitSlider.SetValue(wallBackSplitValue)
 	updateWallSplitVisibility()
+end
+
+local function updateSideSplitRange()
+	if not ui.WallSideSplitSlider then
+		return
+	end
+	local maxHeight = wallPaintHeightValue
+	if not maxHeight or maxHeight <= 0 then
+		maxHeight = Formex.LevelHeight
+	end
+	ui.WallSideSplitSlider.SetRange(0, maxHeight - Formex.GridSize)
+	local clamped = wallPaintSplitValue
+	if clamped ~= nil then
+		clamped = clampWallSplit(clamped, wallPaintHeightValue)
+	end
+	wallPaintSplitValue = clamped
+	ui.WallSideSplitSlider.SetValue(clamped)
 end
 
 local function setCollapsed(collapsed: boolean)
@@ -722,11 +490,11 @@ local function buildSidebar()
     local expandButton = createIconButton(ownerActionsRow, "Expand", Formex.Icons.PlotExpand, function()
         if not canManage(FormexClient.CurrentPlot) then return end
         
-        local mode = FormexDesign.GetDesignMode()
+        local mode = FormexDesign.GetDesignState().Mode
         if mode ~= FormexDesign.DesignMode.Expand then
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Expand)
+            FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Expand })
         else
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Play)
+            FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Play })
         end
     end)
 
@@ -736,11 +504,11 @@ local function buildSidebar()
 
     local designButton = createIconButton(ownerActionsRow, "DesignMode", Formex.Icons.DesignStart, function()
         if not canDesign(FormexClient.CurrentPlot) then return end
-        local mode = FormexDesign.GetDesignMode()
+        local mode = FormexDesign.GetDesignState().Mode
         if mode == FormexDesign.DesignMode.Play then
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Select)
+            FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Select })
         else
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Play)
+            FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Play })
         end
     end)
     
@@ -807,19 +575,49 @@ local function buildSidebar()
 
 	local designModeButtons = {
 		Select = createIconButton(modeRow, "Select", Formex.Icons.DesignSelect, function()
-			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Select)
+			FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Select })
 		end),
 		Wall = createIconButton(modeRow, "Wall", Formex.Icons.DesignWalls, function()
-			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Wall)
+			FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Wall })
 		end),
 		Floor = createIconButton(modeRow, "Floor", Formex.Icons.DesignFloors, function()
-			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Floor)
+			FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Floor })
 		end),
 		Object = createIconButton(modeRow, "Object", Formex.Icons.DesignFurniture, function()
-			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Object)
+			FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Object })
 		end),
-		Paint = createIconButton(modeRow, "Paint", Formex.Icons.DesignPaint, function()
-			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Paint)
+	}
+
+	local function toggleSubMode(nextMode)
+		local current = FormexDesign.GetDesignState().SubMode
+		if current == nextMode then
+			FormexDesign.UpdateDesignState({ SubMode = FormexDesign.DesignSubMode.Normal })
+		else
+			FormexDesign.UpdateDesignState({ SubMode = nextMode })
+		end
+	end
+
+	local subModeRow = Instance.new("Frame", designControls)
+	subModeRow.Name = "SubModeRow"
+	subModeRow.BackgroundTransparency = 1
+	subModeRow.Size = UDim2.new(1, 0, 0, 40)
+
+	local subModeRowLayout = Instance.new("UIListLayout", subModeRow)
+	subModeRowLayout.FillDirection = Enum.FillDirection.Horizontal
+	subModeRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	subModeRowLayout.Padding = UDim.new(0, 8)
+	subModeRowLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+	subModeRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+	local subModeButtons = {
+		Normal = createIconButton(subModeRow, "Normal", Formex.Icons.DesignBuild, function()
+			FormexDesign.UpdateDesignState({ SubMode = FormexDesign.DesignSubMode.Normal })
+		end),
+		Paint = createIconButton(subModeRow, "Paint", Formex.Icons.DesignPaint, function()
+			toggleSubMode(FormexDesign.DesignSubMode.Paint)
+		end),
+		Dropper = createIconButton(subModeRow, "Dropper", Formex.Icons.DesignDropper, function()
+			toggleSubMode(FormexDesign.DesignSubMode.Dropper)
 		end),
 	}
 
@@ -927,14 +725,10 @@ local function buildSidebar()
             return
         end
         if value == nil then
-            wallHeightValue = nil
-            applySelectedWallAppearance({ Height = false })
-        else
-            local clamped = clampWallHeight(value)
-            wallHeightValue = clamped
-            applySelectedWallAppearance({ Height = clamped })
+            FormexDesign.UpdateDesignState({ Wall = { Height = false } })
+            return
         end
-        updateSplitRanges()
+        FormexDesign.UpdateDesignState({ Wall = { Height = value } })
     end)
 
     local labelFrontText = Instance.new("TextLabel", wallContent)
@@ -959,13 +753,7 @@ local function buildSidebar()
         if suppressWallInputs then
             return
         end
-        local clamped = clampWallSplit(value, wallHeightValue)
-        wallFrontSplitValue = clamped
-        if value ~= clamped then
-            wallFrontSplitSlider.SetValue(clamped)
-        end
-        applySelectedWallAppearance({ FrontSplitHeight = clamped or false })
-        updateWallSplitVisibility()
+        FormexDesign.UpdateDesignState({ Wall = { FrontSplitHeight = value or false } })
     end)
 
     local wallFrontTopRow = createMaterialColorRow({
@@ -976,13 +764,12 @@ local function buildSidebar()
         MaterialValue = wallFrontTopMaterialId,
         ColorValue = wallFrontTopColor,
         OnMaterialChanged = function(materialId)
-            wallFrontTopMaterialId = materialId or wallFrontTopMaterialId
-            applySelectedWallAppearance({ FrontTopMaterial = wallFrontTopMaterialId })
+            local resolved = materialId or Formex.DefaultWallMaterial
+            FormexDesign.UpdateDesignState({ Wall = { FrontTopMaterial = resolved } })
         end,
         OnColorChanged = function(color)
             local resolved = color or Color3.new(1, 1, 1)
-            wallFrontTopColor = resolved
-            applySelectedWallAppearance({ FrontTopColor = resolved })
+            FormexDesign.UpdateDesignState({ Wall = { FrontTopColor = resolved } })
         end,
     })
 
@@ -994,13 +781,12 @@ local function buildSidebar()
         MaterialValue = wallFrontBottomMaterialId,
         ColorValue = wallFrontBottomColor,
         OnMaterialChanged = function(materialId)
-            wallFrontBottomMaterialId = materialId or wallFrontBottomMaterialId
-            applySelectedWallAppearance({ FrontBottomMaterial = wallFrontBottomMaterialId })
+            local resolved = materialId or Formex.DefaultWallMaterial
+            FormexDesign.UpdateDesignState({ Wall = { FrontBottomMaterial = resolved } })
         end,
         OnColorChanged = function(color)
             local resolved = color or Color3.new(1, 1, 1)
-            wallFrontBottomColor = resolved
-            applySelectedWallAppearance({ FrontBottomColor = resolved })
+            FormexDesign.UpdateDesignState({ Wall = { FrontBottomColor = resolved } })
         end,
     })
 
@@ -1026,13 +812,7 @@ local function buildSidebar()
         if suppressWallInputs then
             return
         end
-        local clamped = clampWallSplit(value, wallHeightValue)
-        wallBackSplitValue = clamped
-        if value ~= clamped then
-            wallBackSplitSlider.SetValue(clamped)
-        end
-        applySelectedWallAppearance({ BackSplitHeight = clamped or false })
-        updateWallSplitVisibility()
+        FormexDesign.UpdateDesignState({ Wall = { BackSplitHeight = value or false } })
     end)
 
     local wallBackTopRow = createMaterialColorRow({
@@ -1043,13 +823,12 @@ local function buildSidebar()
         MaterialValue = wallBackTopMaterialId,
         ColorValue = wallBackTopColor,
         OnMaterialChanged = function(materialId)
-            wallBackTopMaterialId = materialId or wallBackTopMaterialId
-            applySelectedWallAppearance({ BackTopMaterial = wallBackTopMaterialId })
+            local resolved = materialId or Formex.DefaultWallMaterial
+            FormexDesign.UpdateDesignState({ Wall = { BackTopMaterial = resolved } })
         end,
         OnColorChanged = function(color)
             local resolved = color or Color3.new(1, 1, 1)
-            wallBackTopColor = resolved
-            applySelectedWallAppearance({ BackTopColor = resolved })
+            FormexDesign.UpdateDesignState({ Wall = { BackTopColor = resolved } })
         end,
     })
     
@@ -1061,13 +840,103 @@ local function buildSidebar()
         MaterialValue = wallBackBottomMaterialId,
         ColorValue = wallBackBottomColor,
         OnMaterialChanged = function(materialId)
-            wallBackBottomMaterialId = materialId or wallBackBottomMaterialId
-            applySelectedWallAppearance({ BackBottomMaterial = wallBackBottomMaterialId })
+            local resolved = materialId or Formex.DefaultWallMaterial
+            FormexDesign.UpdateDesignState({ Wall = { BackBottomMaterial = resolved } })
         end,
         OnColorChanged = function(color)
             local resolved = color or Color3.new(1, 1, 1)
-            wallBackBottomColor = resolved
-            applySelectedWallAppearance({ BackBottomColor = resolved })
+            FormexDesign.UpdateDesignState({ Wall = { BackBottomColor = resolved } })
+        end,
+    })
+
+    local wallSideContent = Instance.new("Frame", designContentCard)
+    wallSideContent.Name = "WallSideContent"
+    wallSideContent.BackgroundTransparency = 1
+    wallSideContent.Size = UDim2.new(1, 0, 0, 0)
+    wallSideContent.AutomaticSize = Enum.AutomaticSize.Y
+
+    local wallSideLayout = Instance.new("UIListLayout", wallSideContent)
+    wallSideLayout.FillDirection = Enum.FillDirection.Vertical
+    wallSideLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    wallSideLayout.Padding = UDim.new(0, 8)
+
+    local wallSideLabel = Instance.new("TextLabel", wallSideContent)
+    wallSideLabel.Name = "WallSideLabel"
+    wallSideLabel.BackgroundTransparency = 1
+    wallSideLabel.Size = UDim2.new(1, 0, 0, 16)
+    wallSideLabel.Font = Enum.Font.GothamSemibold
+    wallSideLabel.Text = "Wall Paint"
+    wallSideLabel.TextColor3 = Color3.fromRGB(90, 100, 130)
+    wallSideLabel.TextSize = 14
+    wallSideLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local wallSideHeightSlider: FormexUI.SliderHandle
+    wallSideHeightSlider = FormexUI.CreateSlider({
+        Parent = wallSideContent,
+        Label = "Wall height (studs)",
+        Min = Formex.GridSize,
+        Max = Formex.LevelHeight,
+        Step = Formex.GridSize,
+        AllowEmpty = true,
+        PlaceholderText = "Auto",
+    }, function(value)
+        if suppressWallSideInputs then
+            return
+        end
+        if value == nil then
+            FormexDesign.UpdateDesignState({ Wall = { Height = false } })
+            return
+        end
+        FormexDesign.UpdateDesignState({ Wall = { Height = value } })
+    end)
+
+    local wallSideSplitSlider: FormexUI.SliderHandle
+    wallSideSplitSlider = FormexUI.CreateSlider({
+        Parent = wallSideContent,
+        Label = "Split height (studs)",
+        Min = 0,
+        Max = Formex.LevelHeight - Formex.GridSize,
+        Step = Formex.GridSize,
+        AllowEmpty = true,
+        PlaceholderText = "None",
+    }, function(value)
+        if suppressWallSideInputs then
+            return
+        end
+        FormexDesign.UpdateDesignState({ Wall = { SplitHeight = value or false } })
+    end)
+
+    local wallSideTopRow = createMaterialColorRow({
+        Parent = wallSideContent,
+        Name = "SideTopRow",
+        MaterialLabel = "Top material",
+        PartType = Formex.PartType.Wall,
+        MaterialValue = wallFrontTopMaterialId,
+        ColorValue = wallFrontTopColor,
+        OnMaterialChanged = function(materialId)
+            local resolved = materialId or Formex.DefaultWallMaterial
+            FormexDesign.UpdateDesignState({ Wall = { TopMaterial = resolved } })
+        end,
+        OnColorChanged = function(color)
+            local resolved = color or Color3.new(1, 1, 1)
+            FormexDesign.UpdateDesignState({ Wall = { TopColor = resolved } })
+        end,
+    })
+
+    local wallSideBottomRow = createMaterialColorRow({
+        Parent = wallSideContent,
+        Name = "SideBottomRow",
+        MaterialLabel = "Bottom material",
+        PartType = Formex.PartType.Wall,
+        MaterialValue = wallFrontBottomMaterialId,
+        ColorValue = wallFrontBottomColor,
+        OnMaterialChanged = function(materialId)
+            local resolved = materialId or Formex.DefaultWallMaterial
+            FormexDesign.UpdateDesignState({ Wall = { BottomMaterial = resolved } })
+        end,
+        OnColorChanged = function(color)
+            local resolved = color or Color3.new(1, 1, 1)
+            FormexDesign.UpdateDesignState({ Wall = { BottomColor = resolved } })
         end,
     })
 
@@ -1095,12 +964,7 @@ local function buildSidebar()
         if suppressFloorInputs then
             return
         end
-        local clamped = clampFloorRaiseHeight(value)
-        floorRaiseHeightValue = clamped
-        if value ~= clamped then
-            floorRaiseSlider.SetValue(clamped)
-        end
-        FormexDesign.SetFloorRaiseHeight(clamped)
+        FormexDesign.UpdateDesignState({ Floor = { RaiseHeight = value } })
     end)
     
     local floorRow = createMaterialColorRow({
@@ -1108,16 +972,18 @@ local function buildSidebar()
         Name = "FloorRow",
         MaterialLabel = "Floor material",
         PartType = Formex.PartType.Floor,
-        MaterialValue = FormexDesign.GetFloorMaterial(),
-        ColorValue = FormexDesign.GetFloorColor(),
+        MaterialValue = Formex.DefaultFloorMaterial,
+        ColorValue = Color3.new(1, 1, 1),
         OnMaterialChanged = function(materialId)
-            FormexDesign.SetFloorMaterial(materialId or Formex.DefaultFloorMaterial)
+            local resolved = materialId or Formex.DefaultFloorMaterial
+            FormexDesign.UpdateDesignState({ Floor = { FloorMaterial = resolved } })
         end,
         OnColorChanged = function(color)
             if suppressFloorInputs then
                 return
             end
-            FormexDesign.SetFloorColor(color or Color3.new(1, 1, 1))
+            local resolved = color or Color3.new(1, 1, 1)
+            FormexDesign.UpdateDesignState({ Floor = { FloorColor = resolved } })
         end,
     })
 
@@ -1126,16 +992,18 @@ local function buildSidebar()
         Name = "FoundationRow",
         MaterialLabel = "Foundation material",
         PartType = Formex.PartType.Wall,
-        MaterialValue = FormexDesign.GetFoundationMaterial(),
-        ColorValue = FormexDesign.GetFoundationColor(),
+        MaterialValue = Formex.DefaultFoundationMaterial,
+        ColorValue = Color3.new(1, 1, 1),
         OnMaterialChanged = function(materialId)
-            FormexDesign.SetFoundationMaterial(materialId or Formex.DefaultFoundationMaterial)
+            local resolved = materialId or Formex.DefaultFoundationMaterial
+            FormexDesign.UpdateDesignState({ Floor = { FoundationMaterial = resolved } })
         end,
         OnColorChanged = function(color)
             if suppressFloorInputs then
                 return
             end
-            FormexDesign.SetFoundationColor(color or Color3.new(1, 1, 1))
+            local resolved = color or Color3.new(1, 1, 1)
+            FormexDesign.UpdateDesignState({ Floor = { FoundationColor = resolved } })
         end,
     })
 
@@ -1162,29 +1030,6 @@ local function buildSidebar()
     objectHint.TextWrapped = true
     objectHint.TextXAlignment = Enum.TextXAlignment.Left
 
-    local paintContent = Instance.new("Frame", designContentCard)
-    paintContent.Name = "PaintContent"
-    paintContent.BackgroundTransparency = 1
-    paintContent.Size = UDim2.new(1, 0, 0, 0)
-    paintContent.AutomaticSize = Enum.AutomaticSize.Y
-
-    local paintLayout = Instance.new("UIListLayout", paintContent)
-    paintLayout.FillDirection = Enum.FillDirection.Vertical
-    paintLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    paintLayout.Padding = UDim.new(0, 6)
-
-    local paintHint = Instance.new("TextLabel", paintContent)
-    paintHint.Name = "PaintHint"
-    paintHint.BackgroundTransparency = 1
-    paintHint.Size = UDim2.new(1, 0, 0, 0)
-    paintHint.AutomaticSize = Enum.AutomaticSize.Y
-    paintHint.Font = Enum.Font.Gotham
-    paintHint.Text = "Paint controls coming soon."
-    paintHint.TextSize = 14
-    paintHint.TextColor3 = COLORS.Muted
-    paintHint.TextWrapped = true
-    paintHint.TextXAlignment = Enum.TextXAlignment.Left
-
     ui.Container = sidebar
     ui.HeaderLayout = headerLayout
     ui.HeaderTitle = headerTitle
@@ -1208,6 +1053,8 @@ local function buildSidebar()
     ui.DesignControls = designControls
     ui.DesignExpandIcon = designExpandButton.Icon
     ui.DesignModeButtons = designModeButtons
+    ui.SubModeRow = subModeRow
+    ui.SubModeButtons = subModeButtons
     ui.UndoButton = undoButton
     ui.RedoButton = redoButton
     ui.DesignContentTitle = contentTitle
@@ -1229,6 +1076,14 @@ local function buildSidebar()
     ui.WallFrontTopColorSelect = wallFrontTopRow.Color
     ui.WallBackBottomColorSelect = wallBackBottomRow.Color
     ui.WallBackTopColorSelect = wallBackTopRow.Color
+    ui.WallSideContent = wallSideContent
+    ui.WallSideLabel = wallSideLabel
+    ui.WallSideHeightSlider = wallSideHeightSlider
+    ui.WallSideSplitSlider = wallSideSplitSlider
+    ui.WallSideTopSelect = wallSideTopRow.Material
+    ui.WallSideBottomSelect = wallSideBottomRow.Material
+    ui.WallSideTopColorSelect = wallSideTopRow.Color
+    ui.WallSideBottomColorSelect = wallSideBottomRow.Color
 	ui.FloorContent = floorContent
 	ui.FloorRow = floorRow.Row
 	ui.FloorSelect = floorRow.Material
@@ -1238,7 +1093,6 @@ local function buildSidebar()
 	ui.FoundationSelect = foundationRow.Material
 	ui.FoundationColorSelect = foundationRow.Color
     ui.ObjectContent = objectContent
-    ui.PaintContent = paintContent
 
     setCollapsed(sidebarCollapsed)
     setDesignExpanded(designExpanded)
@@ -1261,13 +1115,18 @@ local function refreshUI()
     local isLoaded = plot.SaveId ~= 0
 
     local allowDesign = canDesign(plot)
-    local designMode = FormexDesign.GetDesignMode()
+    local designState = FormexDesign.GetDesignState()
+    local designMode = designState.Mode
+    local designSubMode = designState.SubMode
     local inExpand = designMode == FormexDesign.DesignMode.Expand
     local inDesign = designMode ~= FormexDesign.DesignMode.Play and not inExpand
 
     if inDesign and not allowDesign then
-        FormexDesign.SetDesignMode(FormexDesign.DesignMode.Play)
-        designMode = FormexDesign.DesignMode.Play
+        FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Play })
+        designState = FormexDesign.GetDesignState()
+        designMode = designState.Mode
+        designSubMode = designState.SubMode
+        inExpand = false
         inDesign = false
     end
 
@@ -1298,33 +1157,43 @@ local function refreshUI()
     setIconButtonActive(ui.DesignModeButtons.Wall, designMode == FormexDesign.DesignMode.Wall)
     setIconButtonActive(ui.DesignModeButtons.Floor, designMode == FormexDesign.DesignMode.Floor)
     setIconButtonActive(ui.DesignModeButtons.Object, designMode == FormexDesign.DesignMode.Object)
-    setIconButtonActive(ui.DesignModeButtons.Paint, designMode == FormexDesign.DesignMode.Paint)
     setIconButtonActive(ui.DesignModeButtons.Select, designMode == FormexDesign.DesignMode.Select)
+
+    local showSubModes = designMode == FormexDesign.DesignMode.Wall
+        or designMode == FormexDesign.DesignMode.Floor
+        or designMode == FormexDesign.DesignMode.Object
+    ui.SubModeRow.Visible = inDesign and showSubModes
+    setIconButtonActive(ui.SubModeButtons.Normal, designSubMode == FormexDesign.DesignSubMode.Normal)
+    setIconButtonActive(ui.SubModeButtons.Paint, designSubMode == FormexDesign.DesignSubMode.Paint)
+    setIconButtonActive(ui.SubModeButtons.Dropper, designSubMode == FormexDesign.DesignSubMode.Dropper)
 
     local canUndo = plot.CanUndo == true
     local canRedo = plot.CanRedo == true
     setIconButtonEnabled(ui.UndoButton, canUndo)
     setIconButtonEnabled(ui.RedoButton, canRedo)
 
-    local selectionType, wallId, level = FormexDesign.GetSelectionInfo()
-    local hasWallSelection = selectionType == FormexDesign.SelectionType.Wall and wallId ~= nil and level ~= nil
-    if hasWallSelection then
-        local wallPart = getWallPart(plot, wallId :: number, level :: number)
-        if wallPart then
-            local appearance = getWallAppearanceFromPart(wallPart)
-            wallHeightValue = appearance.Height
-            wallFrontSplitValue = appearance.FrontSplitHeight
-            wallBackSplitValue = appearance.BackSplitHeight
-            wallFrontTopMaterialId = appearance.FrontTopMaterial
-            wallFrontBottomMaterialId = appearance.FrontBottomMaterial
-            wallBackTopMaterialId = appearance.BackTopMaterial
-            wallBackBottomMaterialId = appearance.BackBottomMaterial
-            wallFrontTopColor = appearance.FrontTopColor
-            wallFrontBottomColor = appearance.FrontBottomColor
-            wallBackTopColor = appearance.BackTopColor
-            wallBackBottomColor = appearance.BackBottomColor
-        end
+    local selectionType = designState.SelectionType
+    local wallSelected = designState.Wall.Selected
+    local wallBuild = designState.Wall.Build
+    local wallPaint = designState.Wall.Paint
+    local hasWallSelection = selectionType == FormexDesign.SelectionType.Wall and wallSelected.HasSelection
+
+    local wallDisplay = wallBuild
+    if hasWallSelection and designSubMode == FormexDesign.DesignSubMode.Normal then
+        wallDisplay = wallSelected
     end
+
+    wallHeightValue = wallDisplay.Height
+    wallFrontSplitValue = wallDisplay.FrontSplitHeight
+    wallBackSplitValue = wallDisplay.BackSplitHeight
+    wallFrontTopMaterialId = wallDisplay.FrontTopMaterial
+    wallFrontBottomMaterialId = wallDisplay.FrontBottomMaterial
+    wallBackTopMaterialId = wallDisplay.BackTopMaterial
+    wallBackBottomMaterialId = wallDisplay.BackBottomMaterial
+    wallFrontTopColor = wallDisplay.FrontTopColor
+    wallFrontBottomColor = wallDisplay.FrontBottomColor
+    wallBackTopColor = wallDisplay.BackTopColor
+    wallBackBottomColor = wallDisplay.BackBottomColor
 
     ui.WallFrontBottomSelect.SetSelected(wallFrontBottomMaterialId)
     ui.WallFrontTopSelect.SetSelected(wallFrontTopMaterialId)
@@ -1340,28 +1209,63 @@ local function refreshUI()
     updateSplitRanges()
     suppressWallInputs = false
 
-    local currentFloorMaterial = FormexDesign.GetFloorMaterial()
-    local currentFoundationMaterial = FormexDesign.GetFoundationMaterial()
-    floorRaiseHeightValue = FormexDesign.GetFloorRaiseHeight()
-    ui.FloorSelect.SetSelected(currentFloorMaterial)
-    ui.FoundationSelect.SetSelected(currentFoundationMaterial)
+    wallPaintHeightValue = wallPaint.Height
+    wallPaintSplitValue = wallPaint.SplitHeight
+    wallPaintTopMaterialId = wallPaint.TopMaterial
+    wallPaintBottomMaterialId = wallPaint.BottomMaterial
+    wallPaintTopColor = wallPaint.TopColor
+    wallPaintBottomColor = wallPaint.BottomColor
+
+    if ui.WallSideLabel then
+        ui.WallSideLabel.Text = "Wall Paint"
+    end
+    if ui.WallSideTopSelect then
+        ui.WallSideTopSelect.SetSelected(wallPaintTopMaterialId)
+        ui.WallSideBottomSelect.SetSelected(wallPaintBottomMaterialId)
+        ui.WallSideTopColorSelect.SetSelected(wallPaintTopColor)
+        ui.WallSideBottomColorSelect.SetSelected(wallPaintBottomColor)
+    end
+    suppressWallSideInputs = true
+    if ui.WallSideHeightSlider then
+        ui.WallSideHeightSlider.SetValue(wallPaintHeightValue)
+    end
+    updateSideSplitRange()
+    suppressWallSideInputs = false
+
+    local floorSelected = designState.Floor.Selected
+    local floorPaint = designState.Floor.Paint
+    local hasFloorSelection = selectionType == FormexDesign.SelectionType.Floor and floorSelected.HasSelection
+    local floorDisplay = floorPaint
+    if hasFloorSelection and designSubMode == FormexDesign.DesignSubMode.Normal then
+        floorDisplay = floorSelected
+    end
+
+    floorRaiseHeightValue = floorDisplay.RaiseHeight
+    ui.FloorSelect.SetSelected(floorDisplay.FloorMaterial)
+    ui.FoundationSelect.SetSelected(floorDisplay.FoundationMaterial)
     suppressFloorInputs = true
-    ui.FloorColorSelect.SetSelected(FormexDesign.GetFloorColor())
-    ui.FoundationColorSelect.SetSelected(FormexDesign.GetFoundationColor())
+    ui.FloorColorSelect.SetSelected(floorDisplay.FloorColor)
+    ui.FoundationColorSelect.SetSelected(floorDisplay.FoundationColor)
     if ui.FloorRaiseSlider then
         ui.FloorRaiseSlider.SetValue(floorRaiseHeightValue)
     end
     suppressFloorInputs = false
 
     ui.WallContent.Visible = false
+    if ui.WallSideContent then
+        ui.WallSideContent.Visible = false
+    end
     ui.FloorContent.Visible = false
     ui.ObjectContent.Visible = false
-    ui.PaintContent.Visible = false
     ui.DesignContentHint.Visible = false
 
     if designMode == FormexDesign.DesignMode.Wall then
-        ui.DesignContentTitle.Text = "Wall Materials"
-        ui.WallContent.Visible = true
+        ui.DesignContentTitle.Text = designSubMode == FormexDesign.DesignSubMode.Normal and "Wall Materials" or "Wall Paint"
+        if designSubMode == FormexDesign.DesignSubMode.Normal then
+            ui.WallContent.Visible = true
+        elseif ui.WallSideContent then
+            ui.WallSideContent.Visible = true
+        end
     elseif designMode == FormexDesign.DesignMode.Select then
         ui.DesignContentTitle.Text = "Select"
         ui.DesignContentHint.Text = "Select a wall, floor, or object to edit."
@@ -1372,9 +1276,6 @@ local function refreshUI()
     elseif designMode == FormexDesign.DesignMode.Object then
         ui.DesignContentTitle.Text = "Objects"
         ui.ObjectContent.Visible = true
-    elseif designMode == FormexDesign.DesignMode.Paint then
-        ui.DesignContentTitle.Text = "Paint"
-        ui.PaintContent.Visible = true
     elseif designMode == FormexDesign.DesignMode.Expand then
         ui.DesignContentTitle.Text = "Plot Expansion"
         ui.DesignContentHint.Text = "Select a segment to unlock."
@@ -1390,7 +1291,7 @@ buildSidebar()
 refreshUI()
 
 FormexClient.ClientEvents:Connect(function(eventName)
-    if eventName ~= "MyPlotChanged" and eventName ~= "CurrentPlotChanged" and eventName ~= "DesignModeChanged" then
+    if eventName ~= "MyPlotChanged" and eventName ~= "CurrentPlotChanged" and eventName ~= "DesignStateChanged" then
         return
     end
 

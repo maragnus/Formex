@@ -68,7 +68,7 @@ end
 
 local function setDesignMode(mode)
     if mode == FormexDesign.DesignMode.Play or canDesign() then
-        FormexDesign.SetDesignMode(mode)
+        FormexDesign.UpdateDesignState({ Mode = mode })
     end
 end
 
@@ -132,7 +132,7 @@ createButton("EditObjects", "Objects", "120639802680464", function()
 end)
 
 createButton("Paint", "Paint", "92885878760720", function()
-    setDesignMode(FormexDesign.DesignMode.Paint)
+    FormexDesign.UpdateDesignState({ SubMode = FormexDesign.DesignSubMode.Paint })
 end)
 
 createButton("Back", "Back", nil, function()
@@ -140,7 +140,7 @@ createButton("Back", "Back", nil, function()
 end)
 
 createButton("Add", "Add", "88488799504419", function()
-    local mode = FormexDesign.GetDesignMode()
+    local mode = FormexDesign.GetDesignState().Mode
     if mode == FormexDesign.DesignMode.Wall then
         FormexDesign.StartWall()
     elseif mode == FormexDesign.DesignMode.Floor then
@@ -149,9 +149,9 @@ createButton("Add", "Add", "88488799504419", function()
 end)
 
 createButton("Delete", "Delete", nil, function()
-    local mode = FormexDesign.GetDesignMode()
+    local mode = FormexDesign.GetDesignState().Mode
     if mode == FormexDesign.DesignMode.Floor then
-        FormexDesign.SetFloorMaterial(0)
+        FormexDesign.UpdateDesignState({ Floor = { FloorMaterial = 0 } })
         return
     end
 
@@ -182,14 +182,14 @@ for materialId, materialInfo in ipairs(Formex.Materials) do
     if isFloorMaterial(materialInfo) then
         table.insert(floorMaterialButtonIds, materialId)
         createButton("FloorMaterial_" .. tostring(materialId), materialInfo.Name, nil, function()
-            FormexDesign.SetFloorMaterial(materialId)
+            FormexDesign.UpdateDesignState({ Floor = { FloorMaterial = materialId } })
         end)
     end
 end
 
 -- Listen for client events
 FormexClient.ClientEvents:Connect(function(eventName)
-    if eventName ~= "MyPlotChanged" and eventName ~= "CurrentPlotChanged" and eventName ~= "DesignModeChanged" then return end
+    if eventName ~= "MyPlotChanged" and eventName ~= "CurrentPlotChanged" and eventName ~= "DesignStateChanged" then return end
 
     uiSettings.HasHome = FormexClient.MyPlotId ~= 0
     uiSettings.IsHome = uiSettings.HasHome and FormexClient.CurrentPlotId == FormexClient.MyPlotId
@@ -214,9 +214,10 @@ end)
 
 refreshUI = function()
     local buttons = {}
-    local designMode = FormexDesign.GetDesignMode()
-    local actionType = FormexDesign.GetActionType()
-    local selectionType = FormexDesign.GetSelection()
+    local designState = FormexDesign.GetDesignState()
+    local designMode = designState.Mode
+    local actionType = designState.ActionType
+    local selectionType = designState.SelectionType
 
     local canEdit = uiSettings.IsLoaded and uiSettings.IsManager
     local inDesign = designMode ~= FormexDesign.DesignMode.Play
@@ -230,7 +231,7 @@ refreshUI = function()
     local inFloorMode = designMode == FormexDesign.DesignMode.Floor
     local inObjectMode = designMode == FormexDesign.DesignMode.Object
     local inExpandMode = designMode == FormexDesign.DesignMode.Expand
-    local inPaintMode = designMode == FormexDesign.DesignMode.Paint
+    local inPaintMode = designState.SubMode == FormexDesign.DesignSubMode.Paint
     local isSelectAction = actionType == FormexDesign.ActionType.Select
 
     buttons["Claim"] = uiSettings.ShowClaim

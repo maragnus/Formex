@@ -27,6 +27,17 @@ type ConnectedWall = {
 
 type WallHandleType = "Start" | "End" | "Center" | "StartSolo" | "EndSolo" | "ExtendStart" | "ExtendEnd" | "Delete"
 
+type WallSide = "Front" | "Back"
+
+type WallPaintSettings = {
+	Height: number?,
+	SplitHeight: number?,
+	TopMaterial: number,
+	BottomMaterial: number,
+	TopColor: Color3,
+	BottomColor: Color3,
+}
+
 local FormexClient: any
 local Formex: any
 local Handles: any
@@ -60,6 +71,8 @@ local select: (Instance) -> boolean
 local getSelectionInfoFromInstance: (Instance?) -> (string?, number?, number?)
 local deleteAfterDelay: (Instance, number) -> ()
 local cancelAction: () -> ()
+local getWallPaintSettings: () -> any
+local updateDesignState: (any) -> ()
 
 local wallStart: Vector2int16? = nil
 local wallBuildMode: "Pending" | "Click" | "Drag" | nil = nil
@@ -122,6 +135,8 @@ function Walls.Init()
 	getSelectionInfoFromInstance = ctx.GetSelectionInfoFromInstance
 	deleteAfterDelay = ctx.DeleteAfterDelay
 	cancelAction = ctx.CancelAction
+	getWallPaintSettings = ctx.GetWallPaintSettings
+	updateDesignState = ctx.UpdateDesignState
 end
 
 local function snapToGrid(value: number): number
@@ -329,6 +344,63 @@ local function getWallBackPart(model: Model): BasePart?
 	return nil
 end
 
+local function getWallModelFromInstance(instance: Instance?): Model?
+	if not instance then
+		return nil
+	end
+	if instance:IsA("Model") and instance.Parent and instance.Parent:IsA("Folder") and instance.Parent.Name == "Walls" then
+		return instance
+	end
+	local model = instance:FindFirstAncestorOfClass("Model")
+	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Walls" then
+		return model
+	end
+	return nil
+end
+
+local function getWallSideFromTarget(target: Instance, hitPosition: Vector3?): (Model?, WallSide?)
+	local model = getWallModelFromInstance(target)
+	if not model then
+		return nil, nil
+	end
+
+	local backPartName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
+	local backPart = model:FindFirstChild(backPartName)
+	if backPart and (target == backPart or target:IsDescendantOf(backPart)) then
+		return model, "Back"
+	end
+
+	local backTop = model:FindFirstChild("BackTop")
+	if backTop and (target == backTop or target:IsDescendantOf(backTop)) then
+		return model, "Back"
+	end
+
+	local frontTop = model:FindFirstChild("FrontTop")
+	if frontTop and (target == frontTop or target:IsDescendantOf(frontTop)) then
+		return model, "Front"
+	end
+
+	if hitPosition then
+		local frontPart = getWallFrontPart(model)
+		local backSide = getWallBackPart(model)
+		if frontPart and backSide then
+			local center = (frontPart.Position + backSide.Position) * 0.5
+			local right = frontPart.CFrame.RightVector
+			local offset = hitPosition - center
+			local dot = offset:Dot(right)
+			if math.abs(dot) > Constants.Epsilon then
+				if dot > 0 then
+					return model, "Back"
+				else
+					return model, "Front"
+				end
+			end
+		end
+	end
+
+	return model, "Front"
+end
+
 local function getWallAttributeNumber(part: BasePart, name: string): number?
 	local value = part:GetAttribute(name)
 	if type(value) == "number" and value > 0 then
@@ -455,6 +527,123 @@ local function getWallDataFromPart(plotPart: BasePart, wallModel: Model, wallId:
 		BackBottomColor = backBottomColor,
 		Part = wallModel,
 	}
+end
+
+local function applyWallAppearance(plotInfo: any, wallModel: Model, overrides: {[string]: any})
+	if not plotInfo or not plotInfo.PlotPart then
+		return
+	end
+
+	local wallId = tonumber(wallModel.Name) or 0
+	local level = tonumber(wallModel.Parent.Parent.Name) or getCurrentLevel()
+	local current = getWallDataFromPart(plotInfo.PlotPart, wallModel, wallId, level)
+
+	local height = current.Height
+	if overrides.Height ~= nil then
+		height = overrides.Height == false and nil or overrides.Height
+	end
+
+	local frontSplitHeight = current.FrontSplitHeight
+	if overrides.FrontSplitHeight ~= nil then
+		frontSplitHeight = overrides.FrontSplitHeight == false and nil or overrides.FrontSplitHeight
+	end
+
+	local backSplitHeight = current.BackSplitHeight
+	if overrides.BackSplitHeight ~= nil then
+		backSplitHeight = overrides.BackSplitHeight == false and nil or overrides.BackSplitHeight
+	end
+
+	local updated = {
+		WallId = current.WallId,
+		Level = current.Level,
+		Start = current.Start,
+		End = current.End,
+		Height = height,
+		FrontSplitHeight = frontSplitHeight,
+		BackSplitHeight = backSplitHeight,
+		FrontTopMaterial = overrides.FrontTopMaterial or current.FrontTopMaterial,
+		FrontBottomMaterial = overrides.FrontBottomMaterial or current.FrontBottomMaterial,
+		BackTopMaterial = overrides.BackTopMaterial or current.BackTopMaterial,
+		BackBottomMaterial = overrides.BackBottomMaterial or current.BackBottomMaterial,
+		FrontTopColor = overrides.FrontTopColor or current.FrontTopColor,
+		FrontBottomColor = overrides.FrontBottomColor or current.FrontBottomColor,
+		BackTopColor = overrides.BackTopColor or current.BackTopColor,
+		BackBottomColor = overrides.BackBottomColor or current.BackBottomColor,
+		Part = wallModel,
+	}
+
+	Formex.Walls.Edit(updated, plotInfo.PlotPart)
+	local serverData = table.clone(updated)
+	serverData.Part = nil
+	FormexClient.BuildWall(serverData, Formex.BuildAction.Edit)
+end
+
+function Walls.ApplyPaintToTarget(target: Instance, hitPosition: Vector3?): boolean
+	local wallModel, side = getWallSideFromTarget(target, hitPosition)
+	if not wallModel or not side then
+		return false
+	end
+
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid then
+		return false
+	end
+
+	local paintSettings = getWallPaintSettings() :: WallPaintSettings
+	local overrides = {
+		Height = paintSettings.Height == nil and false or paintSettings.Height,
+	}
+
+	if side == "Front" then
+		overrides.FrontSplitHeight = paintSettings.SplitHeight == nil and false or paintSettings.SplitHeight
+		overrides.FrontTopMaterial = paintSettings.TopMaterial
+		overrides.FrontBottomMaterial = paintSettings.BottomMaterial
+		overrides.FrontTopColor = paintSettings.TopColor
+		overrides.FrontBottomColor = paintSettings.BottomColor
+	else
+		overrides.BackSplitHeight = paintSettings.SplitHeight == nil and false or paintSettings.SplitHeight
+		overrides.BackTopMaterial = paintSettings.TopMaterial
+		overrides.BackBottomMaterial = paintSettings.BottomMaterial
+		overrides.BackTopColor = paintSettings.TopColor
+		overrides.BackBottomColor = paintSettings.BottomColor
+	end
+
+	applyWallAppearance(plotInfo, wallModel, overrides)
+	return true
+end
+
+function Walls.CopyPaintFromTarget(target: Instance, hitPosition: Vector3?): boolean
+	local wallModel, side = getWallSideFromTarget(target, hitPosition)
+	if not wallModel or not side then
+		return false
+	end
+
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
+		return false
+	end
+
+	local wallId = tonumber(wallModel.Name) or 0
+	local level = tonumber(wallModel.Parent.Parent.Name) or getCurrentLevel()
+	local appearance = getWallDataFromPart(plotInfo.PlotPart, wallModel, wallId, level)
+	local splitHeight = side == "Front" and appearance.FrontSplitHeight or appearance.BackSplitHeight
+	local topMaterial = side == "Front" and appearance.FrontTopMaterial or appearance.BackTopMaterial
+	local bottomMaterial = side == "Front" and appearance.FrontBottomMaterial or appearance.BackBottomMaterial
+	local topColor = side == "Front" and appearance.FrontTopColor or appearance.BackTopColor
+	local bottomColor = side == "Front" and appearance.FrontBottomColor or appearance.BackBottomColor
+
+	updateDesignState({
+		Wall = {
+			Height = appearance.Height == nil and false or appearance.Height,
+			SplitHeight = splitHeight == nil and false or splitHeight,
+			TopMaterial = topMaterial,
+			BottomMaterial = bottomMaterial,
+			TopColor = topColor,
+			BottomColor = bottomColor,
+		},
+	})
+
+	return true
 end
 
 local function applyWallTransform(plotPart: BasePart, wall: WallInfo)

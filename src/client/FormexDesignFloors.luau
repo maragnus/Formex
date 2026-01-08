@@ -45,6 +45,7 @@ local getFloorColor: () -> Color3
 local getCeilingColor: () -> Color3
 local getFoundationMaterialId: () -> number
 local getFoundationColor: () -> Color3
+local updateDesignState: (any) -> ()
 local select: (Instance) -> boolean
 local clearSelection: () -> ()
 local getSelectionInfoFromInstance: (Instance?) -> (string?, number?, number?)
@@ -84,6 +85,7 @@ function Floors.Init()
 	getCeilingColor = ctx.GetCeilingColor
 	getFoundationMaterialId = ctx.GetFoundationMaterialId
 	getFoundationColor = ctx.GetFoundationColor
+	updateDesignState = ctx.UpdateDesignState
 	select = ctx.Select
 	clearSelection = ctx.ClearSelection
 	getSelectionInfoFromInstance = ctx.GetSelectionInfoFromInstance
@@ -157,6 +159,75 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 		FoundationColor = foundationColor,
 		Model = model,
 	}
+end
+
+local function getFloorModelFromTarget(target: Instance?): Model?
+	if not target then
+		return nil
+	end
+	if target:IsA("Model") and target.Parent and target.Parent:IsA("Folder") and target.Parent.Name == "Floors" then
+		return target
+	end
+	local model = target:FindFirstAncestorOfClass("Model")
+	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then
+		return model
+	end
+	return nil
+end
+
+function Floors.ApplyPaintToTarget(target: Instance): boolean
+	local model = getFloorModelFromTarget(target)
+	if not model then
+		return false
+	end
+
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid then
+		return false
+	end
+
+	local current = getFloorDataFromModel(model)
+	if not current.Points or #current.Points < 3 then
+		return false
+	end
+
+	local updated = {
+		FloorId = current.FloorId,
+		LevelIndex = current.LevelIndex,
+		Points = current.Points,
+		RaiseHeight = getFloorRaiseHeight(),
+		FloorMaterial = getFloorMaterialId(),
+		CeilingMaterial = getCeilingMaterialId(),
+		FoundationMaterial = getFoundationMaterialId(),
+		FloorColor = getFloorColor(),
+		CeilingColor = getCeilingColor(),
+		FoundationColor = getFoundationColor(),
+		Model = model,
+	}
+
+	FormexClient.BuildFloor(updated, Formex.BuildAction.Edit)
+	return true
+end
+
+function Floors.CopyPaintFromTarget(target: Instance): boolean
+	local model = getFloorModelFromTarget(target)
+	if not model then
+		return false
+	end
+
+	local current = getFloorDataFromModel(model)
+	updateDesignState({
+		Floor = {
+			RaiseHeight = current.RaiseHeight,
+			FloorMaterial = current.FloorMaterial,
+			CeilingMaterial = current.CeilingMaterial,
+			FoundationMaterial = current.FoundationMaterial,
+			FloorColor = current.FloorColor,
+			CeilingColor = current.CeilingColor,
+			FoundationColor = current.FoundationColor,
+		},
+	})
+	return true
 end
 
 local function getHandleY(levelIndex: number): number
