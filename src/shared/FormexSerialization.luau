@@ -17,29 +17,13 @@ end
 
 local function readMaterialId(reader): number?
 	local value = reader:ReadU8()
-	if value == 0 then
-		return nil
-	end
-	return value
-end
-
-local function writeOptionalU8(writer, value: number?)
-	writer:WriteU8(value and value > 0 and value or 0)
-end
-
-local function readOptionalU8(reader): number?
-	local value = reader:ReadU8()
-	if value == 0 then
-		return nil
-	end
+	if value == 0 then return nil end
 	return value
 end
 
 local function writeRaiseHeight(writer, value: number)
 	local maxHeight = Formex.LevelHeight - Formex.InterfloorHeight
-	if maxHeight < 0 then
-		maxHeight = 0
-	end
+	if maxHeight < 0 then maxHeight = 0	end
 	local snapped = math.round((value or 0) / Formex.GridSize) * Formex.GridSize
 	local clamped = math.clamp(snapped, 0, maxHeight)
 	writer:WriteU8(math.clamp(math.round(clamped), 0, 255))
@@ -81,9 +65,9 @@ function FormexSerialization.SerializeLevelData(levels: Formex.LevelArray): stri
 				writer:WriteI16(wall.Start.Y)
 				writer:WriteI16(wall.End.X)
 				writer:WriteI16(wall.End.Y)
-				writeOptionalU8(writer, wall.Height and math.round(wall.Height) or nil)
-				writeOptionalU8(writer, wall.FrontSplitHeight and math.round(wall.FrontSplitHeight) or nil)
-				writeOptionalU8(writer, wall.BackSplitHeight and math.round(wall.BackSplitHeight) or nil)
+				writer:WriteU8(wall.Height and math.round(wall.Height) or 0)
+				writer:WriteU8(wall.FrontSplitHeight and math.round(wall.FrontSplitHeight) or 0)
+				writer:WriteU8(wall.BackSplitHeight and math.round(wall.BackSplitHeight) or 0)
 				writeMaterialId(writer, wall.FrontTopMaterial)
 				writeMaterialId(writer, wall.FrontBottomMaterial)
 				writeMaterialId(writer, wall.BackTopMaterial)
@@ -143,431 +127,6 @@ function FormexSerialization.SerializeLevelData(levels: Formex.LevelArray): stri
 	return writer:ToString()
 end
 
-local function deserializeLevelDataV1(reader): Formex.LevelArray
-	local result = {} :: Formex.LevelArray
-
-	for i = 1, Formex.MaxPlotSize.Levels do
-		local levelData: Formex.LevelData = {
-			Walls = {},
-			Floors = {},
-			Objects = {},
-		}
-
-		local levelIndex = reader:ReadU8()
-		if levelIndex ~= 0 then
-			result[levelIndex] = levelData
-		end
-
-		-- Walls
-		while true do
-			local wallId = reader:ReadU16()
-			if wallId == 0 then break end
-
-			local startPoint = Vector2int16.new(reader:ReadI16(), reader:ReadI16())
-			local endPoint = Vector2int16.new(reader:ReadI16(), reader:ReadI16())
-			local frontMaterial = readMaterialId(reader)
-			local backMaterial = readMaterialId(reader)
-			reader:ReadU8() -- legacy start material
-			reader:ReadU8() -- legacy end material
-
-			local resolvedFront = frontMaterial or Formex.DefaultWallMaterial
-			local resolvedBack = backMaterial or resolvedFront
-			local wall: Formex.WallData = {
-				WallId = wallId,
-				Level = levelIndex,
-				Start = startPoint,
-				End = endPoint,
-				FrontTopMaterial = resolvedFront,
-				FrontBottomMaterial = resolvedFront,
-				BackTopMaterial = resolvedBack,
-				BackBottomMaterial = resolvedBack,
-				FrontTopColor = Color3.new(1, 1, 1),
-				FrontBottomColor = Color3.new(1, 1, 1),
-				BackTopColor = Color3.new(1, 1, 1),
-				BackBottomColor = Color3.new(1, 1, 1),
-			}
-			levelData.Walls[wallId] = wall
-		end
-
-		local legacyFloors = {}
-		while true do
-			local index = reader:ReadU16()
-			if index == 0 then break end
-			legacyFloors[index] = reader:ReadU8()
-		end
-
-		local legacyCeilings = {}
-		while true do
-			local index = reader:ReadU16()
-			if index == 0 then break end
-			legacyCeilings[index] = reader:ReadU8()
-		end
-
-		for index, floorMaterial in legacyFloors do
-			local ceilingMaterial = legacyCeilings[index] or floorMaterial
-			local tile = Formex.IndexToXY(index)
-			local tileSize = Formex.LayoutGridSize
-			local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
-			local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
-			levelData.Floors[index] = {
-				FloorId = index,
-				LevelIndex = levelIndex,
-				Points = {
-					Vector2int16.new(x0, z0),
-					Vector2int16.new(x0 + tileSize, z0),
-					Vector2int16.new(x0 + tileSize, z0 + tileSize),
-					Vector2int16.new(x0, z0 + tileSize),
-				},
-				RaiseHeight = 0,
-				FloorMaterial = floorMaterial ~= 0 and floorMaterial or nil,
-				CeilingMaterial = ceilingMaterial ~= 0 and ceilingMaterial or nil,
-				FoundationMaterial = Formex.DefaultFoundationMaterial,
-				FloorColor = Color3.new(1, 1, 1),
-				CeilingColor = Color3.new(1, 1, 1),
-				FoundationColor = Color3.new(1, 1, 1),
-			}
-		end
-		for index, ceilingMaterial in legacyCeilings do
-			if not legacyFloors[index] then
-				local tile = Formex.IndexToXY(index)
-				local tileSize = Formex.LayoutGridSize
-				local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
-				local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
-				levelData.Floors[index] = {
-					FloorId = index,
-					LevelIndex = levelIndex,
-					Points = {
-						Vector2int16.new(x0, z0),
-						Vector2int16.new(x0 + tileSize, z0),
-						Vector2int16.new(x0 + tileSize, z0 + tileSize),
-						Vector2int16.new(x0, z0 + tileSize),
-					},
-					RaiseHeight = 0,
-					FloorMaterial = ceilingMaterial ~= 0 and ceilingMaterial or nil,
-					CeilingMaterial = ceilingMaterial ~= 0 and ceilingMaterial or nil,
-					FoundationMaterial = Formex.DefaultFoundationMaterial,
-					FloorColor = Color3.new(1, 1, 1),
-					CeilingColor = Color3.new(1, 1, 1),
-					FoundationColor = Color3.new(1, 1, 1),
-				}
-			end
-		end
-
-		-- Objects
-		while true do
-			local objectId = reader:ReadU16()
-			if objectId == 0 then break end
-			local obj = {
-				ObjectId = tostring(objectId),
-				Level = levelIndex,
-				Position = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				Rotation = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				WallId = reader:ReadU16(),
-				Design = {},
-				Properties = {},
-			}
-
-			while true do
-				local designIndex = reader:ReadU16()
-				if designIndex == 0 then break end
-				obj.Design[designIndex] = reader:ReadString()
-			end
-
-			levelData.Objects[objectId] = obj
-		end
-	end
-
-	return result
-end
-
-local function deserializeLevelDataV2(reader): Formex.LevelArray
-	local result = {} :: Formex.LevelArray
-
-	for i = 1, Formex.MaxPlotSize.Levels do
-		local levelData: Formex.LevelData = {
-			Walls = {},
-			Floors = {},
-			Objects = {},
-		}
-
-		local levelIndex = reader:ReadU8()
-		if levelIndex ~= 0 then
-			result[levelIndex] = levelData
-		end
-
-		-- Walls
-		while true do
-			local wallId = reader:ReadU16()
-			if wallId == 0 then break end
-
-			local startPoint = Vector2int16.new(reader:ReadI16(), reader:ReadI16())
-			local endPoint = Vector2int16.new(reader:ReadI16(), reader:ReadI16())
-			local frontMaterial = readMaterialId(reader)
-			local backMaterial = readMaterialId(reader)
-			reader:ReadU8() -- legacy start material
-			reader:ReadU8() -- legacy end material
-
-			local resolvedFront = frontMaterial or Formex.DefaultWallMaterial
-			local resolvedBack = backMaterial or resolvedFront
-			local wall: Formex.WallData = {
-				WallId = wallId,
-				Level = levelIndex,
-				Start = startPoint,
-				End = endPoint,
-				FrontTopMaterial = resolvedFront,
-				FrontBottomMaterial = resolvedFront,
-				BackTopMaterial = resolvedBack,
-				BackBottomMaterial = resolvedBack,
-				FrontTopColor = Color3.new(1, 1, 1),
-				FrontBottomColor = Color3.new(1, 1, 1),
-				BackTopColor = Color3.new(1, 1, 1),
-				BackBottomColor = Color3.new(1, 1, 1),
-			}
-			levelData.Walls[wallId] = wall
-		end
-
-		while true do
-			local floorId = reader:ReadU16()
-			if floorId == 0 then break end
-			local floorMaterial = readMaterialId(reader)
-			local ceilingMaterial = readMaterialId(reader)
-			local pointCount = reader:ReadU8()
-			local points = {}
-			for _ = 1, pointCount do
-				table.insert(points, Vector2int16.new(reader:ReadI8(), reader:ReadI8()))
-			end
-			levelData.Floors[floorId] = {
-				FloorId = floorId,
-				LevelIndex = levelIndex,
-				Points = points,
-				RaiseHeight = 0,
-				FloorMaterial = floorMaterial,
-				CeilingMaterial = ceilingMaterial,
-				FoundationMaterial = Formex.DefaultFoundationMaterial,
-				FloorColor = Color3.new(1, 1, 1),
-				CeilingColor = Color3.new(1, 1, 1),
-				FoundationColor = Color3.new(1, 1, 1),
-			}
-		end
-
-		-- Objects
-		while true do
-			local objectId = reader:ReadU16()
-			if objectId == 0 then break end
-			local obj = {
-				ObjectId = tostring(objectId),
-				Level = levelIndex,
-				Position = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				Rotation = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				WallId = reader:ReadU16(),
-			}
-
-			while true do
-				local designIndex = reader:ReadU16()
-				if designIndex == 0 then break end
-				obj.Design[designIndex] = reader:ReadString()
-			end
-
-			levelData.Objects[objectId] = obj
-		end
-	end
-
-	return result
-end
-
-local function deserializeLevelDataV3(reader): Formex.LevelArray
-	local result = {} :: Formex.LevelArray
-
-	for i = 1, Formex.MaxPlotSize.Levels do
-		local levelData: Formex.LevelData = {
-			Walls = {},
-			Floors = {},
-			Objects = {},
-		}
-
-		local levelIndex = reader:ReadU8()
-		if levelIndex ~= 0 then
-			result[levelIndex] = levelData
-		end
-
-		-- Walls
-		while true do
-			local wallId = reader:ReadU16()
-			if wallId == 0 then break end
-
-			local wall: Formex.WallData = {
-				WallId = wallId,
-				Level = levelIndex,
-				Start = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
-				End = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
-				Height = readOptionalU8(reader),
-				FrontSplitHeight = readOptionalU8(reader),
-				BackSplitHeight = readOptionalU8(reader),
-				FrontTopMaterial = readMaterialId(reader),
-				FrontBottomMaterial = readMaterialId(reader),
-				BackTopMaterial = readMaterialId(reader),
-				BackBottomMaterial = readMaterialId(reader),
-				FrontTopColor = readColor(reader),
-				FrontBottomColor = readColor(reader),
-				BackTopColor = readColor(reader),
-				BackBottomColor = readColor(reader),
-			} :: Formex.WallData
-			levelData.Walls[wallId] = wall
-		end
-
-		-- Floors
-		while true do
-			local floorId = reader:ReadU16()
-			if floorId == 0 then break end
-			local floorMaterial = readMaterialId(reader)
-			local ceilingMaterial = readMaterialId(reader)
-			local foundationMaterial = readMaterialId(reader)
-			local floorColor = readColor(reader)
-			local ceilingColor = readColor(reader)
-			local foundationColor = readColor(reader)
-			local pointCount = reader:ReadU8()
-			local points = {}
-			for _ = 1, pointCount do
-				table.insert(points, Vector2int16.new(reader:ReadI8(), reader:ReadI8()))
-			end
-			levelData.Floors[floorId] = {
-				FloorId = floorId,
-				LevelIndex = levelIndex,
-				Points = points,
-				RaiseHeight = 0,
-				FloorMaterial = floorMaterial,
-				CeilingMaterial = ceilingMaterial,
-				FoundationMaterial = foundationMaterial,
-				FloorColor = floorColor,
-				CeilingColor = ceilingColor,
-				FoundationColor = foundationColor,
-			} :: Formex.FloorData
-		end
-
-		-- Objects
-		while true do
-			local objectId = reader:ReadU16()
-			if objectId == 0 then break end
-			local obj = {
-				ObjectId = tostring(objectId),
-				Level = levelIndex,
-				Position = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				Rotation = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				WallId = reader:ReadU16(),
-				Design = {},
-				Properties = {},
-			} :: Formex.ObjectData
-
-			while true do
-				local designIndex = reader:ReadU16()
-				if designIndex == 0 then break end
-				obj.Design[designIndex] = reader:ReadString()
-			end
-
-			levelData.Objects[objectId] = obj
-		end
-	end
-
-	return result
-end
-
-local function deserializeLevelDataV4(reader): Formex.LevelArray
-	local result = {} :: Formex.LevelArray
-
-	for i = 1, Formex.MaxPlotSize.Levels do
-		local levelData: Formex.LevelData = {
-			Walls = {},
-			Floors = {},
-			Objects = {},
-		}
-
-		local levelIndex = reader:ReadU8()
-		if levelIndex ~= 0 then
-			result[levelIndex] = levelData
-		end
-
-		-- Walls
-		while true do
-			local wallId = reader:ReadU16()
-			if wallId == 0 then break end
-
-			local wall: Formex.WallData = {
-				WallId = wallId,
-				Level = levelIndex,
-				Start = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
-				End = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
-				Height = readOptionalU8(reader),
-				FrontSplitHeight = readOptionalU8(reader),
-				BackSplitHeight = readOptionalU8(reader),
-				FrontTopMaterial = readMaterialId(reader),
-				FrontBottomMaterial = readMaterialId(reader),
-				BackTopMaterial = readMaterialId(reader),
-				BackBottomMaterial = readMaterialId(reader),
-				FrontTopColor = readColor(reader),
-				FrontBottomColor = readColor(reader),
-				BackTopColor = readColor(reader),
-				BackBottomColor = readColor(reader),
-			} :: Formex.WallData
-			levelData.Walls[wallId] = wall
-		end
-
-		-- Floors
-		while true do
-			local floorId = reader:ReadU16()
-			if floorId == 0 then break end
-			local floorMaterial = readMaterialId(reader)
-			local ceilingMaterial = readMaterialId(reader)
-			local foundationMaterial = readMaterialId(reader)
-			local floorColor = readColor(reader)
-			local ceilingColor = readColor(reader)
-			local foundationColor = readColor(reader)
-			local raiseHeight = readOptionalU8(reader) or 0
-			local pointCount = reader:ReadU8()
-			local points = {}
-			for _ = 1, pointCount do
-				table.insert(points, Vector2int16.new(reader:ReadI8(), reader:ReadI8()))
-			end
-			levelData.Floors[floorId] = {
-				FloorId = floorId,
-				LevelIndex = levelIndex,
-				Points = points,
-				RaiseHeight = raiseHeight,
-				FloorMaterial = floorMaterial,
-				CeilingMaterial = ceilingMaterial,
-				FoundationMaterial = foundationMaterial,
-				FloorColor = floorColor,
-				CeilingColor = ceilingColor,
-				FoundationColor = foundationColor,
-			} :: Formex.FloorData
-		end
-
-		-- Objects
-		while true do
-			local objectId = reader:ReadU16()
-			if objectId == 0 then break end
-			local obj = {
-				ObjectId = tostring(objectId),
-				Level = levelIndex,
-				Position = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				Rotation = Vector3.new(reader:ReadF32(), reader:ReadF32(), reader:ReadF32()),
-				WallId = reader:ReadU16(),
-				Design = {},
-				Properties = {},
-			} :: Formex.ObjectData
-
-			while true do
-				local designIndex = reader:ReadU16()
-				if designIndex == 0 then break end
-				obj.Design[designIndex] = reader:ReadString()
-			end
-
-			levelData.Objects[objectId] = obj
-		end
-	end
-
-	return result
-end
-
 local function deserializeLevelDataV5(reader): Formex.LevelArray
 	local result = {} :: Formex.LevelArray
 
@@ -593,9 +152,9 @@ local function deserializeLevelDataV5(reader): Formex.LevelArray
 				Level = levelIndex,
 				Start = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
 				End = Vector2int16.new(reader:ReadI16(), reader:ReadI16()),
-				Height = readOptionalU8(reader),
-				FrontSplitHeight = readOptionalU8(reader),
-				BackSplitHeight = readOptionalU8(reader),
+				Height = reader:ReadU8(),
+				FrontSplitHeight = reader:ReadU8(),
+				BackSplitHeight = reader:ReadU8(),
 				FrontTopMaterial = readMaterialId(reader),
 				FrontBottomMaterial = readMaterialId(reader),
 				BackTopMaterial = readMaterialId(reader),
@@ -669,18 +228,12 @@ function FormexSerialization.DeserializeLevelData(dataString: string): Formex.Le
 	local reader = Buffer.read(dataString)
 	local version = reader:ReadU16()
 
-	if version == 1 then
-		return deserializeLevelDataV1(reader)
-	elseif version == 2 then
-		return deserializeLevelDataV2(reader)
-	elseif version == 3 then
-		return deserializeLevelDataV3(reader)
-	elseif version == 4 then
-		return deserializeLevelDataV4(reader)
+	if version < 5 then
+		error("Unsupported legacy data version: " .. tostring(version))
 	elseif version == 5 then
 		return deserializeLevelDataV5(reader)
 	else
-		error("Unsupported data version: " .. tostring(version))
+		error("Unsupported future data version: " .. tostring(version))
 	end
 end
 
