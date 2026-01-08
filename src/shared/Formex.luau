@@ -71,7 +71,7 @@ export type FloorData = {
 	FloorId: number,
 	LevelIndex: number,
 	Points: {Vector2int16},
-	RaiseHeight: number?, -- studs NEW FEATURE to create raised floors and stages
+	RaiseHeight: number, -- studs: 0..(LevelHeight-InterfloorHeight) in GridSize increments
 	FloorMaterial: number?, -- Formex.WallMaterials[index]
 	FloorColor: Color3?,
 	CeilingMaterial: number?, -- Formex.WallMaterials[index]

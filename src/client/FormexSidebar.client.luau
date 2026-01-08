@@ -42,6 +42,7 @@ local wallBackBottomColor = Color3.new(1, 1, 1)
 local wallHeightValue: number? = nil
 local wallFrontSplitValue: number? = nil
 local wallBackSplitValue: number? = nil
+local floorRaiseHeightValue: number = 0
 local cachedOwnerUserId = -1
 
 local ui = {}
@@ -189,6 +190,19 @@ local function clampWallSplit(value: number?, height: number?): number?
 	end
 	local snapped = snapToGrid(value)
 	return math.clamp(snapped, 0, height - Formex.GridSize)
+end
+
+local function clampFloorRaiseHeight(value: number?): number
+	local resolved = value or 0
+	if resolved < 0 then
+		resolved = 0
+	end
+	local snapped = snapToGrid(resolved)
+	local maxHeight = Formex.LevelHeight - Formex.InterfloorHeight
+	if maxHeight < 0 then
+		maxHeight = 0
+	end
+	return math.clamp(snapped, 0, maxHeight)
 end
 
 local function createMaterialColorRow(options)
@@ -618,7 +632,7 @@ local function buildSidebar()
 
     local contentPadding = Instance.new("UIPadding", content)
     contentPadding.PaddingLeft = UDim.new(0, 2)
-    contentPadding.PaddingRight = UDim.new(0, 2)
+    contentPadding.PaddingRight = UDim.new(0, 8)
 
     local contentLayout = Instance.new("UIListLayout", content)
     contentLayout.FillDirection = Enum.FillDirection.Vertical
@@ -1086,6 +1100,27 @@ local function buildSidebar()
         end,
     })
 
+    local floorRaiseSlider: FormexUI.SliderHandle
+    floorRaiseSlider = FormexUI.CreateSlider({
+        Parent = floorContent,
+        Label = "Raise height (studs)",
+        Min = 0,
+        Max = Formex.LevelHeight - Formex.InterfloorHeight,
+        Step = Formex.GridSize,
+        AllowEmpty = false,
+        PlaceholderText = "0",
+    }, function(value)
+        if suppressFloorInputs then
+            return
+        end
+        local clamped = clampFloorRaiseHeight(value)
+        floorRaiseHeightValue = clamped
+        if value ~= clamped then
+            floorRaiseSlider.SetValue(clamped)
+        end
+        FormexDesign.SetFloorRaiseHeight(clamped)
+    end)
+
     local foundationRow = createMaterialColorRow({
         Parent = floorContent,
         Name = "FoundationRow",
@@ -1227,6 +1262,7 @@ local function buildSidebar()
     ui.FloorRow = floorRow.Row
     ui.FloorSelect = floorRow.Material
     ui.FloorColorSelect = floorRow.Color
+    ui.FloorRaiseSlider = floorRaiseSlider
     ui.CeilingContent = ceilingContent
     ui.CeilingRow = ceilingRow.Row
     ui.CeilingSelect = ceilingRow.Material
@@ -1340,6 +1376,7 @@ local function refreshUI()
     local currentFloorMaterial = FormexDesign.GetFloorMaterial()
     local currentCeilingMaterial = FormexDesign.GetCeilingMaterial()
     local currentFoundationMaterial = FormexDesign.GetFoundationMaterial()
+    floorRaiseHeightValue = FormexDesign.GetFloorRaiseHeight()
     ui.FloorSelect.SetSelected(currentFloorMaterial)
     ui.CeilingSelect.SetSelected(currentCeilingMaterial)
     ui.FoundationSelect.SetSelected(currentFoundationMaterial)
@@ -1347,6 +1384,9 @@ local function refreshUI()
     ui.FloorColorSelect.SetSelected(FormexDesign.GetFloorColor())
     ui.CeilingColorSelect.SetSelected(FormexDesign.GetCeilingColor())
     ui.FoundationColorSelect.SetSelected(FormexDesign.GetFoundationColor())
+    if ui.FloorRaiseSlider then
+        ui.FloorRaiseSlider.SetValue(floorRaiseHeightValue)
+    end
     suppressFloorInputs = false
 
     ui.WallContent.Visible = false

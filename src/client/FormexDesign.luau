@@ -118,6 +118,7 @@ local floorColor = Color3.new(1, 1, 1)
 local ceilingColor = Color3.new(1, 1, 1)
 local foundationMaterialId = Formex.DefaultFoundationMaterial
 local foundationColor = Color3.new(1, 1, 1)
+local floorRaiseHeight: number = 0
 local actionHeld = false
 local altHeld, alt1Held, alt2Held, alt3Held = false, false, false, false
 local selectionType: SelectionType = FormexDesign.SelectionType.None
@@ -152,6 +153,7 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 	local floorColor = model:GetAttribute("FloorColor") or Color3.new(1, 1, 1)
 	local ceilingColor = model:GetAttribute("CeilingColor") or floorColor
 	local foundationColor = model:GetAttribute("FoundationColor") or floorColor
+	local raiseHeight = model:GetAttribute("RaiseHeight") or 0
 	local levelIndex = tonumber(model.Parent.Parent.Name) or currentLevel
 	local floorId = tonumber(model.Name) or 0
 
@@ -159,6 +161,7 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 		FloorId = floorId,
 		LevelIndex = levelIndex,
 		Points = points,
+		RaiseHeight = raiseHeight,
 		FloorMaterial = floorMaterial,
 		CeilingMaterial = ceilingMaterial,
 		FoundationMaterial = foundationMaterial,
@@ -184,10 +187,12 @@ local function applySelectedFloorAppearance(overrides: {[string]: any})
 	if not current.Points or #current.Points < 3 then
 		return
 	end
+	local raiseHeight = overrides.RaiseHeight ~= nil and overrides.RaiseHeight or current.RaiseHeight
 	local updated = {
 		FloorId = current.FloorId,
 		LevelIndex = current.LevelIndex,
 		Points = current.Points,
+		RaiseHeight = raiseHeight,
 		FloorMaterial = overrides.FloorMaterial or current.FloorMaterial,
 		CeilingMaterial = overrides.CeilingMaterial or current.CeilingMaterial,
 		FoundationMaterial = overrides.FoundationMaterial or current.FoundationMaterial,
@@ -260,6 +265,23 @@ function FormexDesign.SetCeilingMaterial(materialId: number)
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
 	and ghostFloorData then
 		ghostFloorData.CeilingMaterial = materialId
+	end
+	notifyDesignModeChange()
+end
+
+function FormexDesign.GetFloorRaiseHeight(): number
+	return floorRaiseHeight
+end
+
+function FormexDesign.SetFloorRaiseHeight(value: number)
+	floorRaiseHeight = value
+	if selectionType == FormexDesign.SelectionType.Floor then
+		applySelectedFloorAppearance({ RaiseHeight = value })
+	end
+	if ghostActive
+	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
+	and ghostFloorData then
+		ghostFloorData.RaiseHeight = value
 	end
 	notifyDesignModeChange()
 end
@@ -1001,6 +1023,7 @@ local function buildFloorGhostData(levelIndex: number, tile: Vector2int16): Form
 			Vector2int16.new(x0 + tileSize, z0 + tileSize),
 			Vector2int16.new(x0, z0 + tileSize),
 		},
+		RaiseHeight = floorRaiseHeight,
 		FloorMaterial = floorMaterialId,
 		CeilingMaterial = ceilingMaterialId,
 		FoundationMaterial = foundationMaterialId,
@@ -1067,6 +1090,7 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 	else
 		ghostFloorData.LevelIndex = levelIndex
 		ghostFloorData.FloorId = Formex.XYToIndex(tile.X, tile.Y)
+		ghostFloorData.RaiseHeight = floorRaiseHeight
 		ghostFloorData.FloorMaterial = floorMaterialId
 		ghostFloorData.CeilingMaterial = ceilingMaterialId
 		ghostFloorData.FoundationMaterial = foundationMaterialId
@@ -1078,9 +1102,16 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 	local tileSize = Formex.LayoutGridSize
 	local xOffset = (tile.X + 0.5) * tileSize - (Formex.Dimensions.Width / 2)
 	local zOffset = (tile.Y + 0.5) * tileSize - (Formex.Dimensions.Depth / 2)
-	local thickness = levelIndex == 1 and Formex.SegmentSize.Foundation or Formex.SegmentSize.Interfloor
 	local levelTop = Formex.LevelHeight * (levelIndex - 1)
-	local centerY = levelTop - (thickness / 2)
+	local raiseHeight = ghostFloorData.RaiseHeight
+	local yTop = levelTop
+	local yBottom = levelTop - (levelIndex == 1 and Formex.SegmentSize.Foundation or Formex.SegmentSize.Interfloor)
+	if raiseHeight and raiseHeight > 0 then
+		yTop = levelTop + raiseHeight
+		yBottom = levelTop
+	end
+	local thickness = math.abs(yTop - yBottom)
+	local centerY = (yTop + yBottom) / 2
 
 	ghost.Size = Vector3.new(tileSize, thickness, tileSize)
 	ghost.CFrame = plotPart.CFrame * CFrame.new(xOffset, centerY, zOffset)
@@ -1206,6 +1237,7 @@ function FormexDesign.Select(part: Instance)
 			floorColor = floorData.FloorColor
 			ceilingColor = floorData.CeilingColor
 			foundationColor = floorData.FoundationColor
+			floorRaiseHeight = floorData.RaiseHeight
 		end
 		notifyDesignModeChange()
 		FormexDesignHighlights.UpdateSelectionHighlight()
@@ -1437,6 +1469,9 @@ FormexDesignContext.Init({
 	end,
 	GetCeilingMaterialId = function()
 		return ceilingMaterialId
+	end,
+	GetFloorRaiseHeight = function()
+		return floorRaiseHeight
 	end,
 	GetFloorColor = function()
 		return floorColor

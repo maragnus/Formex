@@ -93,13 +93,17 @@ local floorSubscriptions = {} :: {
 local watchedLevels = {} :: {[Instance]: boolean}
 local watchedFloorFolders = {} :: {[Instance]: boolean}
 
-local floorAttributeNames = {
+local floorAppearanceAttributeNames = {
     "FloorMaterial",
     "CeilingMaterial",
     "FoundationMaterial",
     "FloorColor",
     "CeilingColor",
     "FoundationColor",
+}
+
+local floorGeometryAttributeNames = {
+    "RaiseHeight",
 }
 
 local function unsubscribeFloorModel(model: Model)
@@ -149,8 +153,11 @@ local function subscribeFloorModel(plotPart: BasePart, model: Model)
         refreshGeometry()
     end)
 
-    for _, attributeName in ipairs(floorAttributeNames) do
+    for _, attributeName in ipairs(floorAppearanceAttributeNames) do
         state.Connections[attributeName] = model:GetAttributeChangedSignal(attributeName):Connect(refreshAppearance)
+    end
+    for _, attributeName in ipairs(floorGeometryAttributeNames) do
+        state.Connections[attributeName] = model:GetAttributeChangedSignal(attributeName):Connect(refreshGeometry)
     end
 end
 

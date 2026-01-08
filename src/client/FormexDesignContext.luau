@@ -47,6 +47,7 @@ export type Context = {
 	GetGhostFloorData: () -> any?,
 	GetFloorMaterialId: () -> number,
 	GetCeilingMaterialId: () -> number,
+	GetFloorRaiseHeight: () -> number,
 	GetFloorColor: () -> Color3,
 	GetCeilingColor: () -> Color3,
 	GetFoundationMaterialId: () -> number,

@@ -394,6 +394,21 @@ local function getFloorThickness(levelIndex: number): number
 	return Formex.InterfloorHeight
 end
 
+local function normalizeRaiseHeight(value: number?): number
+	-- Raised floors are snapped to the grid and clamped to stay within a level.
+	local resolved = value or 0
+	if resolved < 0 then
+		resolved = 0
+	end
+
+	local snapped = math.round(resolved / Formex.GridSize) * Formex.GridSize
+	local maxHeight = Formex.LevelHeight - Formex.InterfloorHeight
+	if maxHeight < 0 then
+		maxHeight = 0
+	end
+	return math.clamp(snapped, 0, maxHeight)
+end
+
 local function resolveColor(value: Color3?, fallback: Color3?): Color3
 	-- Normalize optional colors so downstream code can always use a Color3.
 	return value or fallback or Color3.new(1, 1, 1)
@@ -658,12 +673,24 @@ local function applyMeshMaterials(
 	end
 end
 
+local function resolveFloorHeights(levelIndex: number, raiseHeight: number): (number, number)
+	local levelTop = Formex.LevelHeight * (levelIndex - 1)
+	local resolvedRaise = normalizeRaiseHeight(raiseHeight)
+	if resolvedRaise > 0 then
+		return levelTop + resolvedRaise, levelTop
+	end
+
+	local thickness = getFloorThickness(levelIndex)
+	return levelTop, levelTop - thickness
+end
+
 local function buildSurfaceMeshes(
 	parent: Instance,
 	plotPart: BasePart,
 	points: { Vector2int16 },
 	triangles: { Triangle },
 	levelIndex: number,
+	raiseHeight: number,
 	floorMaterial: number?,
 	ceilingMaterial: number?,
 	foundationMaterial: number?,
@@ -676,10 +703,7 @@ local function buildSurfaceMeshes(
 )
 	clearMeshParts(parent, nameSuffix)
 
-	local thickness = getFloorThickness(levelIndex)
-	local levelTop = Formex.LevelHeight * (levelIndex - 1)
-	local yTop = levelTop
-	local yBottom = levelTop - thickness
+	local yTop, yBottom = resolveFloorHeights(levelIndex, raiseHeight)
 
 	local floorPart = createMeshPart(
 		getMeshPartName(MESH_PART_NAMES.Floor, nameSuffix),
@@ -793,6 +817,7 @@ local function buildFloorDataFromAttributes(model: Model): Formex.FloorData
 		FloorId = tonumber(model.Name) or 0,
 		LevelIndex = getLevelIndexFromModel(model),
 		Points = points,
+		RaiseHeight = model:GetAttribute("RaiseHeight") or 0,
 		FloorMaterial = model:GetAttribute("FloorMaterial"),
 		CeilingMaterial = model:GetAttribute("CeilingMaterial"),
 		FoundationMaterial = model:GetAttribute("FoundationMaterial"),
@@ -807,6 +832,7 @@ local function applyFloorAttributes(model: Model, floor: Formex.FloorData)
 	-- Store material/color attributes for selection and serialization.
 	local floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor =
 		resolveFloorAppearance(floor)
+	local raiseHeight = normalizeRaiseHeight(floor.RaiseHeight)
 
 	model:SetAttribute("FloorMaterial", floorMaterial)
 	model:SetAttribute("CeilingMaterial", ceilingMaterial)
@@ -815,6 +841,7 @@ local function applyFloorAttributes(model: Model, floor: Formex.FloorData)
 	model:SetAttribute("CeilingColor", ceilingColor)
 	model:SetAttribute("FoundationColor", foundationColor)
 	model:SetAttribute("Points", Formex.EncodeFloorPoints(floor.Points))
+	model:SetAttribute("RaiseHeight", raiseHeight)
 
 	return floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor
 end
@@ -858,12 +885,14 @@ function Formex.Floors.Edit(
 	local model = ensureFloorModel(floor, parent)
 	model.Name = tostring(floor.FloorId)
 	local previousPointsKey = model:GetAttribute("Points") or ""
+	local previousRaiseHeight = model:GetAttribute("RaiseHeight") or 0
 
 	local cleaned = Formex.Floors.CleanPolygon(floor.Points)
 	local usablePoints = ensureValidShape(plotData, floor, cleaned)
 
 	applyFloorAttributes(model, floor)
 	local pointsKey = model:GetAttribute("Points") or ""
+	local raiseHeight = model:GetAttribute("RaiseHeight") or 0
 	local floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor =
 		resolveFloorAppearanceFromAttributes(readFloorAppearanceAttributes(model))
 	local levelIndex = floor.LevelIndex or 1
@@ -873,7 +902,7 @@ function Formex.Floors.Edit(
 		return model
 	end
 
-	local geometryChanged = pointsKey ~= previousPointsKey
+	local geometryChanged = pointsKey ~= previousPointsKey or raiseHeight ~= previousRaiseHeight
 	local floorPart = model:FindFirstChild(MESH_PART_NAMES.Floor)
 	local hasGeometry = floorPart ~= nil and floorPart:IsA("BasePart")
 	if not geometryChanged and hasGeometry then
@@ -898,6 +927,7 @@ function Formex.Floors.Edit(
 		usablePoints,
 		triangles,
 		levelIndex,
+		raiseHeight,
 		floorMaterial,
 		ceilingMaterial,
 		foundationMaterial,
@@ -926,6 +956,7 @@ function Formex.Floors.RenderClientMeshes(model: Model, plotPartOverride: BasePa
 	local cleaned = Formex.Floors.CleanPolygon(floorData.Points)
 	local usablePoints = ensureValidShape(nil, floorData, cleaned)
 	local levelIndex = getLevelIndexFromModel(model)
+	local raiseHeight = normalizeRaiseHeight(floorData.RaiseHeight)
 	local floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor =
 		resolveFloorAppearanceFromAttributes(readFloorAppearanceAttributes(model))
 
@@ -941,6 +972,7 @@ function Formex.Floors.RenderClientMeshes(model: Model, plotPartOverride: BasePa
 		usablePoints,
 		triangles,
 		levelIndex,
+		raiseHeight,
 		floorMaterial,
 		ceilingMaterial,
 		foundationMaterial,

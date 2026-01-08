@@ -915,12 +915,13 @@ function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: C
     rowLayout.SortOrder = Enum.SortOrder.LayoutOrder
     rowLayout.Padding = UDim.new(0, 0)
     rowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    rowLayout.HorizontalFlex = Enum.UIFlexAlignment.SpaceBetween 
 
     local preview = Instance.new("Frame", row)
     preview.Name = "Preview"
     preview.BackgroundColor3 = selectedColor or Color3.fromRGB(235, 238, 245)
     preview.BackgroundTransparency = selectedColor and 0 or 0.25
-    preview.Size = UDim2.new(1, 0, 1, 0)
+    preview.Size = UDim2.new(1, -20, 1, 0)
     preview.BorderSizePixel = 0
 
     local previewCorner = Instance.new("UICorner", preview)

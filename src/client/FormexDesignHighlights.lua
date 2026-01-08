@@ -142,7 +142,14 @@ local function ensureEdgePreview(index: number): (BasePart, Highlight)
 	return part, highlight
 end
 
-local function updateEdgePreview(plotInfo: any, levelIndex: number, points: {Vector2int16}, isValid: boolean, closed: boolean)
+local function updateEdgePreview(
+	plotInfo: any,
+	levelIndex: number,
+	points: {Vector2int16},
+	isValid: boolean,
+	closed: boolean,
+	heightOffset: number?
+)
 	if not plotInfo or not plotInfo.PlotPart or not points or #points < 2 then
 		clearEdgePreviews()
 		return
@@ -158,6 +165,9 @@ local function updateEdgePreview(plotInfo: any, levelIndex: number, points: {Vec
 	local thickness = 0.15
 	local elevation = 0.1
 	local y = Formex.LevelHeight * (levelIndex - 1) + elevation
+	if heightOffset and heightOffset > 0 then
+		y += heightOffset
+	end
 
 	for index = 1, edgeCount do
 		local nextIndex = index + 1
@@ -207,12 +217,18 @@ local function updateEdgePreview(plotInfo: any, levelIndex: number, points: {Vec
 	end
 end
 
-function FormexDesignHighlights.UpdateFloorEdgePreview(plotInfo: any, levelIndex: number, points: {Vector2int16}, isValid: boolean)
-	updateEdgePreview(plotInfo, levelIndex, points, isValid, true)
+function FormexDesignHighlights.UpdateFloorEdgePreview(
+	plotInfo: any,
+	levelIndex: number,
+	points: {Vector2int16},
+	isValid: boolean,
+	raiseHeight: number?
+)
+	updateEdgePreview(plotInfo, levelIndex, points, isValid, true, raiseHeight)
 end
 
 function FormexDesignHighlights.UpdateWallEdgePreview(plotInfo: any, levelIndex: number, startPoint: Vector2int16, endPoint: Vector2int16, isValid: boolean)
-	updateEdgePreview(plotInfo, levelIndex, { startPoint, endPoint }, isValid, false)
+	updateEdgePreview(plotInfo, levelIndex, { startPoint, endPoint }, isValid, false, nil)
 end
 
 function FormexDesignHighlights.ClearFloorEdgePreview()

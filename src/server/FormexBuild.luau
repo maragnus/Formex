@@ -182,6 +182,23 @@ local function resolveSplitHeight(height: number, value: number?, existing: numb
 	return math.clamp(snapped, Formex.LayoutGridSize, maxSplit)
 end
 
+local function resolveRaiseHeight(value: number?, existing: number?): number
+	local resolved = value
+	if resolved == nil then
+		resolved = existing
+	end
+	resolved = resolved or 0
+	if resolved < 0 then
+		resolved = 0
+	end
+	local snapped = math.round(resolved / Formex.GridSize) * Formex.GridSize
+	local maxHeight = Formex.LevelHeight - Formex.InterfloorHeight
+	if maxHeight < 0 then
+		maxHeight = 0
+	end
+	return math.clamp(snapped, 0, maxHeight)
+end
+
 local function resolveColor(value: Color3?, fallback: Color3?): Color3
 	return value or fallback or Color3.new(1, 1, 1)
 end
@@ -529,11 +546,13 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 			local floorColor = resolveColor(entry.FloorColor, nil)
 			local ceilingColor = resolveColor(entry.CeilingColor, floorColor)
 			local foundationColor = resolveColor(entry.FoundationColor, floorColor)
+			local raiseHeight = resolveRaiseHeight(entry.RaiseHeight, nil)
 
 			local newFloor = {
 				FloorId = newId,
 				LevelIndex = levelIndex,
 				Points = entry.Points,
+				RaiseHeight = raiseHeight,
 				FloorMaterial = floorMaterial,
 				CeilingMaterial = ceilingMaterial,
 				FoundationMaterial = foundationMaterial,
@@ -549,6 +568,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 				FloorId = newId,
 				LevelIndex = levelIndex,
 				Points = entry.Points,
+				RaiseHeight = raiseHeight,
 				FloorMaterial = floorMaterial,
 				CeilingMaterial = ceilingMaterial,
 				FoundationMaterial = foundationMaterial,
@@ -595,11 +615,13 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 				local floorColor = resolveColor(entry.FloorColor, existing.FloorColor)
 				local ceilingColor = resolveColor(entry.CeilingColor, existing.CeilingColor or floorColor)
 				local foundationColor = resolveColor(entry.FoundationColor, existing.FoundationColor or floorColor)
+				local raiseHeight = resolveRaiseHeight(entry.RaiseHeight, existing.RaiseHeight)
 
 				local updated = {
 					FloorId = existing.FloorId,
 					LevelIndex = levelIndex,
 					Points = updatedPoints,
+					RaiseHeight = raiseHeight,
 					FloorMaterial = floorMaterial,
 					CeilingMaterial = ceilingMaterial,
 					FoundationMaterial = foundationMaterial,
@@ -615,6 +637,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 					FloorId = updated.FloorId,
 					LevelIndex = updated.LevelIndex,
 					Points = updated.Points,
+					RaiseHeight = updated.RaiseHeight,
 					FloorMaterial = updated.FloorMaterial,
 					CeilingMaterial = updated.CeilingMaterial,
 					FoundationMaterial = updated.FoundationMaterial,

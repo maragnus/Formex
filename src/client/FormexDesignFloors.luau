@@ -16,6 +16,7 @@ type SharedFloorPoint = {
 	LevelIndex: number,
 	Points: {Vector2int16},
 	PointIndex: number,
+	RaiseHeight: number,
 	FloorMaterial: number,
 	CeilingMaterial: number,
 	FoundationMaterial: number,
@@ -39,6 +40,7 @@ local getSelectionType: () -> string
 local getSelectionPart: () -> Instance?
 local getFloorMaterialId: () -> number
 local getCeilingMaterialId: () -> number
+local getFloorRaiseHeight: () -> number
 local getFloorColor: () -> Color3
 local getCeilingColor: () -> Color3
 local getFoundationMaterialId: () -> number
@@ -53,10 +55,12 @@ local moveOriginalPoints: {Vector2int16}? = nil
 local moveSharedPoints: {SharedFloorPoint} = {}
 local moveFloorId: number? = nil
 local moveLevelIndex: number? = nil
+local moveRaiseHeight: number = 0
 local movePreviewPoints: {Vector2int16}? = nil
 local lastHandleFloorId: number? = nil
 local lastHandleLevelIndex: number? = nil
 local lastHandlePointsKey: string? = nil
+local lastHandleRaiseHeight: number = 0
 
 function Floors.Init()
 	local ctx = Context.Get()
@@ -75,6 +79,7 @@ function Floors.Init()
 	getSelectionPart = ctx.GetSelectionPart
 	getFloorMaterialId = ctx.GetFloorMaterialId
 	getCeilingMaterialId = ctx.GetCeilingMaterialId
+	getFloorRaiseHeight = ctx.GetFloorRaiseHeight
 	getFloorColor = ctx.GetFloorColor
 	getCeilingColor = ctx.GetCeilingColor
 	getFoundationMaterialId = ctx.GetFoundationMaterialId
@@ -135,6 +140,7 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 	local floorColor = model:GetAttribute("FloorColor") or Color3.new(1, 1, 1)
 	local ceilingColor = model:GetAttribute("CeilingColor") or floorColor
 	local foundationColor = model:GetAttribute("FoundationColor") or floorColor
+	local raiseHeight = model:GetAttribute("RaiseHeight") or 0
 	local levelIndex = tonumber(model.Parent.Parent.Name) or getCurrentLevel()
 	local floorId = tonumber(model.Name) or 0
 
@@ -142,6 +148,7 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 		FloorId = floorId,
 		LevelIndex = levelIndex,
 		Points = points,
+		RaiseHeight = raiseHeight,
 		FloorMaterial = floorMaterial,
 		CeilingMaterial = ceilingMaterial,
 		FoundationMaterial = foundationMaterial,
@@ -170,11 +177,12 @@ local function clearFloorHandles()
 	lastHandleFloorId = nil
 	lastHandleLevelIndex = nil
 	lastHandlePointsKey = nil
+	lastHandleRaiseHeight = 0
 end
 
 local function updateFloorEdgePreview(plotInfo: any, levelIndex: number, points: {Vector2int16})
 	local isValid = Formex.Floors.IsValid(plotInfo :: any, { Points = points } :: any)
-	Highlight.UpdateFloorEdgePreview(plotInfo, levelIndex, points, isValid)
+	Highlight.UpdateFloorEdgePreview(plotInfo, levelIndex, points, isValid, nil)
 end
 
 local function addFloorHandle(name: string, color: Color3, iconAsset: string, onClick: (any) -> (), argument: any): BasePart
@@ -243,6 +251,7 @@ local function collectSharedFloors(plotPart: BasePart, levelIndex: number, origi
 								LevelIndex = levelIndex,
 								Points = floorData.Points,
 								PointIndex = index,
+								RaiseHeight = floorData.RaiseHeight,
 								FloorMaterial = floorData.FloorMaterial,
 								CeilingMaterial = floorData.CeilingMaterial,
 								FoundationMaterial = floorData.FoundationMaterial or Formex.DefaultFoundationMaterial,
@@ -284,6 +293,7 @@ local function finalizeMove(plotInfo: any)
 		current.Points = mergeDuplicatePoints(movePreviewPoints)
 		current.LevelIndex = moveLevelIndex
 		current.FloorId = moveFloorId
+		current.RaiseHeight = moveRaiseHeight
 		table.insert(updates, current)
 	end
 
@@ -293,6 +303,7 @@ local function finalizeMove(plotInfo: any)
 			FloorId = shared.FloorId,
 			LevelIndex = shared.LevelIndex,
 			Points = shared.Points,
+			RaiseHeight = shared.RaiseHeight,
 			FloorMaterial = shared.FloorMaterial,
 			CeilingMaterial = shared.CeilingMaterial,
 			FoundationMaterial = shared.FoundationMaterial,
@@ -313,6 +324,7 @@ local function finalizeMove(plotInfo: any)
 	moveSharedPoints = {}
 	moveFloorId = nil
 	moveLevelIndex = nil
+	moveRaiseHeight = 0
 	activeHandle = nil
 end
 
@@ -343,6 +355,7 @@ local function handlePointMove(plotInfo: any, input: any)
 			FloorId = moveFloorId or 0,
 			LevelIndex = moveLevelIndex or getCurrentLevel(),
 			Points = movePreviewPoints,
+			RaiseHeight = moveRaiseHeight,
 			FloorMaterial = Formex.DefaultFloorMaterial,
 			CeilingMaterial = Formex.DefaultFloorMaterial,
 		}, movePreviewPoints)
@@ -355,6 +368,7 @@ local function createFloorFromTile(plotInfo: any, tile: Vector2int16)
 	local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
 	local materialId = getFloorMaterialId()
 	local ceilingMaterial = getCeilingMaterialId()
+	local raiseHeight = getFloorRaiseHeight()
 	local floorColor = getFloorColor()
 	local ceilingColor = getCeilingColor()
 	local foundationMaterial = getFoundationMaterialId()
@@ -368,6 +382,7 @@ local function createFloorFromTile(plotInfo: any, tile: Vector2int16)
 			Vector2int16.new(x0 + tileSize, z0 + tileSize),
 			Vector2int16.new(x0, z0 + tileSize),
 		},
+		RaiseHeight = raiseHeight,
 		FloorMaterial = materialId,
 		CeilingMaterial = ceilingMaterial,
 		FoundationMaterial = foundationMaterial,
@@ -397,6 +412,7 @@ local function onFloorHandleClicked(info: any)
 			FloorId = floorData.FloorId,
 			LevelIndex = floorData.LevelIndex,
 			Points = floorData.Points,
+			RaiseHeight = floorData.RaiseHeight,
 			FloorMaterial = floorData.FloorMaterial,
 			CeilingMaterial = floorData.CeilingMaterial,
 		}, Formex.BuildAction.Delete)
@@ -419,6 +435,7 @@ local function onFloorHandleClicked(info: any)
 	movePreviewPoints = points
 	moveFloorId = floorData.FloorId
 	moveLevelIndex = floorData.LevelIndex
+	moveRaiseHeight = floorData.RaiseHeight
 	moveSharedPoints = collectSharedFloors(plotInfo.PlotPart, floorData.LevelIndex, points[handleIndex], floorData.FloorId)
 
 	activeHandle = {
@@ -451,6 +468,7 @@ local function updateFloorHandles(plotInfo: any)
 	local shouldRebuild = floorData.FloorId ~= lastHandleFloorId
 		or floorData.LevelIndex ~= lastHandleLevelIndex
 		or pointsKey ~= lastHandlePointsKey
+		or floorData.RaiseHeight ~= lastHandleRaiseHeight
 	if not shouldRebuild then
 		return
 	end
@@ -513,6 +531,7 @@ local function updateFloorHandles(plotInfo: any)
 	lastHandleFloorId = floorData.FloorId
 	lastHandleLevelIndex = floorData.LevelIndex
 	lastHandlePointsKey = pointsKey
+	lastHandleRaiseHeight = floorData.RaiseHeight
 	setHandlesVisible(true)
 end
 
@@ -530,6 +549,7 @@ function Floors.CancelAction()
 		movePreviewPoints = moveOriginalPoints
 		moveOriginalPoints = nil
 		moveSharedPoints = {}
+		moveRaiseHeight = 0
 		activeHandle = nil
 		local plotInfo = FormexClient.CurrentPlot
 		if plotInfo and plotInfo.PlotPart and movePreviewPoints and moveLevelIndex then
@@ -544,6 +564,7 @@ function Floors.ClearSelection()
 	movePreviewPoints = nil
 	moveOriginalPoints = nil
 	moveSharedPoints = {}
+	moveRaiseHeight = 0
 	activeHandle = nil
 	clearFloorHandles()
 	Highlight.ClearFloorEdgePreview()
