@@ -217,8 +217,8 @@ local function refreshWallData(wallData: Formex.WallData, model: Model, levelInd
     wallData.Start = Vector2int16.new(math.round(startValue.X), math.round(startValue.Y))
     wallData.End = Vector2int16.new(math.round(endValue.X), math.round(endValue.Y))
     wallData.Height = model:GetAttribute("WallHeight") or Formex.LevelHeight
-    wallData.FrontSplitHeight = model:GetAttribute("FrontSplitHeight")
-    wallData.BackSplitHeight = model:GetAttribute("BackSplitHeight")
+    wallData.FrontSplitHeight = model:GetAttribute("FrontSplitHeight") or 0
+    wallData.BackSplitHeight = model:GetAttribute("BackSplitHeight") or 0
 
     local frontTopMaterial = model:GetAttribute("FrontTopMaterial") or Formex.DefaultWallMaterial
     wallData.FrontTopMaterial = frontTopMaterial

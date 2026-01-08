@@ -401,8 +401,8 @@ local function getWallDataFromPart(wallModel: Model, wallId: number, level: numb
 	local backTopPart = getWallTopPart(wallModel, "BackTop")
 
 	local height = wallModel:GetAttribute("WallHeight") or Formex.LevelHeight
-	local frontSplitHeight = wallModel:GetAttribute("FrontSplitHeight")
-	local backSplitHeight = wallModel:GetAttribute("BackSplitHeight")
+	local frontSplitHeight = wallModel:GetAttribute("FrontSplitHeight") or 0
+	local backSplitHeight = wallModel:GetAttribute("BackSplitHeight") or 0
 
 	local frontTopMaterial = wallModel:GetAttribute("FrontTopMaterial") or Formex.DefaultWallMaterial
 	local frontBottomMaterial = wallModel:GetAttribute("FrontBottomMaterial") or frontTopMaterial
@@ -454,12 +454,12 @@ local function applyWallAppearance(plotInfo: any, wallModel: Model, overrides: {
 
 	local frontSplitHeight = current.FrontSplitHeight
 	if overrides.FrontSplitHeight ~= nil then
-		frontSplitHeight = overrides.FrontSplitHeight == false and nil or overrides.FrontSplitHeight
+		frontSplitHeight = overrides.FrontSplitHeight == false and 0 or overrides.FrontSplitHeight
 	end
 
 	local backSplitHeight = current.BackSplitHeight
 	if overrides.BackSplitHeight ~= nil then
-		backSplitHeight = overrides.BackSplitHeight == false and nil or overrides.BackSplitHeight
+		backSplitHeight = overrides.BackSplitHeight == false and 0 or overrides.BackSplitHeight
 	end
 
 	local updated = {
@@ -544,7 +544,7 @@ function Walls.CopyPaintFromTarget(target: Instance, hitPosition: Vector3?): boo
 	updateDesignState({
 		Wall = {
 			Height = appearance.Height == nil and false or appearance.Height,
-			SplitHeight = splitHeight == nil and false or splitHeight,
+			SplitHeight = splitHeight == nil and 0 or splitHeight,
 			TopMaterial = topMaterial,
 			BottomMaterial = bottomMaterial,
 			TopColor = topColor,

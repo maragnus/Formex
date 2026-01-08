@@ -229,8 +229,8 @@ function FormexSystem.SavePlot(plotId: number)
     plotData.LastPlayed = os.time()
     plotData.LevelsUnlocked = math.max(plotData.LevelsUnlocked or 1, 1)
     local segmentsMask = plotData.SegmentsUnlocked
-    if segmentsMask == nil then
-        segmentsMask = Formex.Segments.Bit(Formex.Segments.DefaultIndex)
+    if segmentsMask == nil or segmentsMask == 0 then
+        segmentsMask = Formex.DefaultSegmentsUnlocked
     end
     plotData.SegmentsUnlocked = segmentsMask
 
@@ -319,8 +319,8 @@ function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
     plotData.Levels = saveData.Levels or {}
     plotData.LevelsUnlocked = math.max(saveData.LevelsUnlocked or 1, 1)
     local segmentsUnlocked = saveData.SegmentsUnlocked
-    if segmentsUnlocked == nil then
-        segmentsUnlocked = Formex.Segments.Bit(Formex.Segments.DefaultIndex)
+    if segmentsUnlocked == nil or segmentsUnlocked == 0 then
+        segmentsUnlocked = Formex.DefaultSegmentsUnlocked
     end
     plotData.SegmentsUnlocked = segmentsUnlocked
     plotData.Permissions = fixNumbericDictionary(saveData.Permissions or {})

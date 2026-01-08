@@ -268,7 +268,7 @@ export type DesignStateUpdate = {
 
 local wallPaintSettings: WallPaintSettings = {
 	Height = nil,
-	SplitHeight = nil,
+	SplitHeight = 0,
 	TopMaterial = Formex.DefaultWallMaterial,
 	BottomMaterial = Formex.DefaultWallMaterial,
 	TopColor = Color3.new(1, 1, 1),
@@ -277,8 +277,8 @@ local wallPaintSettings: WallPaintSettings = {
 
 local wallBuildSettings: WallBuildSettings = {
 	Height = nil,
-	FrontSplitHeight = nil,
-	BackSplitHeight = nil,
+	FrontSplitHeight = 0,
+	BackSplitHeight = 0,
 	FrontTopMaterial = Formex.DefaultWallMaterial,
 	FrontBottomMaterial = Formex.DefaultWallMaterial,
 	BackTopMaterial = Formex.DefaultWallMaterial,
@@ -291,8 +291,8 @@ local wallBuildSettings: WallBuildSettings = {
 
 local wallSelectedSettings: WallSelectedSettings = {
 	Height = nil,
-	FrontSplitHeight = nil,
-	BackSplitHeight = nil,
+	FrontSplitHeight = 0,
+	BackSplitHeight = 0,
 	FrontTopMaterial = Formex.DefaultWallMaterial,
 	FrontBottomMaterial = Formex.DefaultWallMaterial,
 	BackTopMaterial = Formex.DefaultWallMaterial,
@@ -445,11 +445,17 @@ local function clampWallHeight(value: number?): number?
 end
 
 local function clampWallSplit(value: number?, height: number?): number?
-	if value == nil or not height or value <= Formex.GridSize or value >= height then
+	if value == nil then
 		return nil
 	end
+	if value <= 0 then
+		return 0
+	end
+	if not height or value <= Formex.GridSize or value >= height then
+		return 0
+	end
 	local snapped = snapToWallGrid(value)
-	return math.clamp(snapped, 0, height - Formex.GridSize)
+	return math.clamp(snapped, Formex.GridSize, height - Formex.GridSize)
 end
 
 local function clampFloorRaiseHeight(value: number?): number
@@ -1541,8 +1547,8 @@ local function getWallAppearanceFromPart(wallModel: Instance)
 	if not wallModel or not wallModel:IsA("Model") then
 		return {
 			Height = nil,
-			FrontSplitHeight = nil,
-			BackSplitHeight = nil,
+			FrontSplitHeight = 0,
+			BackSplitHeight = 0,
 			FrontTopMaterial = Formex.DefaultWallMaterial,
 			FrontBottomMaterial = Formex.DefaultWallMaterial,
 			BackTopMaterial = Formex.DefaultWallMaterial,
@@ -1555,8 +1561,8 @@ local function getWallAppearanceFromPart(wallModel: Instance)
 	end
 
 	local height = wallModel:GetAttribute("WallHeight") or Formex.LevelHeight
-	local frontSplitHeight = wallModel:GetAttribute("FrontSplitHeight")
-	local backSplitHeight = wallModel:GetAttribute("BackSplitHeight")
+	local frontSplitHeight = wallModel:GetAttribute("FrontSplitHeight") or 0
+	local backSplitHeight = wallModel:GetAttribute("BackSplitHeight") or 0
 
 	local frontTopMaterial = wallModel:GetAttribute("FrontTopMaterial") or Formex.DefaultWallMaterial
 	local frontBottomMaterial = wallModel:GetAttribute("FrontBottomMaterial") or frontTopMaterial
@@ -2028,13 +2034,13 @@ local function applyWallStateUpdate(update: WallStateUpdate?)
 	end
 
 	if update.FrontSplitHeight ~= nil then
-		local clamped = nil
+		local clamped = 0
 		if update.FrontSplitHeight ~= false then
-			clamped = clampWallSplit(update.FrontSplitHeight, heightValue)
+			clamped = clampWallSplit(update.FrontSplitHeight, heightValue) or 0
 		end
 		if applyToSelection then
 			changed = true
-			overrides.FrontSplitHeight = clamped == nil and false or clamped
+			overrides.FrontSplitHeight = clamped
 		end
 		if updateBuildSettings then
 			changed = true
@@ -2043,13 +2049,13 @@ local function applyWallStateUpdate(update: WallStateUpdate?)
 	end
 
 	if update.BackSplitHeight ~= nil then
-		local clamped = nil
+		local clamped = 0
 		if update.BackSplitHeight ~= false then
-			clamped = clampWallSplit(update.BackSplitHeight, heightValue)
+			clamped = clampWallSplit(update.BackSplitHeight, heightValue) or 0
 		end
 		if applyToSelection then
 			changed = true
-			overrides.BackSplitHeight = clamped == nil and false or clamped
+			overrides.BackSplitHeight = clamped
 		end
 		if updateBuildSettings then
 			changed = true
@@ -2148,9 +2154,9 @@ local function applyWallStateUpdate(update: WallStateUpdate?)
 	if update.SplitHeight ~= nil and updatePaintSettings then
 		changed = true
 		if update.SplitHeight == false then
-			wallPaintSettings.SplitHeight = nil
+			wallPaintSettings.SplitHeight = 0
 		else
-			wallPaintSettings.SplitHeight = clampWallSplit(update.SplitHeight, heightValue)
+			wallPaintSettings.SplitHeight = clampWallSplit(update.SplitHeight, heightValue) or 0
 		end
 	end
 

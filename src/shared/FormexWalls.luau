@@ -58,8 +58,8 @@ local function resolveWallHeight(value: number?): number
 end
 
 local function resolveSplitHeight(height: number, value: number?): number?
-	if not value or value <= Formex.GridSize then
-		return nil
+	if value == nil or value <= Formex.GridSize or height <= Formex.GridSize * 2 then
+		return 0
 	end
 
 	local snapped = snapToGrid(value)
@@ -280,7 +280,8 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 
 	local function applySide(splitHeight: number?, bottomPart: BasePart, topName: string, offsetX: number, bottomMaterial: number, topMaterial: number, bottomColor: Color3, topColor: Color3): BasePart?
 		local topPart: BasePart? = nil
-		if splitHeight then
+		local hasSplit = splitHeight ~= nil and splitHeight > 0
+		if hasSplit then
 			topPart = ensureChildPart(model, topName)
 			clearTextures(topPart)
 		else
@@ -290,7 +291,7 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 			end
 		end
 
-		if splitHeight then
+		if hasSplit then
 			local bottomHeight = splitHeight
 			local topHeight = height - splitHeight
 			applySegment(bottomPart, bottomHeight, levelOffset + (bottomHeight / 2), offsetX)

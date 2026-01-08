@@ -96,7 +96,7 @@ function FormexPlot.NewSave(player: Player, startingSegment: number?): boolean
     plotData.Permissions = plotData.Permissions or {}
     plotData.Permissions[player.UserId] = Formex.Permission.Owner
     plotData.LevelsUnlocked = 1
-    plotData.SegmentsUnlocked = segmentIndex and Formex.Segments.Bit(segmentIndex) or 0
+    plotData.SegmentsUnlocked = segmentIndex and Formex.Segments.Bit(segmentIndex) or Formex.DefaultSegmentsUnlocked
     plotData.Levels = {}
 
     FormexSystem.SavePlot(plotId)

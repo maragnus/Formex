@@ -171,11 +171,8 @@ local function resolveSplitHeight(height: number, value: number?, existing: numb
 	if resolved == nil then
 		resolved = existing
 	end
-	if resolved == nil or resolved <= 0 then
-		return nil
-	end
-	if height <= Formex.LayoutGridSize * 2 then
-		return nil
+	if resolved == nil or resolved <= 0 or height <= Formex.LayoutGridSize * 2 then
+		return 0
 	end
 	local snapped = snapToGrid(resolved)
 	local maxSplit = height - Formex.LayoutGridSize
