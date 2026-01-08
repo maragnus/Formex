@@ -40,18 +40,21 @@ A **Plot** has a permissions list of other players that can interact with it. Th
 ## Workspace Structure
 
 - A **Plot** has parts organized as follows: 
-    Workspace\Formex: Folder\Plots: Folder
-        PlotPlaceholder: Part
-            {levelId: number}: Part
-                Walls: Folder
-                    {WallId}: Model
-                        Parts...
-                Floors: Folder
-                    {FloorId}: Model
-                        Parts...
-                Objects: Folder
-                    {ObjectId}: Model
-                        Parts...
+  Workspace\Formex: Folder\Plots: Folder
+      PlotPlaceholder: Part
+          {levelId: number}: Part
+              Walls: Folder
+                  {WallId}: Model
+                      Parts...
+              Floors: Folder
+                  {FloorId}: Model
+                      Parts...
+              Objects: Folder
+                  {ObjectId}: Model
+                      Object: Model
+                          Parts...
+                      Subtract: Model
+                          Parts...
 - Walls are divided into front-side and back-side Block-shaped parts, and also top and bottom parts if the wall has a split height.
   - Walls use Material/MaterialVariant and Color for design
   - Wall is total thickness of `Formex.WallThickness` and maximum height of `Formex.LevelHeight`, but is user adjustable
@@ -61,6 +64,14 @@ A **Plot** has a permissions list of other players that can interact with it. Th
   - Floor and Ceilings are a grid of `Formex.LayoutGrid` size, and `Formex.FoundationHeight` for Level 1, and `Formex.InterfloorHeight` at upper levels.
   - Floors uses a complex algorithm to triangulate the polygon into a collection axis-aligned right triangles.
 - Shared module `Formex.luau` provides a shared interface to create Wall and Floor parts for server-side geometry and client-side ghosts for designing as well as confirm validity.
+
+## Server/Client PlotData Sync (Attributes)
+
+- Server-side rendering writes the authoritative attributes onto each **Model** (`FormexWalls.luau`, `FormexFloors.luau`, and object builders).
+- Clients maintain a local `PlotData` copy in `FormexClient.luau` by watching the plot hierarchy (`Plots/{level}/Walls|Floors|Objects`) and subscribing to model attribute changes.
+- Clients never infer wall/floor/object data from Part properties; always read `model:GetAttribute(name) or default`.
+- Floors trigger client mesh updates on attribute changes (`Formex.Floors.RenderClientMeshes` for geometry, `Formex.Floors.ApplyClientMaterials` for appearance).
+- `FormexClient` emits `FormexEvents` (`PlotPartChanged`) so selection/UI can refresh immediately.
 
 ## Coding Standards
 
@@ -88,6 +99,15 @@ Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Cont
 - Wall build settings are separate from wall paint settings; normal-mode edits update build/selection, not paint.
 
 Always update `FormexSerialization.luau` when changing `Formex.PlotData`, `Formex.LevelData`, `Formex.WallData`, `Formex.FloorData`, `Formex.ObjectData`
+
+## Changing PlotData Types
+
+When updating `PlotData`, `LevelData`, `WallData`, `FloorData`, or `ObjectData`:
+- Update type definitions in `src/shared/Formex.luau`.
+- Update save/load and versioning in `src/shared/FormexSerialization.luau`.
+- Update server render/attribute writers (`src/shared/FormexWalls.luau`, `src/shared/FormexFloors.luau`, plus any object builders) so Models expose the new attributes.
+- Update client watchers in `src/client/FormexClient.luau` to read/store the new attributes and subscribe to changes.
+- Update selection/UX readers (`src/client/FormexDesign.luau`, `src/client/FormexDesignWalls.luau`, `src/client/FormexDesignFloors.luau`).
 
 ## Shared Modules
 - `Formex.luau` is the shared interface between client and server, contains constants and utilities, hub of related modules

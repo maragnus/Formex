@@ -184,8 +184,8 @@ local function snapToGrid(value: number): number
 end
 
 local function clampWallSplit(value: number?, height: number?): number?
-	if value == nil or not height or value <= Formex.GridSize or value >= height then
-		return nil
+	if value == nil or not height or value < Formex.GridSize or value >= height then
+		return 0
 	end
 	local snapped = snapToGrid(value)
 	return math.clamp(snapped, 0, height - Formex.GridSize)

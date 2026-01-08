@@ -64,7 +64,9 @@ export type WallData = {
 	BackBottomMaterial: number?, -- Formex.Materials[index]
 	Part: Model?,
 	FrontPart: Part?,
-	BackPart: Part?
+	BackPart: Part?,
+	FrontTopPart: Part?,
+	BackTopPart: Part?
 }
 
 export type FloorData = {
@@ -79,6 +81,12 @@ export type FloorData = {
 	FoundationMaterial: number?, -- Formex.Materials[index]
 	FoundationColor: Color3?,
 	Model: Model?,
+	FloorPart: BasePart?,
+	FoundationPart: BasePart?,
+	CeilingPart: BasePart?,
+	FloorClientPart: BasePart?,
+	FoundationClientPart: BasePart?,
+	CeilingClientPart: BasePart?,
 }
 
 export type ObjectData = {
@@ -89,7 +97,9 @@ export type ObjectData = {
 	WallId: number?, -- If mounted to a wall
 	Design: {[number]: string},
 	Properties: {[string]: any},
-	Part: Part?
+	Part: Model?,
+	ObjectModel: Model?,
+	SubtractModel: Model?
 }
 
 export type MaterialInfo = {

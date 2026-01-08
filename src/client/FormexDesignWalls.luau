@@ -139,11 +139,6 @@ function Walls.Init()
 	updateDesignState = ctx.UpdateDesignState
 end
 
-local function snapToGrid(value: number): number
-	local grid = Formex.LayoutGridSize
-	return math.round(value / grid) * grid
-end
-
 local function getWallHandleY(level: number, location: string): number
 	local base = (math.max(level, 1) - 1) * Formex.LevelHeight
 	if location == Enums.HandleLocation.Top then
@@ -183,22 +178,11 @@ local function getWallFrontPart(instance: Instance?): BasePart?
 	return nil
 end
 
-local function getWallEndpoints(plotPart: BasePart, wallPart: BasePart): (Vector2int16, Vector2int16)
-	local midLocal = plotPart.CFrame:PointToObjectSpace(wallPart.Position)
-	local dirLocal = plotPart.CFrame:VectorToObjectSpace(wallPart.CFrame.LookVector)
-	dirLocal = Vector3.new(dirLocal.X, 0, dirLocal.Z)
-	if dirLocal.Magnitude <= Constants.Epsilon then
-		dirLocal = Vector3.new(0, 0, 1)
-	else
-		dirLocal = dirLocal.Unit
-	end
-
-	local halfLength = wallPart.Size.Z / 2
-	local startLocal = midLocal - dirLocal * halfLength
-	local endLocal = midLocal + dirLocal * halfLength
-
-	local startPoint = Vector2int16.new(snapToGrid(startLocal.X), snapToGrid(startLocal.Z))
-	local endPoint = Vector2int16.new(snapToGrid(endLocal.X), snapToGrid(endLocal.Z))
+local function getWallEndpoints(wallModel: Model): (Vector2int16, Vector2int16)
+	local startValue = wallModel:GetAttribute("Start") or Vector2.new(0, 0)
+	local endValue = wallModel:GetAttribute("End") or Vector2.new(0, 0)
+	local startPoint = Vector2int16.new(math.round(startValue.X), math.round(startValue.Y))
+	local endPoint = Vector2int16.new(math.round(endValue.X), math.round(endValue.Y))
 	return startPoint, endPoint
 end
 
@@ -219,7 +203,7 @@ local function getLevelWallInfos(plotPart: BasePart, level: number): {WallInfo}
 			local wallId = tonumber(child.Name)
 			local frontPart = getWallFrontPart(child)
 			if wallId and frontPart then
-				local startPoint, endPoint = getWallEndpoints(plotPart, frontPart)
+				local startPoint, endPoint = getWallEndpoints(child)
 				table.insert(results, {
 					WallId = wallId,
 					Level = level,
@@ -401,22 +385,6 @@ local function getWallSideFromTarget(target: Instance, hitPosition: Vector3?): (
 	return model, "Front"
 end
 
-local function getWallAttributeNumber(part: BasePart, name: string): number?
-	local value = part:GetAttribute(name)
-	if type(value) == "number" and value > 0 then
-		return value
-	end
-	return nil
-end
-
-local function getWallAttributeColor(part: BasePart, name: string): Color3?
-	local value = part:GetAttribute(name)
-	if typeof(value) == "Color3" then
-		return value
-	end
-	return nil
-end
-
 local function getWallTopPart(model: Model, name: string): BasePart?
 	local child = model:FindFirstChild(name)
 	if child and child:IsA("BasePart") then
@@ -425,81 +393,26 @@ local function getWallTopPart(model: Model, name: string): BasePart?
 	return nil
 end
 
-local function getWallMaterialIdFromPart(part: BasePart?): number?
-	if not part then return nil end
-
-	local variant = part.MaterialVariant
-	if variant and variant ~= "" then
-		for index, materialInfo in Formex.Materials do
-			if materialInfo.MaterialVariant == variant then
-				return index
-			end
-		end
-	end
-
-	return nil
-end
-
-local function getWallColorFromPart(part: BasePart?): Color3?
-	return part and part.Color or nil
-end
-
-local function getWallDataFromPart(plotPart: BasePart, wallModel: Model, wallId: number, level: number): Formex.WallData
+local function getWallDataFromPart(wallModel: Model, wallId: number, level: number): Formex.WallData
+	local startPoint, endPoint = getWallEndpoints(wallModel)
 	local frontPart = getWallFrontPart(wallModel)
-	if not frontPart then
-		return buildWallData(Vector2int16.new(0, 0), Vector2int16.new(0, 0))
-	end
-
-	local startPoint, endPoint = getWallEndpoints(plotPart, frontPart)
 	local backPart = getWallBackPart(wallModel)
 	local frontTopPart = getWallTopPart(wallModel, "FrontTop")
 	local backTopPart = getWallTopPart(wallModel, "BackTop")
 
-	local height = frontPart:GetAttribute("WallHeight")
-	if type(height) ~= "number" then
-		height = nil
-	end
+	local height = wallModel:GetAttribute("WallHeight") or Formex.LevelHeight
+	local frontSplitHeight = wallModel:GetAttribute("FrontSplitHeight")
+	local backSplitHeight = wallModel:GetAttribute("BackSplitHeight")
 
-	local frontSplitHeight = frontPart:GetAttribute("FrontSplitHeight")
-	if type(frontSplitHeight) ~= "number" or frontSplitHeight <= 0 then
-		frontSplitHeight = nil
-	end
+	local frontTopMaterial = wallModel:GetAttribute("FrontTopMaterial") or Formex.DefaultWallMaterial
+	local frontBottomMaterial = wallModel:GetAttribute("FrontBottomMaterial") or frontTopMaterial
+	local backTopMaterial = wallModel:GetAttribute("BackTopMaterial") or frontTopMaterial
+	local backBottomMaterial = wallModel:GetAttribute("BackBottomMaterial") or backTopMaterial
 
-	local backSplitHeight = frontPart:GetAttribute("BackSplitHeight")
-	if type(backSplitHeight) ~= "number" or backSplitHeight <= 0 then
-		backSplitHeight = nil
-	end
-
-	local frontTopMaterial = getWallAttributeNumber(frontPart, "FrontTopMaterial")
-		or getWallMaterialIdFromPart(frontTopPart)
-		or getWallMaterialIdFromPart(frontPart)
-	local frontBottomMaterial = getWallAttributeNumber(frontPart, "FrontBottomMaterial")
-		or getWallMaterialIdFromPart(frontPart)
-	local backTopMaterial = getWallAttributeNumber(frontPart, "BackTopMaterial")
-		or getWallMaterialIdFromPart(backTopPart)
-		or getWallMaterialIdFromPart(backPart)
-	local backBottomMaterial = getWallAttributeNumber(frontPart, "BackBottomMaterial")
-		or getWallMaterialIdFromPart(backPart)
-
-	local frontTopColor = getWallAttributeColor(frontPart, "FrontTopColor")
-		or getWallColorFromPart(frontTopPart)
-		or getWallColorFromPart(frontPart)
-		or Color3.new(1, 1, 1)
-	local frontBottomColor = getWallAttributeColor(frontPart, "FrontBottomColor")
-		or getWallColorFromPart(frontPart)
-		or frontTopColor
-	local backTopColor = getWallAttributeColor(frontPart, "BackTopColor")
-		or getWallColorFromPart(backTopPart)
-		or getWallColorFromPart(backPart)
-		or Color3.new(1, 1, 1)
-	local backBottomColor = getWallAttributeColor(frontPart, "BackBottomColor")
-		or getWallColorFromPart(backPart)
-		or backTopColor
-
-	local resolvedFrontBottom = frontBottomMaterial or frontTopMaterial or Formex.DefaultWallMaterial
-	local resolvedFrontTop = frontTopMaterial or resolvedFrontBottom
-	local resolvedBackBottom = backBottomMaterial or backTopMaterial or resolvedFrontBottom
-	local resolvedBackTop = backTopMaterial or resolvedBackBottom
+	local frontTopColor = wallModel:GetAttribute("FrontTopColor") or Color3.new(1, 1, 1)
+	local frontBottomColor = wallModel:GetAttribute("FrontBottomColor") or frontTopColor
+	local backTopColor = wallModel:GetAttribute("BackTopColor") or frontTopColor
+	local backBottomColor = wallModel:GetAttribute("BackBottomColor") or backTopColor
 
 	return {
 		WallId = wallId,
@@ -509,15 +422,19 @@ local function getWallDataFromPart(plotPart: BasePart, wallModel: Model, wallId:
 		Height = height,
 		FrontSplitHeight = frontSplitHeight,
 		BackSplitHeight = backSplitHeight,
-		FrontTopMaterial = resolvedFrontTop,
-		FrontBottomMaterial = resolvedFrontBottom,
-		BackTopMaterial = resolvedBackTop,
-		BackBottomMaterial = resolvedBackBottom,
+		FrontTopMaterial = frontTopMaterial,
+		FrontBottomMaterial = frontBottomMaterial,
+		BackTopMaterial = backTopMaterial,
+		BackBottomMaterial = backBottomMaterial,
 		FrontTopColor = frontTopColor,
 		FrontBottomColor = frontBottomColor,
 		BackTopColor = backTopColor,
 		BackBottomColor = backBottomColor,
 		Part = wallModel,
+		FrontPart = frontPart,
+		BackPart = backPart,
+		FrontTopPart = frontTopPart,
+		BackTopPart = backTopPart,
 	}
 end
 
@@ -528,7 +445,7 @@ local function applyWallAppearance(plotInfo: any, wallModel: Model, overrides: {
 
 	local wallId = tonumber(wallModel.Name) or 0
 	local level = tonumber(wallModel.Parent.Parent.Name) or getCurrentLevel()
-	local current = getWallDataFromPart(plotInfo.PlotPart, wallModel, wallId, level)
+	local current = getWallDataFromPart(wallModel, wallId, level)
 
 	local height = current.Height
 	if overrides.Height ~= nil then
@@ -617,7 +534,7 @@ function Walls.CopyPaintFromTarget(target: Instance, hitPosition: Vector3?): boo
 
 	local wallId = tonumber(wallModel.Name) or 0
 	local level = tonumber(wallModel.Parent.Parent.Name) or getCurrentLevel()
-	local appearance = getWallDataFromPart(plotInfo.PlotPart, wallModel, wallId, level)
+	local appearance = getWallDataFromPart(wallModel, wallId, level)
 	local splitHeight = side == "Front" and appearance.FrontSplitHeight or appearance.BackSplitHeight
 	local topMaterial = side == "Front" and appearance.FrontTopMaterial or appearance.BackTopMaterial
 	local bottomMaterial = side == "Front" and appearance.FrontBottomMaterial or appearance.BackBottomMaterial
@@ -643,7 +560,7 @@ local function applyWallTransform(plotPart: BasePart, wall: WallInfo)
 		return
 	end
 
-	local wallData = getWallDataFromPart(plotPart, wall.Part, wall.WallId, wall.Level)
+	local wallData = getWallDataFromPart(wall.Part, wall.WallId, wall.Level)
 	wallData.Start = wall.Start
 	wallData.End = wall.End
 	wallData.Part = wall.Part
@@ -676,7 +593,7 @@ local function splitWallAtPoint(plotInfo: any, wall: WallInfo, splitPoint: Vecto
 		return false
 	end
 
-	local baseData = getWallDataFromPart(plotInfo.PlotPart, wall.Part, wall.WallId, wall.Level)
+	local baseData = getWallDataFromPart(wall.Part, wall.WallId, wall.Level)
 	local wallDataA = table.clone(baseData)
 	wallDataA.WallId = 0
 	wallDataA.Level = wall.Level
@@ -820,7 +737,7 @@ local function onWallFlip()
 		return
 	end
 
-	local wallData = getWallDataFromPart(input.PlotInfo.PlotPart, wallModel, selectedWall.WallId, selectedWall.Level)
+	local wallData = getWallDataFromPart(wallModel, selectedWall.WallId, selectedWall.Level)
 	wallData.Start = selectedWall.End
 	wallData.End = selectedWall.Start
 	wallData.Part = nil
@@ -960,7 +877,7 @@ local function updateWallHandles(plotInfo: any)
 		return
 	end
 
-	local startPoint, endPoint = getWallEndpoints(plotInfo.PlotPart, frontPart)
+	local startPoint, endPoint = getWallEndpoints(wallModel)
 	local wallId = partId or tonumber(wallModel.Name) or 0
 	selectedWall = {
 		WallId = wallId,

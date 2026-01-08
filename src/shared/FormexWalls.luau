@@ -249,17 +249,19 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 	local backBottomColor = resolveColor(wall.BackBottomColor, wall.BackTopColor)
 	local backTopColor = resolveColor(wall.BackTopColor, backBottomColor)
 
-	frontPart:SetAttribute("WallHeight", height)
-	frontPart:SetAttribute("FrontSplitHeight", frontSplitHeight)
-	frontPart:SetAttribute("BackSplitHeight", backSplitHeight)
-	frontPart:SetAttribute("FrontTopMaterial", frontTopMaterial)
-	frontPart:SetAttribute("FrontBottomMaterial", frontBottomMaterial)
-	frontPart:SetAttribute("BackTopMaterial", backTopMaterial)
-	frontPart:SetAttribute("BackBottomMaterial", backBottomMaterial)
-	frontPart:SetAttribute("FrontTopColor", frontTopColor)
-	frontPart:SetAttribute("FrontBottomColor", frontBottomColor)
-	frontPart:SetAttribute("BackTopColor", backTopColor)
-	frontPart:SetAttribute("BackBottomColor", backBottomColor)
+	model:SetAttribute("Start", Vector2.new(startPoint.X, startPoint.Y))
+	model:SetAttribute("End", Vector2.new(endPoint.X, endPoint.Y))
+	model:SetAttribute("WallHeight", height)
+	model:SetAttribute("FrontSplitHeight", frontSplitHeight)
+	model:SetAttribute("BackSplitHeight", backSplitHeight)
+	model:SetAttribute("FrontTopMaterial", frontTopMaterial)
+	model:SetAttribute("FrontBottomMaterial", frontBottomMaterial)
+	model:SetAttribute("BackTopMaterial", backTopMaterial)
+	model:SetAttribute("BackBottomMaterial", backBottomMaterial)
+	model:SetAttribute("FrontTopColor", frontTopColor)
+	model:SetAttribute("FrontBottomColor", frontBottomColor)
+	model:SetAttribute("BackTopColor", backTopColor)
+	model:SetAttribute("BackBottomColor", backBottomColor)
 
 	clearTextures(frontPart)
 	clearTextures(backPart)
@@ -276,7 +278,7 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 		target.Transparency = frontPart.Transparency
 	end
 
-	local function applySide(splitHeight: number?, bottomPart: BasePart, topName: string, offsetX: number, bottomMaterial: number, topMaterial: number, bottomColor: Color3, topColor: Color3)
+	local function applySide(splitHeight: number?, bottomPart: BasePart, topName: string, offsetX: number, bottomMaterial: number, topMaterial: number, bottomColor: Color3, topColor: Color3): BasePart?
 		local topPart: BasePart? = nil
 		if splitHeight then
 			topPart = ensureChildPart(model, topName)
@@ -303,10 +305,12 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 			applySegment(bottomPart, height, levelOffset + (height / 2), offsetX)
 			Formex.Util.ApplyWallMaterial(bottomPart, topMaterial, topColor)
 		end
+
+		return topPart
 	end
 
-	applySide(frontSplitHeight, frontPart, FRONT_TOP_NAME, -sideOffset, frontBottomMaterial, frontTopMaterial, frontBottomColor, frontTopColor)
-	applySide(backSplitHeight, backPart, BACK_TOP_NAME, sideOffset, backBottomMaterial, backTopMaterial, backBottomColor, backTopColor)
+	wall.FrontTopPart = applySide(frontSplitHeight, frontPart, FRONT_TOP_NAME, -sideOffset, frontBottomMaterial, frontTopMaterial, frontBottomColor, frontTopColor)
+	wall.BackTopPart = applySide(backSplitHeight, backPart, BACK_TOP_NAME, sideOffset, backBottomMaterial, backTopMaterial, backBottomColor, backTopColor)
 end
 
 function Formex.Walls.Divide(wall: Formex.WallData, distance: number): {Formex.WallData}
