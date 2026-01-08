@@ -430,18 +430,10 @@ local function getWallMaterialIdFromPart(part: BasePart?): number?
 
 	local variant = part.MaterialVariant
 	if variant and variant ~= "" then
-		for index, materialInfo in Formex.WallMaterials do
+		for index, materialInfo in Formex.Materials do
 			if materialInfo.MaterialVariant == variant then
 				return index
 			end
-		end
-	end
-
-	for index, materialInfo in Formex.WallMaterials do
-		if materialInfo.Material
-		and materialInfo.Material == part.Material
-		and (not materialInfo.MaterialVariant or materialInfo.MaterialVariant == "") then
-			return index
 		end
 	end
 

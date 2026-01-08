@@ -3,7 +3,8 @@
 local Formex = require(script.Parent:FindFirstChild("Formex"))
 
 -- Represented as Part.MaterialVariant
-Formex.WallMaterials = {
+-- WARNING this list is ordered and indexed, removing and reordering items will break existing builds
+Formex.Materials = {
 	{
 		Name = "Basic Plaster",
 		Material = Enum.Material.Plaster,
@@ -70,47 +71,7 @@ Formex.WallMaterials = {
 		MaterialVariant = "WoodFloor",
 		PreviewAssetId = 133949919154473,
 	}
-} :: {number: Formex.WallMaterialInfo}
-
--- Represented as Texture.ColorMapContent
-Formex.FloorMaterials = {
-	{
-		Name = "Basic Plaster",
-		AssetId = 129376458712399,
-		StudsPerTile = 8,
-	},
-	{
-		Name = "Speckle Tiles",
-		AssetId = 98900012004141,
-		StudsPerTile = 32,
-	},
-	{
-		Name = "Checkered Tiles",
-		AssetId = 81652242056434,
-		StudsPerTile = 32,
-	},
-	{
-		Name = "Commercial Carpet",
-		AssetId = 119901194214934,
-		StudsPerTile = 8,
-	},
-	{
-		Name = "Arcade Stars",
-		AssetId = 105056201224798,
-		StudsPerTile = 16,
-	},
-	{
-		Name = "Arcade Lines",
-		AssetId = 102853832787062,
-		StudsPerTile = 12,
-	},
-	{
-		Name = "Rough Brick",
-		AssetId = 107922567322014,
-		StudsPerTile = 12,
-	}
-} :: {number: Formex.FloorMaterialInfo}
-
+} :: {number: Formex.MaterialInfo}
 
 Formex.Icons = { -- Content.fromAssetId(...)
     Menu = 123614418099512,

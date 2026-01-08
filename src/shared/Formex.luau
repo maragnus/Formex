@@ -54,14 +54,14 @@ export type WallData = {
 	Height: number?, -- studs
 	FrontSplitHeight: number?, -- studs
 	FrontTopColor: Color3?,
-	FrontTopMaterial: number?, -- Formex.WallMaterials[index]
+	FrontTopMaterial: number?, -- Formex.Materials[index]
 	FrontBottomColor: Color3?,
-	FrontBottomMaterial: number?, -- Formex.WallMaterials[index]
+	FrontBottomMaterial: number?, -- Formex.Materials[index]
 	BackSplitHeight: number?, -- studs
 	BackTopColor: Color3?,
-	BackTopMaterial: number?, -- Formex.WallMaterials[index]
+	BackTopMaterial: number?, -- Formex.Materials[index]
 	BackBottomColor: Color3?,
-	BackBottomMaterial: number?, -- Formex.WallMaterials[index]
+	BackBottomMaterial: number?, -- Formex.Materials[index]
 	Part: Model?,
 	FrontPart: Part?,
 	BackPart: Part?
@@ -72,11 +72,11 @@ export type FloorData = {
 	LevelIndex: number,
 	Points: {Vector2int16},
 	RaiseHeight: number, -- studs: 0..(LevelHeight-InterfloorHeight) in GridSize increments
-	FloorMaterial: number?, -- Formex.WallMaterials[index]
+	FloorMaterial: number?, -- Formex.Materials[index]
 	FloorColor: Color3?,
-	CeilingMaterial: number?, -- Formex.WallMaterials[index]
+	CeilingMaterial: number?, -- Formex.Materials[index]
 	CeilingColor: Color3?,
-	FoundationMaterial: number?, -- Formex.WallMaterials[index]
+	FoundationMaterial: number?, -- Formex.Materials[index]
 	FoundationColor: Color3?,
 	Model: Model?,
 }
@@ -92,25 +92,12 @@ export type ObjectData = {
 	Part: Part?
 }
 
-export type WallMaterialInfo = {
+export type MaterialInfo = {
 	Name: string,
 	Material: Enum.Material?,
 	MaterialVariant: string?,
-	PreviewAssetId: number?, -- Image
-}
-
-export type FloorMaterialInfo = {
-	Name: string,
-	AssetId: number?, -- Texture.ColorMapContent = Content.fromAssetId(...)
-	StudsPerTile: number,
-}
-
-export type MaterialInfo = {
-	Name: string,
-	AssetId: number?,
-	Material: Enum.Material,
-	StudsPerTile: number,
-	Categories: {PartType} -- REMOVE
+	PreviewAssetId: number?, -- Content.fromAssetId(...)
+	Categories: {PartType}?
 }
 
 export type ObjectInfo = {
@@ -226,8 +213,6 @@ Formex.Segments.Count = Formex.Segments.GridWidth * Formex.Segments.GridHeight
 
 Formex.Icons = {} :: {[string]: number}
 Formex.Materials = {} :: {number: MaterialInfo}
-Formex.WallMaterials = {} :: {number: WallMaterialInfo}
-Formex.FloorMaterials = {} :: {number: FloorMaterialInfo}
 Formex.Walls = {} :: {}
 Formex.Floors = {} :: {}
 Formex.Furniture = {} :: {ObjectInfo}

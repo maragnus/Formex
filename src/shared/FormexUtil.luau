@@ -6,7 +6,7 @@ Formex.Math = require(script.Parent:FindFirstChild("FormexMath"))
 Formex.Util = {}
 
 function Formex.UpdateTexture(part: BasePart, texture: Texture, materialId: number?, color: Color3?)
-	local materialInfo = materialId and Formex.FloorMaterials[materialId] or nil
+	local materialInfo = materialId and Formex.Materials[materialId] or nil
 	if not materialInfo then
 		texture.ColorMapContent = Content.fromAssetId(0)
 		texture.StudsPerTileU = 1
@@ -21,7 +21,7 @@ function Formex.UpdateTexture(part: BasePart, texture: Texture, materialId: numb
 end
 
 function Formex.Util.ApplyWallMaterial(part: BasePart, materialId: number?, color: Color3?)
-	local materialInfo = materialId and Formex.WallMaterials[materialId] or nil
+	local materialInfo = materialId and Formex.Materials[materialId] or nil
 	part.Material = (materialInfo and materialInfo.Material) or Enum.Material.SmoothPlastic
 	part.MaterialVariant = materialInfo and materialInfo.MaterialVariant or ""
 	if color then
