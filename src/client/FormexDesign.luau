@@ -46,10 +46,11 @@ type ViewSettings = {
 	ShowOtherLevels: boolean,
 }
 
-export type DesignMode = "Play" | "Design" | "Expand" | "Floor" | "Ceiling" | "Wall" | "Object" | "Paint"
+export type DesignMode = "Play" | "Design" | "Select" | "Expand" | "Floor" | "Ceiling" | "Wall" | "Object" | "Paint"
 FormexDesign.DesignMode = table.freeze({
 	Play = "Play",
 	Design = "Design",
+	Select = "Select",
 	Expand = "Expand",
 	Floor = "Floor",
 	Ceiling = "Ceiling",
@@ -409,6 +410,7 @@ end
 local designModeViewSettings: {DesignMode: ViewSettings} = {
 	Play = playViewSettings,
 	Design = playViewSettings,
+	Select = playViewSettings,
 	Expand = {
 		HandleLocation = FormexDesign.HandleLocation.Bottom,
 		CameraMode = FormexCamera.CameraMode.TopDown,
@@ -685,9 +687,13 @@ local function getPlotFitDistance(): number?
 	return math.max(distanceForDepth, distanceForWidth)
 end
 
-local function refresh()
+local function refresh(preserveSelection: boolean?)
 	clearOverlays()
-	FormexDesign.ClearSelection()
+	if preserveSelection then
+		FormexDesignHighlights.UpdateSelectionHighlight()
+	else
+		FormexDesign.ClearSelection()
+	end
 
 	local plotInfo = FormexClient.CurrentPlot
 	if not plotInfo or not plotInfo.IsValid then return	end
@@ -1125,11 +1131,29 @@ end
 
 local folderNames = { Walls = "Wall", Floors = "Floor", Objects = "Object" } :: {string: SelectionType}
 local allowedSelectionByMode = {
-	[FormexDesign.DesignMode.Wall] = FormexDesign.SelectionType.Wall,
-	[FormexDesign.DesignMode.Floor] = FormexDesign.SelectionType.Floor,
-	[FormexDesign.DesignMode.Ceiling] = FormexDesign.SelectionType.Floor,
-	[FormexDesign.DesignMode.Object] = FormexDesign.SelectionType.Object,
-} :: { [DesignMode]: SelectionType }
+	[FormexDesign.DesignMode.Select] = {
+		[FormexDesign.SelectionType.Wall] = true,
+		[FormexDesign.SelectionType.Floor] = true,
+		[FormexDesign.SelectionType.Object] = true,
+	},
+	[FormexDesign.DesignMode.Wall] = {
+		[FormexDesign.SelectionType.Wall] = true,
+	},
+	[FormexDesign.DesignMode.Floor] = {
+		[FormexDesign.SelectionType.Floor] = true,
+	},
+	[FormexDesign.DesignMode.Ceiling] = {
+		[FormexDesign.SelectionType.Floor] = true,
+	},
+	[FormexDesign.DesignMode.Object] = {
+		[FormexDesign.SelectionType.Object] = true,
+	},
+} :: { [DesignMode]: {[SelectionType]: boolean} }
+local designModeBySelectionType = {
+	[FormexDesign.SelectionType.Wall] = FormexDesign.DesignMode.Wall,
+	[FormexDesign.SelectionType.Floor] = FormexDesign.DesignMode.Floor,
+	[FormexDesign.SelectionType.Object] = FormexDesign.DesignMode.Object,
+} :: { [SelectionType]: DesignMode }
 
 local function getSelectionInfoFromInstance(part: Instance?): (SelectionType?, number?, number?)
 	local currentPart = part
@@ -1191,8 +1215,9 @@ function FormexDesign.Select(part: Instance)
 	-- Workspace/Formex/Plots/PlotPlaceholder/{levelId:number}/{selectionType:SelectionType}/{partId:number}/*
 	local selectionKind, partId, level = getSelectionInfoFromInstance(part)
 	if selectionKind and partId and level then
-		local allowedType = allowedSelectionByMode[designMode]
-		if not allowedType or allowedType ~= selectionKind then
+		local modeSwitched = false
+		local allowedTypes = allowedSelectionByMode[designMode]
+		if not allowedTypes or not allowedTypes[selectionKind] then
 			FormexDesign.ClearSelection()
 			return false
 		end
@@ -1239,7 +1264,16 @@ function FormexDesign.Select(part: Instance)
 			foundationColor = floorData.FoundationColor
 			floorRaiseHeight = floorData.RaiseHeight
 		end
-		notifyDesignModeChange()
+		if designMode == FormexDesign.DesignMode.Select then
+			local nextMode = designModeBySelectionType[selectionKind]
+			if nextMode and nextMode ~= designMode then
+				modeSwitched = true
+				FormexDesign.SetDesignMode(nextMode, true)
+			end
+		end
+		if not modeSwitched then
+			notifyDesignModeChange()
+		end
 		FormexDesignHighlights.UpdateSelectionHighlight()
 		local plotInfo = FormexClient.CurrentPlot
 		if plotInfo and plotInfo.IsValid then
@@ -1344,8 +1378,15 @@ local function handlePrimaryClick()
 
 	-- Clicking on empty space cancels selection
 	if not input.HitPosition then
-		if actionType == FormexDesign.ActionType.Select then
+		if actionType == FormexDesign.ActionType.Select and designMode ~= FormexDesign.DesignMode.Select then
 			FormexDesign.ClearSelection()
+		end
+		return
+	end
+
+	if designMode == FormexDesign.DesignMode.Select then
+		if input.Target then
+			FormexDesign.Select(input.Target)
 		end
 		return
 	end
@@ -1367,8 +1408,11 @@ local function handlePrimaryClick()
 	end
 end
 
-function FormexDesign.SetDesignMode(mode: DesignMode?)
+function FormexDesign.SetDesignMode(mode: DesignMode?, preserveSelection: boolean?)
 	mode = mode or FormexDesign.DesignMode.Play
+	if mode == FormexDesign.DesignMode.Design then
+		mode = FormexDesign.DesignMode.Select
+	end
 	if designMode == mode then return end
 
 	if actionType ~= FormexDesign.ActionType.Select then
@@ -1387,8 +1431,7 @@ function FormexDesign.SetDesignMode(mode: DesignMode?)
 	designMode = mode
 	viewSettings = designModeViewSettings[mode]
 	actionType = FormexDesign.ActionType.Select
-	FormexDesign.ClearSelection()
-	refresh()
+	refresh(preserveSelection)
 	notifyDesignModeChange()
 end
 

@@ -32,7 +32,7 @@ local Formex = require(script.Parent:FindFirstChild("Formex"))
         `part.ChildRemoved:Connect` on each Folder to monitor Part removals
 ]]
 
-export type DesignMode = "Play" | "Wall" | "Floor" | "Object"
+export type DesignMode = "Play" | "Select" | "Wall" | "Floor" | "Object"
 
 export type Wall = {
     Id: number,

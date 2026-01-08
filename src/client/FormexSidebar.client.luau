@@ -738,7 +738,7 @@ local function buildSidebar()
         if not canDesign(FormexClient.CurrentPlot) then return end
         local mode = FormexDesign.GetDesignMode()
         if mode == FormexDesign.DesignMode.Play then
-            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Design)
+            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Select)
         else
             FormexDesign.SetDesignMode(FormexDesign.DesignMode.Play)
         end
@@ -806,6 +806,9 @@ local function buildSidebar()
     modeRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 
     local designModeButtons = {
+        Select = createIconButton(modeRow, "Select", Formex.Icons.DesignSelect, function()
+            FormexDesign.SetDesignMode(FormexDesign.DesignMode.Select)
+        end),
         Wall = createIconButton(modeRow, "Wall", Formex.Icons.DesignWalls, function()
             FormexDesign.SetDesignMode(FormexDesign.DesignMode.Wall)
         end),
@@ -1333,6 +1336,7 @@ local function refreshUI()
     setIconButtonActive(ui.DesignModeButtons.Ceiling, designMode == FormexDesign.DesignMode.Ceiling)
     setIconButtonActive(ui.DesignModeButtons.Object, designMode == FormexDesign.DesignMode.Object)
     setIconButtonActive(ui.DesignModeButtons.Paint, designMode == FormexDesign.DesignMode.Paint)
+    setIconButtonActive(ui.DesignModeButtons.Select, designMode == FormexDesign.DesignMode.Select)
 
     local canUndo = plot.CanUndo == true
     local canRedo = plot.CanRedo == true
@@ -1399,6 +1403,10 @@ local function refreshUI()
     if designMode == FormexDesign.DesignMode.Wall then
         ui.DesignContentTitle.Text = "Wall Materials"
         ui.WallContent.Visible = true
+    elseif designMode == FormexDesign.DesignMode.Select then
+        ui.DesignContentTitle.Text = "Select"
+        ui.DesignContentHint.Text = "Select a wall, floor, or object to edit."
+        ui.DesignContentHint.Visible = true
     elseif designMode == FormexDesign.DesignMode.Floor then
         ui.DesignContentTitle.Text = "Floor Materials"
         ui.FloorContent.Visible = true
