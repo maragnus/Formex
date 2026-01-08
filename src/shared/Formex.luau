@@ -220,7 +220,7 @@ Formex.Segments = {
 	DefaultIndex = math.ceil((Formex.MaxPlotSize.Width * Formex.MaxPlotSize.Height) / 2), -- Starting segment index
 }
 Formex.Segments.Count = Formex.Segments.GridWidth * Formex.Segments.GridHeight
-Formex.DefaultSegmentsUnlocked = Formex.Segments.Bit(Formex.Segments.DefaultIndex)
+Formex.DefaultSegmentsUnlocked = 2 -- bits
 
 Formex.Icons = {} :: {[string]: number}
 Formex.Materials = {} :: {number: MaterialInfo}

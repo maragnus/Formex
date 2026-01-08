@@ -45,10 +45,17 @@ local getFloorColor: () -> Color3
 local getCeilingColor: () -> Color3
 local getFoundationMaterialId: () -> number
 local getFoundationColor: () -> Color3
+local updateGhostValidity: (boolean) -> ()
+local ensureFloorGhost: (BasePart, number, Vector2int16, any) -> ()
+local clearGhost: () -> ()
+local isGhostActive: () -> boolean
+local getGhostType: () -> any?
 local updateDesignState: (any) -> ()
 local select: (Instance) -> boolean
 local clearSelection: () -> ()
 local getSelectionInfoFromInstance: (Instance?) -> (string?, number?, number?)
+local notifyDesignModeChange: () -> ()
+local cancelAction: () -> ()
 
 local floorHandles = {} :: {FloorHandle}
 local activeHandle: FloorHandle? = nil
@@ -62,6 +69,7 @@ local lastHandleFloorId: number? = nil
 local lastHandleLevelIndex: number? = nil
 local lastHandlePointsKey: string? = nil
 local lastHandleRaiseHeight: number = 0
+local lastPreviewTile: Vector2int16? = nil
 
 function Floors.Init()
 	local ctx = Context.Get()
@@ -85,14 +93,52 @@ function Floors.Init()
 	getCeilingColor = ctx.GetCeilingColor
 	getFoundationMaterialId = ctx.GetFoundationMaterialId
 	getFoundationColor = ctx.GetFoundationColor
+	updateGhostValidity = ctx.UpdateGhostValidity
+	ensureFloorGhost = ctx.EnsureFloorGhost
+	clearGhost = ctx.ClearGhost
+	isGhostActive = ctx.IsGhostActive
+	getGhostType = ctx.GetGhostType
 	updateDesignState = ctx.UpdateDesignState
 	select = ctx.Select
 	clearSelection = ctx.ClearSelection
 	getSelectionInfoFromInstance = ctx.GetSelectionInfoFromInstance
+	notifyDesignModeChange = ctx.NotifyDesignModeChange
+	cancelAction = ctx.CancelAction
 end
 
 local function pointsEqual(a: Vector2int16, b: Vector2int16): boolean
 	return a.X == b.X and a.Y == b.Y
+end
+
+local function buildFloorDataFromTile(tile: Vector2int16): Formex.FloorData
+	local tileSize = Formex.LayoutGridSize
+	local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
+	local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
+	local materialId = getFloorMaterialId()
+	local ceilingMaterial = getCeilingMaterialId()
+	local raiseHeight = getFloorRaiseHeight()
+	local floorColor = getFloorColor()
+	local ceilingColor = getCeilingColor()
+	local foundationMaterial = getFoundationMaterialId()
+	local foundationColor = getFoundationColor()
+	return {
+		FloorId = 0,
+		LevelIndex = getCurrentLevel(),
+		Points = {
+			Vector2int16.new(x0, z0),
+			Vector2int16.new(x0 + tileSize, z0),
+			Vector2int16.new(x0 + tileSize, z0 + tileSize),
+			Vector2int16.new(x0, z0 + tileSize),
+		},
+		RaiseHeight = raiseHeight,
+		FloorMaterial = materialId,
+		CeilingMaterial = ceilingMaterial,
+		FoundationMaterial = foundationMaterial,
+		FloorColor = floorColor,
+		CeilingColor = ceilingColor,
+		FoundationColor = foundationColor,
+		Model = nil,
+	}
 end
 
 local function getFloorModelFromSelection(): Model?
@@ -472,37 +518,47 @@ local function handlePointMove(plotInfo: any, input: any)
 	end
 end
 
-local function createFloorFromTile(plotInfo: any, tile: Vector2int16)
-	local tileSize = Formex.LayoutGridSize
-	local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
-	local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
-	local materialId = getFloorMaterialId()
-	local ceilingMaterial = getCeilingMaterialId()
-	local raiseHeight = getFloorRaiseHeight()
-	local floorColor = getFloorColor()
-	local ceilingColor = getCeilingColor()
-	local foundationMaterial = getFoundationMaterialId()
-	local foundationColor = getFoundationColor()
-	local floorData = {
-		FloorId = 0,
-		LevelIndex = getCurrentLevel(),
-		Points = {
-			Vector2int16.new(x0, z0),
-			Vector2int16.new(x0 + tileSize, z0),
-			Vector2int16.new(x0 + tileSize, z0 + tileSize),
-			Vector2int16.new(x0, z0 + tileSize),
-		},
-		RaiseHeight = raiseHeight,
-		FloorMaterial = materialId,
-		CeilingMaterial = ceilingMaterial,
-		FoundationMaterial = foundationMaterial,
-		FloorColor = floorColor,
-		CeilingColor = ceilingColor,
-		FoundationColor = foundationColor,
-		Model = nil,
-	}
+local function createFloorFromTile(tile: Vector2int16, floorData: Formex.FloorData?)
+	FormexClient.BuildFloor(floorData or buildFloorDataFromTile(tile), Formex.BuildAction.Add)
+end
 
-	FormexClient.BuildFloor(floorData, Formex.BuildAction.Add)
+local function updateFloorGhost(plotInfo: any, tile: Vector2int16): (boolean, Formex.FloorData)
+	if not plotInfo or not plotInfo.PlotPart then
+		return false, buildFloorDataFromTile(tile)
+	end
+
+	local floorData = buildFloorDataFromTile(tile)
+	ensureFloorGhost(plotInfo.PlotPart, getCurrentLevel(), tile, Formex.PartType.Floor)
+	local isValid = Formex.Floors.IsValid(plotInfo :: any, floorData)
+	updateGhostValidity(isValid)
+	return isValid, floorData
+end
+
+local function updateFloorStartGhost(input: any)
+	if not input.LayoutTile then
+		return
+	end
+
+	local tile = input.LayoutTile
+	if lastPreviewTile and pointsEqual(tile, lastPreviewTile) then
+		return
+	end
+	lastPreviewTile = tile
+
+	updateFloorGhost(input.PlotInfo, tile)
+end
+
+local function finalizeFloorPlacement(plotInfo: any, tile: Vector2int16)
+	local isValid, floorData = updateFloorGhost(plotInfo, tile)
+	if not isValid then
+		return
+	end
+
+	createFloorFromTile(tile, floorData)
+	lastPreviewTile = nil
+	setActionType(Enums.ActionType.Select)
+	clearGhost()
+	notifyDesignModeChange()
 end
 
 local function onFloorHandleClicked(info: any)
@@ -657,7 +713,20 @@ function Floors.UpdateHandles(plotInfo: any)
 end
 
 function Floors.StartFloor()
-	setActionType(Enums.ActionType.Select)
+	if getActionType() ~= Enums.ActionType.Select then
+		cancelAction()
+	end
+
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
+		return
+	end
+
+	setActionType(Enums.ActionType.Start)
+	lastPreviewTile = nil
+	clearGhost()
+	clearSelection()
+	notifyDesignModeChange()
 end
 
 function Floors.CancelAction()
@@ -672,6 +741,7 @@ function Floors.CancelAction()
 			updateFloorEdgePreview(plotInfo, moveLevelIndex, movePreviewPoints)
 		end
 	end
+	lastPreviewTile = nil
 	setActionType(Enums.ActionType.Select)
 	Highlight.UpdateSelectionHighlight()
 end
@@ -682,20 +752,30 @@ function Floors.ClearSelection()
 	moveSharedPoints = {}
 	moveRaiseHeight = 0
 	activeHandle = nil
+	lastPreviewTile = nil
 	clearFloorHandles()
 	Highlight.ClearFloorEdgePreview()
 	Highlight.UpdateSelectionHighlight()
 end
 
 function Floors.HandleUpdate(input: any)
-	if getActionType() == Enums.ActionType.Select then
+	local actionType = getActionType()
+	if actionType == Enums.ActionType.Select then
 		updateFloorHandles(input.PlotInfo)
 		Handles.CheckHover(input.Ray)
+		if isGhostActive() and getGhostType() == Formex.PartType.Floor then
+			clearGhost()
+		end
 		Highlight.UpdateSelectionHighlight()
 		return
 	end
 
-	if getActionType() == Enums.ActionType.Move then
+	if actionType == Enums.ActionType.Start then
+		updateFloorStartGhost(input)
+		return
+	end
+
+	if actionType == Enums.ActionType.Move then
 		handlePointMove(input.PlotInfo, input)
 		if movePreviewPoints and moveLevelIndex then
 			updateFloorEdgePreview(input.PlotInfo, moveLevelIndex, movePreviewPoints)
@@ -733,13 +813,15 @@ function Floors.HandlePrimaryClick(input: any)
 			return
 		end
 
-		if hadSelection then
-			clearSelection()
-			return
-		end
-
 		if input.LayoutTile then
-			createFloorFromTile(input.PlotInfo, input.LayoutTile)
+			Floors.StartFloor()
+		end
+		return
+	end
+
+	if actionType == Enums.ActionType.Start then
+		if input.LayoutTile then
+			finalizeFloorPlacement(input.PlotInfo, input.LayoutTile)
 		end
 	end
 end

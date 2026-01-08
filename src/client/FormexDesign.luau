@@ -321,6 +321,7 @@ local designStateDirty = false
 local selectionColor = Color3.fromRGB(255, 201, 107)
 local ghostValidColor = selectionColor -- Color3.fromRGB(84, 140, 255)
 local ghostInvalidColor = Color3.fromRGB(245, 110, 110)
+local floorGhostTransparency = 0.6
 
 local function isPaintableDesignMode(mode: DesignMode): boolean
 	return mode == FormexDesign.DesignMode.Wall
@@ -1355,7 +1356,8 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Ins
 	local params = RaycastParams.new()
 	params.IgnoreWater = true
 
-	local useGridSegmentsOnly = actionType == FormexDesign.ActionType.Move
+	local useGridSegmentsOnly =
+		actionType ~= FormexDesign.ActionType.Select
 		and (designMode == FormexDesign.DesignMode.Wall
 			or designMode == FormexDesign.DesignMode.Floor)
 
@@ -1451,6 +1453,12 @@ end
 
 local function updateGhostValidity(isValid: boolean)
 	ghostIsValid = isValid
+	if ghost
+		and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
+		and ghost:IsA("BasePart") then
+		ghost.Color = ghostIsValid and ghostValidColor or ghostInvalidColor
+		ghost.Transparency = floorGhostTransparency
+	end
 	FormexDesignHighlights.UpdateSelectionHighlight()
 end
 
@@ -1511,12 +1519,34 @@ local function buildWallData(startPoint: Vector2int16, endPoint: Vector2int16): 
 	}
 end
 
+local function getNextId(entries: {[number]: any}): number
+	local maxId = 0
+	for id in entries do
+		if id > maxId then
+			maxId = id
+		end
+	end
+	return maxId + 1
+end
+
+local function getNextFloorId(levelIndex: number): number
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Levels then
+		return 1
+	end
+	local levelData = plotInfo.PlotData.Levels[levelIndex]
+	if not levelData or not levelData.Floors then
+		return 1
+	end
+	return getNextId(levelData.Floors)
+end
+
 local function buildFloorGhostData(levelIndex: number, tile: Vector2int16): Formex.FloorData
 	local tileSize = Formex.LayoutGridSize
 	local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
 	local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
 	return {
-		FloorId = Formex.XYToIndex(tile.X, tile.Y),
+		FloorId = getNextFloorId(levelIndex),
 		LevelIndex = levelIndex,
 		Points = {
 			Vector2int16.new(x0, z0),
@@ -1677,7 +1707,7 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 		ghostFloorData = buildFloorGhostData(levelIndex, tile)
 	else
 		ghostFloorData.LevelIndex = levelIndex
-		ghostFloorData.FloorId = Formex.XYToIndex(tile.X, tile.Y)
+		ghostFloorData.FloorId = getNextFloorId(levelIndex)
 		ghostFloorData.RaiseHeight = floorRaiseHeight
 		ghostFloorData.FloorMaterial = floorMaterialId
 		ghostFloorData.CeilingMaterial = ceilingMaterialId
@@ -1703,7 +1733,8 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 
 	ghost.Size = Vector3.new(tileSize, thickness, tileSize)
 	ghost.CFrame = plotPart.CFrame * CFrame.new(xOffset, centerY, zOffset)
-	ghost.Transparency = 1
+	ghost.Transparency = floorGhostTransparency
+	ghost.Color = ghostIsValid and ghostValidColor or ghostInvalidColor
 
 	ghostActive = true
 	FormexDesignHighlights.UpdateSelectionHighlight()
