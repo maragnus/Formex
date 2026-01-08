@@ -19,6 +19,12 @@ FormexCamera.CameraMode = table.freeze({
 	TopDown = "TopDown", -- Activate custom top-down camera controller
 }) :: {CameraMode: CameraMode}
 
+export type TopDownState = {
+	Position: Vector2,
+	Distance: number,
+	Yaw: number,
+}
+
 local DEFAULT_CAMERA_DISTANCE = 50
 local CAMERA_DISTANCE_MIN = 20
 local CAMERA_DISTANCE_MAX = 120
@@ -308,6 +314,23 @@ end
 
 function FormexCamera.GetCameraMode(): CameraMode
     return cameraMode
+end
+
+function FormexCamera.GetTopDownState(): TopDownState
+    return {
+        Position = Vector2.new(cameraPosition.X, cameraPosition.Y),
+        Distance = cameraDistance,
+        Yaw = cameraYaw,
+    } :: TopDownState
+end
+
+function FormexCamera.ApplyTopDownState(state: TopDownState)
+    cameraPosition = Vector2.new(state.Position.X, state.Position.Y)
+    cameraDistance = clampCameraDistance(state.Distance)
+    cameraYaw = state.Yaw
+    zoomVelocity = 0
+    rotateVelocity = 0
+    updateCameraPosition()
 end
 
 function FormexCamera.SetCameraMode(mode: CameraMode, center: Vector3?, bound1: Vector3?, bound2: Vector3?, topDirection: Vector3?)

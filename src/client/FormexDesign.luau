@@ -92,6 +92,24 @@ local playViewSettings: ViewSettings = {
 	ShowOtherLevels = true
 } :: ViewSettings
 
+local topDownViewSettings: ViewSettings = {
+	HandleLocation = FormexDesign.HandleLocation.Bottom,
+	CameraMode = FormexCamera.CameraMode.TopDown,
+	WallMode = FormexDesign.WallMode.Half,
+	ShowSegments = false,
+	ShowGrid = true,
+	ShowOtherLevels = false
+} :: ViewSettings
+
+local expandViewSettings: ViewSettings = {
+	HandleLocation = FormexDesign.HandleLocation.Bottom,
+	CameraMode = FormexCamera.CameraMode.TopDown,
+	WallMode = FormexDesign.WallMode.Half,
+	ShowSegments = true,
+	ShowGrid = false,
+	ShowOtherLevels = false
+} :: ViewSettings
+
 type InputInfo = {
 	PlotInfo: FormexClient.PlotInfo,
 	Ray: Ray?,
@@ -134,6 +152,8 @@ local selectionPart: Instance? = nil
 local altDropperForced = false
 local altDropperUsed = false
 local lastSubModeBeforeAlt: DesignSubMode? = nil
+type TopDownState = FormexCamera.TopDownState
+local topDownStateByPlotId: {[number]: TopDownState} = {}
 
 export type WallPaintSettings = {
 	Height: number?,
@@ -836,6 +856,50 @@ local function getPlayerFocusPosition(): Vector3?
 	return nil
 end
 
+local function saveTopDownState(plotInfo: FormexClient.PlotInfo?)
+	if not plotInfo or not plotInfo.IsValid then
+		return
+	end
+	topDownStateByPlotId[plotInfo.PlotId] = FormexCamera.GetTopDownState()
+end
+
+local function getSelectionFocusPosition(plotPart: BasePart): Vector3?
+	if selectionType == FormexDesign.SelectionType.None or not selectionPart then
+		return nil
+	end
+	if not selectionPart:IsDescendantOf(plotPart) then
+		return nil
+	end
+	if selectionPart:IsA("Model") or selectionPart:IsA("BasePart") then
+		return selectionPart:GetPivot().Position
+	end
+	return nil
+end
+
+local function clampFocusToPlot(plotPart: BasePart, boundsMin: Vector3?, boundsMax: Vector3?, worldPosition: Vector3): Vector3
+	if not boundsMin or not boundsMax then
+		return worldPosition
+	end
+
+	local offset = Vector2.new(worldPosition.X - plotPart.Position.X, worldPosition.Z - plotPart.Position.Z)
+	local clamped = Vector2.new(
+		math.clamp(offset.X, boundsMin.X, boundsMax.X),
+		math.clamp(offset.Y, boundsMin.Z, boundsMax.Z)
+	)
+	return Vector3.new(plotPart.Position.X + clamped.X, worldPosition.Y, plotPart.Position.Z + clamped.Y)
+end
+
+local function focusTopDownOnSelectionOrPlayer(plotInfo: FormexClient.PlotInfo, boundsMin: Vector3?, boundsMax: Vector3?)
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
+		return
+	end
+
+	local plotPart = plotInfo.PlotPart
+	local focusPosition = getSelectionFocusPosition(plotPart) or getPlayerFocusPosition() or plotPart.Position
+	local clamped = clampFocusToPlot(plotPart, boundsMin, boundsMax, focusPosition)
+	FormexCamera.Focus(clamped)
+end
+
 function FormexDesign.MoveCameraToPlayer()
 	if viewSettings.CameraMode ~= FormexCamera.CameraMode.TopDown then
 		return
@@ -850,39 +914,11 @@ end
 local designModeViewSettings: {DesignMode: ViewSettings} = {
 	Play = playViewSettings,
 	Design = playViewSettings,
-	Select = playViewSettings,
-	Expand = {
-		HandleLocation = FormexDesign.HandleLocation.Bottom,
-		CameraMode = FormexCamera.CameraMode.TopDown,
-		WallMode = FormexDesign.WallMode.Half,
-		ShowSegments = true,
-		ShowGrid = false,
-		ShowOtherLevels = false
-	},
-	Wall = {
-		HandleLocation = FormexDesign.HandleLocation.Bottom,
-		CameraMode = FormexCamera.CameraMode.TopDown,
-		WallMode = FormexDesign.WallMode.Full,
-		ShowSegments = false,
-		ShowGrid = true,
-		ShowOtherLevels = false
-	},
-	Floor = {
-		HandleLocation = FormexDesign.HandleLocation.Bottom,
-		CameraMode = FormexCamera.CameraMode.TopDown,
-		WallMode = FormexDesign.WallMode.Half,
-		ShowSegments = false,
-		ShowGrid = true,
-		ShowOtherLevels = false
-	},
-	Object = {
-		HandleLocation = FormexDesign.HandleLocation.Middle,
-		CameraMode = FormexCamera.CameraMode.Play,
-		WallMode = FormexDesign.WallMode.Full,
-		ShowSegments = false,
-		ShowGrid = true,
-		ShowOtherLevels = false
-	}
+	Select = topDownViewSettings,
+	Expand = expandViewSettings,
+	Wall = topDownViewSettings,
+	Floor = topDownViewSettings,
+	Object = topDownViewSettings
 }
 
 local function clearOverlays()
@@ -1141,9 +1177,11 @@ local function refresh(preserveSelection: boolean?)
 		topDirection = -plotPart.CFrame.LookVector
 	end
 
+	local wasTopDown = FormexCamera.GetCameraMode() == FormexCamera.CameraMode.TopDown
 	FormexCamera.SetCameraMode(viewSettings.CameraMode, plotPart.Position, boundsMin, boundsMax, topDirection)
 
 	if isTopDown then
+		local activatedTopDown = not wasTopDown
 		if plotChanged then
 			FormexCamera.SetCameraCenter(plotPart.Position)
 			designSessionPendingFocus = true
@@ -1156,8 +1194,13 @@ local function refresh(preserveSelection: boolean?)
 			FormexCamera.SetZoomLimits(nil, nil)
 		end
 
-		if designSessionPendingFocus then
-			FormexDesign.MoveCameraToPlayer()
+		if activatedTopDown or designSessionPendingFocus then
+			local storedState = topDownStateByPlotId[plotInfo.PlotId]
+			if storedState then
+				FormexCamera.ApplyTopDownState(storedState)
+			else
+				focusTopDownOnSelectionOrPlayer(plotInfo, boundsMin, boundsMax)
+			end
 			designSessionPendingFocus = false
 		end
 	end
@@ -2482,6 +2525,12 @@ function FormexDesign.SetDesignMode(mode: DesignMode?, preserveSelection: boolea
 		mode = FormexDesign.DesignMode.Select
 	end
 	if designMode == mode then return end
+	local nextViewSettings = designModeViewSettings[mode]
+	if viewSettings.CameraMode == FormexCamera.CameraMode.TopDown
+		and nextViewSettings
+		and nextViewSettings.CameraMode ~= FormexCamera.CameraMode.TopDown then
+		saveTopDownState(FormexClient.CurrentPlot)
+	end
 
 	if actionType ~= FormexDesign.ActionType.Select then
 		FormexDesign.CancelAction()
