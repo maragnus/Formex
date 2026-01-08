@@ -208,6 +208,7 @@ end
 local function buildMidpoints(points: {Vector2int16}): {Vector2int16}
 	local midpoints = {}
 	local grid = Formex.LayoutGridSize
+	local minHandleLength = Formex.LayoutGridSize * 2
 	for i = 1, #points do
 		local nextIndex = (i % #points) + 1
 		local startPoint = points[i]
@@ -215,7 +216,7 @@ local function buildMidpoints(points: {Vector2int16}): {Vector2int16}
 		local dx = endPoint.X - startPoint.X
 		local dy = endPoint.Y - startPoint.Y
 		local distance = math.sqrt(dx * dx + dy * dy)
-		if distance >= 4 then
+		if distance >= minHandleLength then
 			local midX = math.round(((startPoint.X + endPoint.X) / 2) / grid) * grid
 			local midY = math.round(((startPoint.Y + endPoint.Y) / 2) / grid) * grid
 			local mid = Vector2int16.new(midX, midY)
@@ -225,6 +226,44 @@ local function buildMidpoints(points: {Vector2int16}): {Vector2int16}
 		end
 	end
 	return midpoints
+end
+
+local function getPolygonArea2(points: {Vector2int16}): number
+	local area = 0
+	for i = 1, #points do
+		local nextIndex = (i % #points) + 1
+		local a = points[i]
+		local b = points[nextIndex]
+		area += (a.X * b.Y) - (b.X * a.Y)
+	end
+	return area
+end
+
+local function getMidpointOffset(points: {Vector2int16}, index: number, handleOffset: number): Vector2int16
+	local nextIndex = (index % #points) + 1
+	local startPoint = points[index]
+	local endPoint = points[nextIndex]
+	local dx = endPoint.X - startPoint.X
+	local dy = endPoint.Y - startPoint.Y
+	local length = math.sqrt(dx * dx + dy * dy)
+	if length <= Constants.Epsilon then
+		return Vector2int16.new(0, 0)
+	end
+
+	local area2 = getPolygonArea2(points)
+	local normalX, normalY
+	if area2 >= 0 then
+		normalX = dy
+		normalY = -dx
+	else
+		normalX = -dy
+		normalY = dx
+	end
+
+	local scale = handleOffset / length
+	local offsetX = math.round(normalX * scale)
+	local offsetY = math.round(normalY * scale)
+	return Vector2int16.new(offsetX, offsetY)
 end
 
 local function collectSharedFloors(plotPart: BasePart, levelIndex: number, originPoint: Vector2int16, ignoreFloorId: number): {SharedFloorPoint}
@@ -423,6 +462,9 @@ local function onFloorHandleClicked(info: any)
 	local points = table.clone(floorData.Points)
 	local handleIndex = info.Index
 	if info.Kind == "Midpoint" then
+		if #points >= Formex.MaxFloorPoints then
+			return
+		end
 		local midpoints = buildMidpoints(points)
 		local midpoint = midpoints[handleIndex]
 		if midpoint then
@@ -494,20 +536,23 @@ local function updateFloorHandles(plotInfo: any)
 		}
 	end
 
-	local midpoints = buildMidpoints(points)
-	for index, midpoint in ipairs(midpoints) do
-		if midpoint.X ~= 0 or midpoint.Y ~= 0 then
-			local handle = addFloorHandle("FloorMid_" .. tostring(index), Constants.GhostValidColor, Formex.Icons.WallExtend, onFloorHandleClicked, {
-				Kind = "Midpoint",
-				Index = index,
-				Handle = nil,
-			})
-			handle.CFrame = plotInfo.PlotPart.CFrame * CFrame.new(midpoint.X, y, midpoint.Y)
-			floorHandles[#floorHandles + 1] = {
-				Kind = "Midpoint",
-				Index = index,
-				Handle = handle,
-			}
+	if #points < Formex.MaxFloorPoints then
+		local midpoints = buildMidpoints(points)
+		for index, midpoint in ipairs(midpoints) do
+			if midpoint.X ~= 0 or midpoint.Y ~= 0 then
+				local offset = getMidpointOffset(points, index, Constants.HandleOffset)
+				local handle = addFloorHandle("FloorMid_" .. tostring(index), Constants.GhostValidColor, Formex.Icons.WallExtend, onFloorHandleClicked, {
+					Kind = "Midpoint",
+					Index = index,
+					Handle = nil,
+				})
+				handle.CFrame = plotInfo.PlotPart.CFrame * CFrame.new(midpoint.X + offset.X, y, midpoint.Y + offset.Y)
+				floorHandles[#floorHandles + 1] = {
+					Kind = "Midpoint",
+					Index = index,
+					Handle = handle,
+				}
+			end
 		end
 	end
 
