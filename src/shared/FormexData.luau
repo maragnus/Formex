@@ -138,6 +138,7 @@ Formex.Icons = { -- Content.fromAssetId(...)
     DesignFloors = 136537860205120,
     DesignWalls =  105416010695180,
     DesignPaint = 92885878760720,
+	DesignDropper = 92599750112347,
     Undo = 118863163301402,
     Redo = 118241293985419,
     ChevronDown = 84853982697443,

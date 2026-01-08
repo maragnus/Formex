@@ -968,24 +968,6 @@ local function buildSidebar()
         updateWallSplitVisibility()
     end)
 
-    local wallFrontBottomRow = createMaterialColorRow({
-        Parent = wallContent,
-        Name = "FrontBottomRow",
-        MaterialLabel = "Front bottom material",
-        PartType = Formex.PartType.Wall,
-        MaterialValue = wallFrontBottomMaterialId,
-        ColorValue = wallFrontBottomColor,
-        OnMaterialChanged = function(materialId)
-            wallFrontBottomMaterialId = materialId or wallFrontBottomMaterialId
-            applySelectedWallAppearance({ FrontBottomMaterial = wallFrontBottomMaterialId })
-        end,
-        OnColorChanged = function(color)
-            local resolved = color or Color3.new(1, 1, 1)
-            wallFrontBottomColor = resolved
-            applySelectedWallAppearance({ FrontBottomColor = resolved })
-        end,
-    })
-
     local wallFrontTopRow = createMaterialColorRow({
         Parent = wallContent,
         Name = "FrontTopRow",
@@ -1001,6 +983,24 @@ local function buildSidebar()
             local resolved = color or Color3.new(1, 1, 1)
             wallFrontTopColor = resolved
             applySelectedWallAppearance({ FrontTopColor = resolved })
+        end,
+    })
+
+    local wallFrontBottomRow = createMaterialColorRow({
+        Parent = wallContent,
+        Name = "FrontBottomRow",
+        MaterialLabel = "Front bottom material",
+        PartType = Formex.PartType.Wall,
+        MaterialValue = wallFrontBottomMaterialId,
+        ColorValue = wallFrontBottomColor,
+        OnMaterialChanged = function(materialId)
+            wallFrontBottomMaterialId = materialId or wallFrontBottomMaterialId
+            applySelectedWallAppearance({ FrontBottomMaterial = wallFrontBottomMaterialId })
+        end,
+        OnColorChanged = function(color)
+            local resolved = color or Color3.new(1, 1, 1)
+            wallFrontBottomColor = resolved
+            applySelectedWallAppearance({ FrontBottomColor = resolved })
         end,
     })
 
@@ -1035,6 +1035,24 @@ local function buildSidebar()
         updateWallSplitVisibility()
     end)
 
+    local wallBackTopRow = createMaterialColorRow({
+        Parent = wallContent,
+        Name = "BackTopRow",
+        MaterialLabel = "Back top material",
+        PartType = Formex.PartType.Wall,
+        MaterialValue = wallBackTopMaterialId,
+        ColorValue = wallBackTopColor,
+        OnMaterialChanged = function(materialId)
+            wallBackTopMaterialId = materialId or wallBackTopMaterialId
+            applySelectedWallAppearance({ BackTopMaterial = wallBackTopMaterialId })
+        end,
+        OnColorChanged = function(color)
+            local resolved = color or Color3.new(1, 1, 1)
+            wallBackTopColor = resolved
+            applySelectedWallAppearance({ BackTopColor = resolved })
+        end,
+    })
+    
     local wallBackBottomRow = createMaterialColorRow({
         Parent = wallContent,
         Name = "BackBottomRow",
@@ -1053,24 +1071,6 @@ local function buildSidebar()
         end,
     })
 
-    local wallBackTopRow = createMaterialColorRow({
-        Parent = wallContent,
-        Name = "BackTopRow",
-        MaterialLabel = "Back top material",
-        PartType = Formex.PartType.Wall,
-        MaterialValue = wallBackTopMaterialId,
-        ColorValue = wallBackTopColor,
-        OnMaterialChanged = function(materialId)
-            wallBackTopMaterialId = materialId or wallBackTopMaterialId
-            applySelectedWallAppearance({ BackTopMaterial = wallBackTopMaterialId })
-        end,
-        OnColorChanged = function(color)
-            local resolved = color or Color3.new(1, 1, 1)
-            wallBackTopColor = resolved
-            applySelectedWallAppearance({ BackTopColor = resolved })
-        end,
-    })
-
     local floorContent = Instance.new("Frame", designContentCard)
     floorContent.Name = "FloorContent"
     floorContent.BackgroundTransparency = 1
@@ -1081,24 +1081,6 @@ local function buildSidebar()
     floorLayout.FillDirection = Enum.FillDirection.Vertical
     floorLayout.SortOrder = Enum.SortOrder.LayoutOrder
     floorLayout.Padding = UDim.new(0, 8)
-
-    local floorRow = createMaterialColorRow({
-        Parent = floorContent,
-        Name = "FloorRow",
-        MaterialLabel = "Floor material",
-        PartType = Formex.PartType.Floor,
-        MaterialValue = FormexDesign.GetFloorMaterial(),
-        ColorValue = FormexDesign.GetFloorColor(),
-        OnMaterialChanged = function(materialId)
-            FormexDesign.SetFloorMaterial(materialId or Formex.DefaultFloorMaterial)
-        end,
-        OnColorChanged = function(color)
-            if suppressFloorInputs then
-                return
-            end
-            FormexDesign.SetFloorColor(color or Color3.new(1, 1, 1))
-        end,
-    })
 
     local floorRaiseSlider: FormexUI.SliderHandle
     floorRaiseSlider = FormexUI.CreateSlider({
@@ -1120,6 +1102,24 @@ local function buildSidebar()
         end
         FormexDesign.SetFloorRaiseHeight(clamped)
     end)
+    
+    local floorRow = createMaterialColorRow({
+        Parent = floorContent,
+        Name = "FloorRow",
+        MaterialLabel = "Floor material",
+        PartType = Formex.PartType.Floor,
+        MaterialValue = FormexDesign.GetFloorMaterial(),
+        ColorValue = FormexDesign.GetFloorColor(),
+        OnMaterialChanged = function(materialId)
+            FormexDesign.SetFloorMaterial(materialId or Formex.DefaultFloorMaterial)
+        end,
+        OnColorChanged = function(color)
+            if suppressFloorInputs then
+                return
+            end
+            FormexDesign.SetFloorColor(color or Color3.new(1, 1, 1))
+        end,
+    })
 
     local foundationRow = createMaterialColorRow({
         Parent = floorContent,

@@ -1,4 +1,5 @@
 --!strict
+local Workspace = game:GetService("Workspace")
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 
 local Walls = {}
@@ -73,6 +74,7 @@ local wallHandleEndSolo: BasePart? = nil
 local wallHandleExtendStart: BasePart? = nil
 local wallHandleExtendEnd: BasePart? = nil
 local wallHandleDelete: BasePart? = nil
+local wallHandleFlip: BasePart? = nil
 local activeWallHandle: WallHandleType? = nil
 local moveWallOriginal: SelectedWall? = nil
 local moveWallOriginals: {[number]: WallInfo} = {}
@@ -240,6 +242,52 @@ local function getPerpOffset(startPoint: Vector2int16, endPoint: Vector2int16, d
 	end
 	local perp = Vector2.new(-dir.Y, dir.X)
 	return perp * distance
+end
+
+local function getHandleIcon(handle: BasePart?): ImageLabel?
+	if not handle then
+		return nil
+	end
+
+	local billboard = handle:FindFirstChild("HandleBillboard")
+	if not billboard or not billboard:IsA("BillboardGui") then
+		return nil
+	end
+
+	local icon = billboard:FindFirstChild("Icon")
+	if icon and icon:IsA("ImageLabel") then
+		return icon
+	end
+
+	return nil
+end
+
+local function setHandleIconRotation(handle: BasePart?, rotation: number)
+	local icon = getHandleIcon(handle)
+	if icon then
+		icon.Rotation = rotation
+	end
+end
+
+local function getScreenRotationForDirection(direction: Vector3): number
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return 0
+	end
+
+	local right = camera.CFrame.RightVector
+	local up = camera.CFrame.UpVector
+	local x = direction:Dot(right)
+	local y = direction:Dot(up)
+	if math.abs(x) <= Constants.Epsilon and math.abs(y) <= Constants.Epsilon then
+		return 0
+	end
+	return math.deg(math.atan2(x, y))
+end
+
+local function getModelBottomCenter(model: Model): Vector3
+	local boundsCFrame, boundsSize = model:GetBoundingBox()
+	return boundsCFrame.Position - Vector3.new(0, boundsSize.Y / 2, 0)
 end
 
 local function isZeroLength(startPoint: Vector2int16, endPoint: Vector2int16): boolean
@@ -580,6 +628,30 @@ local function onWallDelete()
 	clearSelection()
 end
 
+local function onWallFlip()
+	local input = getLastInputInfo()
+	if not selectedWall or not input or not input.PlotInfo or not input.PlotInfo.PlotPart then
+		return
+	end
+
+	local wallModel = selectedWall.Part
+	if not wallModel then
+		return
+	end
+
+	local wallData = getWallDataFromPart(input.PlotInfo.PlotPart, wallModel, selectedWall.WallId, selectedWall.Level)
+	wallData.Start = selectedWall.End
+	wallData.End = selectedWall.Start
+	wallData.Part = nil
+
+	FormexClient.BuildWall(wallData, Formex.BuildAction.Edit)
+
+	selectedWall.Start = wallData.Start
+	selectedWall.End = wallData.End
+	Walls.UpdateHandles(input.PlotInfo)
+	notifyDesignModeChange()
+end
+
 local function resetMoveState()
 	activeWallHandle = nil
 	moveWallOriginal = nil
@@ -604,6 +676,7 @@ local function setWallHandlesVisible(visible: boolean)
 		wallHandleExtendStart,
 		wallHandleExtendEnd,
 		wallHandleDelete,
+		wallHandleFlip,
 	}) do
 		Handles.SetHandleVisible(handle, visible)
 	end
@@ -725,6 +798,7 @@ local function updateWallHandles(plotInfo: any)
 	wallHandleExtendStart = Handles.CreateHandle("WallHandleExtendStart", Constants.GhostValidColor, Formex.Icons.WallExtend, onWallExtendStart)
 	wallHandleExtendEnd = Handles.CreateHandle("WallHandleExtendEnd", Constants.GhostValidColor, Formex.Icons.WallExtend, onWallExtendEnd)
 	wallHandleDelete = Handles.CreateHandle("WallHandleDelete", Constants.GhostInvalidColor, Formex.Icons.DeleteItem, onWallDelete)
+	wallHandleFlip = Handles.CreateHandle("WallHandleFlip", Constants.GhostValidColor, Formex.Icons.DirectionIndicator, onWallFlip)
 
 	local viewSettings = getViewSettings()
 	local handleY = getWallHandleY(level, viewSettings.HandleLocation or Enums.HandleLocation.Middle)
@@ -734,6 +808,7 @@ local function updateWallHandles(plotInfo: any)
 
 	local offset = getPerpOffset(startPoint, endPoint, Constants.HandleOffset)
 	local extendOffset = Vector2.new(-offset.X, -offset.Y)
+	local frontNormal = getPerpOffset(startPoint, endPoint, 1)
 	local startPoint2 = Vector2.new(startPoint.X, startPoint.Y)
 	local endPoint2 = Vector2.new(endPoint.X, endPoint.Y)
 	local midPoint = Vector2.new((startPoint.X + endPoint.X) / 2, (startPoint.Y + endPoint.Y) / 2)
@@ -745,7 +820,11 @@ local function updateWallHandles(plotInfo: any)
 	wallHandleEndSolo.Position = toWorld(endPoint2 + offset)
 	wallHandleExtendStart.Position = toWorld(startPoint2 + extendOffset)
 	wallHandleExtendEnd.Position = toWorld(endPoint2 + extendOffset)
-	wallHandleDelete.Position = toWorld(midPoint + offset * 2.5)
+	local deletePosition = toWorld(Vector2.new(midPoint.X, math.min(startPoint.Y, endPoint.Y) - Constants.HandleOffset * 2))
+	wallHandleDelete.Position = deletePosition - Vector3.new(0, wallHandleDelete.Size.Y / 2, 0)
+	wallHandleFlip.Position = toWorld(midPoint + offset)
+	local frontWorld = plotInfo.PlotPart.CFrame:VectorToWorldSpace(Vector3.new(frontNormal.X, 0, frontNormal.Y))
+	setHandleIconRotation(wallHandleFlip, getScreenRotationForDirection(frontWorld))
 
 	setWallHandlesVisible(true)
 
