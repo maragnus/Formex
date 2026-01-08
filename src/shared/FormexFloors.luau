@@ -4,10 +4,12 @@ local Formex = require(script.Parent:FindFirstChild("Formex"))
 Formex.Math = require(script.Parent:FindFirstChild("FormexMath"))
 
 local AssetService = game:GetService("AssetService")
+local RunService = game:GetService("RunService")
+local isServer = RunService:IsServer()
 
 local EPSILON = Formex.EPSILON
 local MAX_TRIANGLES = 64 -- Make sure that a single floor does not exceed this triangle count for performance.
-local CLIENT_MESH_FOLDER_NAME = "ClientMeshes"
+local CLIENT_MESH_SUFFIX = " (Client)"
 local SURFACE_UV_SCALE = (type(Formex.LayoutGridSize) == "number" and Formex.LayoutGridSize > 0)
 	and Formex.LayoutGridSize
 	or 1
@@ -434,30 +436,23 @@ local function getPlotPartFromInstance(instance: Instance?): BasePart?
 	return nil
 end
 
-local function ensureClientMeshFolder(model: Model): Folder
-	-- Client-only mesh parts live under a dedicated folder to avoid touching server instances.
-	local folder = model:FindFirstChild(CLIENT_MESH_FOLDER_NAME)
-	if folder and folder:IsA("Folder") then
-		return folder
-	end
-	folder = Instance.new("Folder")
-	folder.Name = CLIENT_MESH_FOLDER_NAME
-	folder.Parent = model
-	return folder
+local function matchesSuffix(value: string, suffix: string): boolean
+	return string.sub(value, -#suffix) == suffix
 end
 
-local function hideServerMeshes(model: Model)
-	for _, child in ipairs(model:GetChildren()) do
-		if child:IsA("MeshPart") then
-			child.LocalTransparencyModifier = 1
-		end
+local function getMeshPartName(baseName: string, suffix: string?): string
+	if suffix then
+		return baseName .. suffix
 	end
+	return baseName
 end
 
-local function clearMeshParts(parent: Instance)
+local function clearMeshParts(parent: Instance, nameSuffix: string?)
 	for _, child in ipairs(parent:GetChildren()) do
 		if child:IsA("BasePart") then
-			child:Destroy()
+			if not nameSuffix or matchesSuffix(child.Name, nameSuffix) then
+				child:Destroy()
+			end
 		end
 	end
 end
@@ -628,6 +623,7 @@ local function createMeshPart(
 		fixedSizeMesh:Destroy()
 		print("Destroyed mesh part and its mesh asset.", name, parent.Name, parent.Parent and parent.Parent.Name)
 	end)
+	meshPart.Transparency = isServer and 1 or 0
 	return meshPart
 end
 
@@ -639,19 +635,20 @@ local function applyMeshMaterials(
 	foundationMaterial: number?,
 	floorColor: Color3,
 	ceilingColor: Color3,
-	foundationColor: Color3
+	foundationColor: Color3,
+	nameSuffix: string?
 )
-	local floorPart = parent:FindFirstChild(MESH_PART_NAMES.Floor)
+	local floorPart = parent:FindFirstChild(getMeshPartName(MESH_PART_NAMES.Floor, nameSuffix))
 	if floorPart and floorPart:IsA("BasePart") then
 		applySurfaceMaterial(floorPart, floorMaterial, floorColor)
 	end
 
-	local foundationPart = parent:FindFirstChild(MESH_PART_NAMES.Foundation)
+	local foundationPart = parent:FindFirstChild(getMeshPartName(MESH_PART_NAMES.Foundation, nameSuffix))
 	if foundationPart and foundationPart:IsA("BasePart") then
 		applySurfaceMaterial(foundationPart, foundationMaterial, foundationColor)
 	end
 
-	local ceilingPart = parent:FindFirstChild(MESH_PART_NAMES.Ceiling)
+	local ceilingPart = parent:FindFirstChild(getMeshPartName(MESH_PART_NAMES.Ceiling, nameSuffix))
 	if levelIndex == 1 then
 		if ceilingPart and ceilingPart:IsA("BasePart") then
 			ceilingPart:Destroy()
@@ -674,9 +671,10 @@ local function buildSurfaceMeshes(
 	ceilingColor: Color3,
 	foundationColor: Color3,
 	canCollide: boolean,
-	canQuery: boolean
+	canQuery: boolean,
+	nameSuffix: string?
 )
-	clearMeshParts(parent)
+	clearMeshParts(parent, nameSuffix)
 
 	local thickness = getFloorThickness(levelIndex)
 	local levelTop = Formex.LevelHeight * (levelIndex - 1)
@@ -684,7 +682,7 @@ local function buildSurfaceMeshes(
 	local yBottom = levelTop - thickness
 
 	local floorPart = createMeshPart(
-		MESH_PART_NAMES.Floor,
+		getMeshPartName(MESH_PART_NAMES.Floor, nameSuffix),
 		plotPart,
 		parent,
 		canCollide,
@@ -698,7 +696,7 @@ local function buildSurfaceMeshes(
 	end
 
 	local foundationPart = createMeshPart(
-		MESH_PART_NAMES.Foundation,
+		getMeshPartName(MESH_PART_NAMES.Foundation, nameSuffix),
 		plotPart,
 		parent,
 		canCollide,
@@ -713,7 +711,7 @@ local function buildSurfaceMeshes(
 
 	if levelIndex > 1 then
 		local ceilingPart = createMeshPart(
-			MESH_PART_NAMES.Ceiling,
+			getMeshPartName(MESH_PART_NAMES.Ceiling, nameSuffix),
 			plotPart,
 			parent,
 			canCollide,
@@ -887,7 +885,8 @@ function Formex.Floors.Edit(
 			foundationMaterial,
 			floorColor,
 			ceilingColor,
-			foundationColor
+			foundationColor,
+			nil
 		)
 		return model
 	end
@@ -906,7 +905,8 @@ function Formex.Floors.Edit(
 		ceilingColor,
 		foundationColor,
 		true,
-		true
+		true,
+		nil
 	)
 
 	return model
@@ -922,9 +922,6 @@ function Formex.Floors.RenderClientMeshes(model: Model, plotPartOverride: BasePa
 		return nil
 	end
 
-	local meshParent = ensureClientMeshFolder(model)
-	hideServerMeshes(model)
-
 	local floorData = buildFloorDataFromAttributes(model)
 	local cleaned = Formex.Floors.CleanPolygon(floorData.Points)
 	local usablePoints = ensureValidShape(nil, floorData, cleaned)
@@ -933,13 +930,13 @@ function Formex.Floors.RenderClientMeshes(model: Model, plotPartOverride: BasePa
 		resolveFloorAppearanceFromAttributes(readFloorAppearanceAttributes(model))
 
 	if #usablePoints < 3 then
-		clearMeshParts(meshParent)
+		clearMeshParts(model, CLIENT_MESH_SUFFIX)
 		return model
 	end
 
 	local triangles = buildTriangles(usablePoints)
 	buildSurfaceMeshes(
-		meshParent,
+		model,
 		plotPart,
 		usablePoints,
 		triangles,
@@ -951,31 +948,28 @@ function Formex.Floors.RenderClientMeshes(model: Model, plotPartOverride: BasePa
 		ceilingColor,
 		foundationColor,
 		false,
-		true
+		true,
+		CLIENT_MESH_SUFFIX
 	)
 
 	return model
 end
 
 function Formex.Floors.ApplyClientMaterials(model: Model)
-	local meshParent = model:FindFirstChild(CLIENT_MESH_FOLDER_NAME)
-	if not (meshParent and meshParent:IsA("Folder")) then
-		return
-	end
-
 	local floorData = buildFloorDataFromAttributes(model)
 	local floorMaterial, ceilingMaterial, foundationMaterial, floorColor, ceilingColor, foundationColor =
 		applyFloorAttributes(model, floorData)
 	local levelIndex = floorData.LevelIndex or getLevelIndexFromModel(model)
 	applyMeshMaterials(
-		meshParent,
+		model,
 		levelIndex,
 		floorMaterial,
 		ceilingMaterial,
 		foundationMaterial,
 		floorColor,
 		ceilingColor,
-		foundationColor
+		foundationColor,
+		CLIENT_MESH_SUFFIX
 	)
 end
 
@@ -983,10 +977,7 @@ function Formex.Floors.DestroyClientMeshes(model: Model)
 	if not model or model.Parent == nil then
 		return
 	end
-	local folder = model:FindFirstChild(CLIENT_MESH_FOLDER_NAME)
-	if folder and folder:IsA("Folder") then
-		folder:Destroy()
-	end
+	clearMeshParts(model, CLIENT_MESH_SUFFIX)
 end
 
 function Formex.Floors.Create(

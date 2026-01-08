@@ -393,7 +393,7 @@ local function deserializeLevelDataV3(reader): Formex.LevelArray
 				FrontBottomColor = readColor(reader),
 				BackTopColor = readColor(reader),
 				BackBottomColor = readColor(reader),
-			}
+			} :: Formex.WallData
 			levelData.Walls[wallId] = wall
 		end
 
@@ -422,7 +422,7 @@ local function deserializeLevelDataV3(reader): Formex.LevelArray
 				FloorColor = floorColor,
 				CeilingColor = ceilingColor,
 				FoundationColor = foundationColor,
-			}
+			} :: Formex.FloorData
 		end
 
 		-- Objects
@@ -437,7 +437,7 @@ local function deserializeLevelDataV3(reader): Formex.LevelArray
 				WallId = reader:ReadU16(),
 				Design = {},
 				Properties = {},
-			}
+			} :: Formex.ObjectData
 
 			while true do
 				local designIndex = reader:ReadU16()

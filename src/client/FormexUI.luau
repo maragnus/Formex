@@ -858,7 +858,7 @@ function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: C
     local allowNone = options.AllowNone ~= false
     local selectedColor: Color3? = options.SelectedColor
     local showLabel = options.Label ~= nil and options.Label ~= ""
-    local noChrome = (showLabel == false) and (showValue == false)
+    local noChrome = (showLabel == false)
     local name = options.Name or options.Label or "ColorSelect"
 
     local container = Instance.new("ImageButton", options.Parent)
@@ -913,14 +913,14 @@ function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: C
     local rowLayout = Instance.new("UIListLayout", row)
     rowLayout.FillDirection = Enum.FillDirection.Horizontal
     rowLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    rowLayout.Padding = UDim.new(0, noChrome and 0 or (showValue and 10 or 0))
+    rowLayout.Padding = UDim.new(0, 0)
     rowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 
     local preview = Instance.new("Frame", row)
     preview.Name = "Preview"
     preview.BackgroundColor3 = selectedColor or Color3.fromRGB(235, 238, 245)
     preview.BackgroundTransparency = selectedColor and 0 or 0.25
-    preview.Size = noChrome and UDim2.new(1, 28, 1, 0) or (showValue and UDim2.new(0, 28, 0, 28) or UDim2.new(1, 0, 1, 0))
+    preview.Size = UDim2.new(1, 0, 1, 0)
     preview.BorderSizePixel = 0
 
     local previewCorner = Instance.new("UICorner", preview)
