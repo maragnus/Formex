@@ -129,13 +129,7 @@ local function isWallIntersectionDisallowed(newStart: Vector2, newEnd: Vector2, 
 	if math.abs(cross2(newDir, existingStart - newStart)) <= EPSILON
 	and math.abs(cross2(newDir, existingEnd - newStart)) <= EPSILON then
 		local overlap = getOverlapLength(newStart, newEnd, existingStart, existingEnd)
-		if overlap > EPSILON then
-			return true
-		end
-		if Formex.Plot.IsPointOnSegment(newStart, existingStart, existingEnd) or Formex.Plot.IsPointOnSegment(newEnd, existingStart, existingEnd) then
-			return false
-		end
-		return true
+		return overlap > EPSILON
 	end
 
 	if not segmentsIntersect(newStart, newEnd, existingStart, existingEnd) then
