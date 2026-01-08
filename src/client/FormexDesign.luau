@@ -878,24 +878,42 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Ins
 	local mousePosition = UserInputService:GetMouseLocation()
 	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
 	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.IgnoreWater = true
 
-	if forceGridCollision then
-		params.CollisionGroup = Formex.CollisionGroup.Grid
-	elseif actionType == FormexDesign.ActionType.Select then
-		local filter = { overlayFolder }
-		if localPlayer.Character then
-			table.insert(filter, localPlayer.Character)
+	local useGridSegmentsOnly = actionType == FormexDesign.ActionType.Move
+		and (designMode == FormexDesign.DesignMode.Wall
+			or designMode == FormexDesign.DesignMode.Floor
+			or designMode == FormexDesign.DesignMode.Ceiling)
+
+	if useGridSegmentsOnly then
+		local gridSegments = {}
+		for _, child in ipairs(overlayFolder:GetChildren()) do
+			if child:IsA("BasePart") and child.Name:sub(1, 5) == "Grid_" then
+				table.insert(gridSegments, child)
+			end
 		end
-		if ghost then
-			table.insert(filter, ghost)
-		end
-		params.FilterDescendantsInstances = filter
-	elseif designMode == FormexDesign.DesignMode.Object then
-		params.CollisionGroup = Formex.CollisionGroup.Object
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = gridSegments
+		params.RespectCanCollide = false
 	else
-		params.CollisionGroup = Formex.CollisionGroup.Grid
+		params.FilterType = Enum.RaycastFilterType.Exclude
+
+		if forceGridCollision then
+			params.CollisionGroup = Formex.CollisionGroup.Grid
+		elseif actionType == FormexDesign.ActionType.Select then
+			local filter = { overlayFolder }
+			if localPlayer.Character then
+				table.insert(filter, localPlayer.Character)
+			end
+			if ghost then
+				table.insert(filter, ghost)
+			end
+			params.FilterDescendantsInstances = filter
+		elseif designMode == FormexDesign.DesignMode.Object then
+			params.CollisionGroup = Formex.CollisionGroup.Object
+		else
+			params.CollisionGroup = Formex.CollisionGroup.Grid
+		end
 	end
 
 
