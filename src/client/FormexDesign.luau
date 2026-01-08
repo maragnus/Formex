@@ -13,9 +13,8 @@ local localPlayer = Players.LocalPlayer
 local formexWorkspace = Workspace:WaitForChild("Formex")
 local overlayFolder = Formex.Util.EnsureFolder("FormexDesignOverlays", formexWorkspace)
 
-local EPSILON = 1e-4
-
-local HANDLE_OFFSET = 5
+local Enums = FormexDesignContext.Enums
+local Constants = FormexDesignContext.Constants
 
 local FormexDesign = {}
 
@@ -23,19 +22,15 @@ FormexDesign.Handles = require(script.Parent:WaitForChild("FormexDesignHandles")
 
 local Walls, Floors, Objects
 
-export type WallMode = "Full" | "Half" | "Hidden"
-FormexDesign.WallMode = table.freeze({
-	Full = "Full",
-	Half = "Half",
-	Hidden = "Hidden"
-}) :: {WallMode: WallMode}
+FormexDesign.WallMode = Enums.WallMode
+FormexDesign.HandleLocation = Enums.HandleLocation
+FormexDesign.DesignMode = Enums.DesignMode
+FormexDesign.DesignSubMode = Enums.DesignSubMode
+FormexDesign.ActionType = Enums.ActionType
+FormexDesign.SelectionType = Enums.SelectionType
 
-export type HandleLocation = "Top" | "Middle" | "Bottom"
-FormexDesign.HandleLocation = table.freeze({
-	Top = "Top",
-	Middle = "Middle",
-	Bottom = "Bottom"
-}) :: {HandleLocation: HandleLocation}
+export type WallMode = FormexDesignContext.WallMode
+export type HandleLocation = FormexDesignContext.HandleLocation
 
 type ViewSettings = {
 	HandleLocation: HandleLocation,
@@ -46,42 +41,13 @@ type ViewSettings = {
 	ShowOtherLevels: boolean,
 }
 
-export type DesignMode = "Play" | "Design" | "Select" | "Expand" | "Floor" | "Wall" | "Object"
-FormexDesign.DesignMode = table.freeze({
-	Play = "Play",
-	Design = "Design",
-	Select = "Select",
-	Expand = "Expand",
-	Floor = "Floor",
-	Wall = "Wall",
-	Object = "Object"
-}) :: {DesignMode: DesignMode}
-
-export type DesignSubMode = "Normal" | "Paint" | "Dropper"
-FormexDesign.DesignSubMode = table.freeze({
-	Normal = "Normal",
-	Paint = "Paint",
-	Dropper = "Dropper",
-}) :: {DesignSubMode: DesignSubMode}
-
-export type ActionType = "Select" | "Start" | "Step" | "Rotate" | "Move"
-FormexDesign.ActionType = {
-	Select = "Select",
-	Start = "Start",
-	Step = "Step",
-	Move = "Move",
-	Rotate = "Rotate"
-} :: {ActionType: ActionType}
+export type DesignMode = FormexDesignContext.DesignMode
+export type DesignSubMode = FormexDesignContext.DesignSubMode
+export type ActionType = FormexDesignContext.ActionType
 
 export type SelectionData = nil | Formex.WallData | Formex.FloorData | Formex.ObjectData
 
-export type SelectionType = "None" | "Wall" | "Floor" | "Object"
-FormexDesign.SelectionType = {
-	None = "None",
-	Wall = "Wall",
-	Floor = "Floor",
-	Object = "Object"
-} :: {SelectionType: SelectionType}
+export type SelectionType = FormexDesignContext.SelectionType
 
 local playViewSettings: ViewSettings = {
 	HandleLocation = FormexDesign.HandleLocation.Middle,
@@ -155,116 +121,16 @@ local lastSubModeBeforeAlt: DesignSubMode? = nil
 type TopDownState = FormexCamera.TopDownState
 local topDownStateByPlotId: {[number]: TopDownState} = {}
 
-export type WallPaintSettings = {
-	Height: number?,
-	SplitHeight: number?,
-	TopMaterial: number,
-	BottomMaterial: number,
-	TopColor: Color3,
-	BottomColor: Color3,
-}
+export type WallPaintSettings = FormexDesignContext.WallPaintSettings
+export type WallBuildSettings = FormexDesignContext.WallBuildSettings
+export type WallSelectedSettings = FormexDesignContext.WallSelectedSettings
+export type FloorPaintSettings = FormexDesignContext.FloorPaintSettings
+export type FloorSelectedSettings = FormexDesignContext.FloorSelectedSettings
+export type DesignState = FormexDesignContext.DesignState
+export type DesignStateUpdate = FormexDesignContext.DesignStateUpdate
 
-export type WallBuildSettings = {
-	Height: number?,
-	FrontSplitHeight: number?,
-	BackSplitHeight: number?,
-	FrontTopMaterial: number,
-	FrontBottomMaterial: number,
-	BackTopMaterial: number,
-	BackBottomMaterial: number,
-	FrontTopColor: Color3,
-	FrontBottomColor: Color3,
-	BackTopColor: Color3,
-	BackBottomColor: Color3,
-}
-
-export type WallSelectedSettings = {
-	Height: number?,
-	FrontSplitHeight: number?,
-	BackSplitHeight: number?,
-	FrontTopMaterial: number,
-	FrontBottomMaterial: number,
-	BackTopMaterial: number,
-	BackBottomMaterial: number,
-	FrontTopColor: Color3,
-	FrontBottomColor: Color3,
-	BackTopColor: Color3,
-	BackBottomColor: Color3,
-	HasSelection: boolean,
-}
-
-export type FloorPaintSettings = {
-	RaiseHeight: number,
-	FloorMaterial: number,
-	CeilingMaterial: number,
-	FoundationMaterial: number,
-	FloorColor: Color3,
-	CeilingColor: Color3,
-	FoundationColor: Color3,
-}
-
-export type FloorSelectedSettings = {
-	RaiseHeight: number,
-	FloorMaterial: number,
-	CeilingMaterial: number,
-	FoundationMaterial: number,
-	FloorColor: Color3,
-	CeilingColor: Color3,
-	FoundationColor: Color3,
-	HasSelection: boolean,
-}
-
-export type DesignState = {
-	Mode: DesignMode,
-	SubMode: DesignSubMode,
-	ActionType: ActionType,
-	SelectionType: SelectionType,
-	Wall: {
-		Selected: WallSelectedSettings,
-		Build: WallBuildSettings,
-		Paint: WallPaintSettings,
-	},
-	Floor: {
-		Selected: FloorSelectedSettings,
-		Paint: FloorPaintSettings,
-	},
-}
-
-type WallStateUpdate = {
-	Height: number? | false?,
-	FrontSplitHeight: number? | false?,
-	BackSplitHeight: number? | false?,
-	FrontTopMaterial: number?,
-	FrontBottomMaterial: number?,
-	BackTopMaterial: number?,
-	BackBottomMaterial: number?,
-	FrontTopColor: Color3?,
-	FrontBottomColor: Color3?,
-	BackTopColor: Color3?,
-	BackBottomColor: Color3?,
-	SplitHeight: number? | false?,
-	TopMaterial: number?,
-	BottomMaterial: number?,
-	TopColor: Color3?,
-	BottomColor: Color3?,
-}
-
-type FloorStateUpdate = {
-	RaiseHeight: number?,
-	FloorMaterial: number?,
-	CeilingMaterial: number?,
-	FoundationMaterial: number?,
-	FloorColor: Color3?,
-	CeilingColor: Color3?,
-	FoundationColor: Color3?,
-}
-
-export type DesignStateUpdate = {
-	Mode: DesignMode?,
-	SubMode: DesignSubMode?,
-	Wall: WallStateUpdate?,
-	Floor: FloorStateUpdate?,
-}
+type WallStateUpdate = FormexDesignContext.WallStateUpdate
+type FloorStateUpdate = FormexDesignContext.FloorStateUpdate
 
 local wallPaintSettings: WallPaintSettings = {
 	Height = nil,
@@ -318,11 +184,6 @@ local floorSelectedSettings: FloorSelectedSettings = {
 local designStateChangeDepth = 0
 local designStateDirty = false
 
-local selectionColor = Color3.fromRGB(255, 201, 107)
-local ghostValidColor = selectionColor -- Color3.fromRGB(84, 140, 255)
-local ghostInvalidColor = Color3.fromRGB(245, 110, 110)
-local floorGhostTransparency = 0.6
-
 local function isPaintableDesignMode(mode: DesignMode): boolean
 	return mode == FormexDesign.DesignMode.Wall
 		or mode == FormexDesign.DesignMode.Floor
@@ -357,81 +218,6 @@ local function updateAltDropperState(held: boolean)
 	end
 end
 
-local function getSelectedFloorModel(): Model?
-	if selectionType ~= FormexDesign.SelectionType.Floor then
-		return nil
-	end
-	if selectionPart and selectionPart:IsA("Model") then
-		return selectionPart
-	end
-	if selectionPart then
-		local model = selectionPart:FindFirstAncestorOfClass("Model")
-		if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then
-			return model
-		end
-	end
-	return nil
-end
-
-local function getFloorDataFromModel(model: Model): Formex.FloorData
-	local points = Formex.DecodeFloorPoints(model:GetAttribute("Points"))
-	local floorMaterial = model:GetAttribute("FloorMaterial") or Formex.DefaultFloorMaterial
-	local ceilingMaterial = model:GetAttribute("CeilingMaterial") or floorMaterial
-	local foundationMaterial = model:GetAttribute("FoundationMaterial") or Formex.DefaultFoundationMaterial
-	local floorColor = model:GetAttribute("FloorColor") or Color3.new(1, 1, 1)
-	local ceilingColor = model:GetAttribute("CeilingColor") or floorColor
-	local foundationColor = model:GetAttribute("FoundationColor") or floorColor
-	local raiseHeight = model:GetAttribute("RaiseHeight") or 0
-	local levelIndex = tonumber(model.Parent.Parent.Name) or currentLevel
-	local floorId = tonumber(model.Name) or 0
-
-	return {
-		FloorId = floorId,
-		LevelIndex = levelIndex,
-		Points = points,
-		RaiseHeight = raiseHeight,
-		FloorMaterial = floorMaterial,
-		CeilingMaterial = ceilingMaterial,
-		FoundationMaterial = foundationMaterial,
-		FloorColor = floorColor,
-		CeilingColor = ceilingColor,
-		FoundationColor = foundationColor,
-		Model = model,
-	}
-end
-
-local function applySelectedFloorAppearance(overrides: {[string]: any})
-	local model = getSelectedFloorModel()
-	if not model then
-		return
-	end
-
-	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid then
-		return
-	end
-
-	local current = getFloorDataFromModel(model)
-	if not current.Points or #current.Points < 3 then
-		return
-	end
-	local raiseHeight = overrides.RaiseHeight ~= nil and overrides.RaiseHeight or current.RaiseHeight
-	local updated = {
-		FloorId = current.FloorId,
-		LevelIndex = current.LevelIndex,
-		Points = current.Points,
-		RaiseHeight = raiseHeight,
-		FloorMaterial = overrides.FloorMaterial or current.FloorMaterial,
-		CeilingMaterial = overrides.CeilingMaterial or current.CeilingMaterial,
-		FoundationMaterial = overrides.FoundationMaterial or current.FoundationMaterial,
-		FloorColor = overrides.FloorColor or current.FloorColor,
-		CeilingColor = overrides.CeilingColor or current.CeilingColor,
-		FoundationColor = overrides.FoundationColor or current.FoundationColor,
-		Model = model,
-	}
-
-	FormexClient.BuildFloor(updated, Formex.BuildAction.Edit)
-end
 
 local function snapToWallGrid(value: number): number
 	return math.round(value / Formex.GridSize) * Formex.GridSize
@@ -669,7 +455,7 @@ end
 local function setFloorMaterial(materialId: number, applyToSelection: boolean)
 	floorMaterialId = materialId
 	if applyToSelection and selectionType == FormexDesign.SelectionType.Floor then
-		applySelectedFloorAppearance({ FloorMaterial = materialId })
+		Floors.ApplySelectedAppearance({ FloorMaterial = materialId })
 	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
@@ -690,7 +476,7 @@ end
 local function setCeilingMaterial(materialId: number, applyToSelection: boolean)
 	ceilingMaterialId = materialId
 	if applyToSelection and selectionType == FormexDesign.SelectionType.Floor then
-		applySelectedFloorAppearance({ CeilingMaterial = materialId })
+		Floors.ApplySelectedAppearance({ CeilingMaterial = materialId })
 	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
@@ -712,7 +498,7 @@ local function setFloorRaiseHeight(value: number, applyToSelection: boolean)
 	local clamped = clampFloorRaiseHeight(value)
 	floorRaiseHeight = clamped
 	if applyToSelection and selectionType == FormexDesign.SelectionType.Floor then
-		applySelectedFloorAppearance({ RaiseHeight = clamped })
+		Floors.ApplySelectedAppearance({ RaiseHeight = clamped })
 	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
@@ -733,7 +519,7 @@ end
 local function setFloorColor(color: Color3, applyToSelection: boolean)
 	floorColor = color
 	if applyToSelection and selectionType == FormexDesign.SelectionType.Floor then
-		applySelectedFloorAppearance({ FloorColor = color })
+		Floors.ApplySelectedAppearance({ FloorColor = color })
 	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
@@ -754,7 +540,7 @@ end
 local function setCeilingColor(color: Color3, applyToSelection: boolean)
 	ceilingColor = color
 	if applyToSelection and selectionType == FormexDesign.SelectionType.Floor then
-		applySelectedFloorAppearance({ CeilingColor = color })
+		Floors.ApplySelectedAppearance({ CeilingColor = color })
 	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
@@ -775,7 +561,7 @@ end
 local function setFoundationMaterial(materialId: number, applyToSelection: boolean)
 	foundationMaterialId = materialId
 	if applyToSelection and selectionType == FormexDesign.SelectionType.Floor then
-		applySelectedFloorAppearance({ FoundationMaterial = materialId })
+		Floors.ApplySelectedAppearance({ FoundationMaterial = materialId })
 	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
@@ -796,7 +582,7 @@ end
 local function setFoundationColor(color: Color3, applyToSelection: boolean)
 	foundationColor = color
 	if applyToSelection and selectionType == FormexDesign.SelectionType.Floor then
-		applySelectedFloorAppearance({ FoundationColor = color })
+		Floors.ApplySelectedAppearance({ FoundationColor = color })
 	end
 	if ghostActive
 	and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
@@ -1456,8 +1242,8 @@ local function updateGhostValidity(isValid: boolean)
 	if ghost
 		and (ghostType == Formex.PartType.Floor or ghostType == Formex.PartType.Ceiling)
 		and ghost:IsA("BasePart") then
-		ghost.Color = ghostIsValid and ghostValidColor or ghostInvalidColor
-		ghost.Transparency = floorGhostTransparency
+		ghost.Color = ghostIsValid and Constants.GhostValidColor or Constants.GhostInvalidColor
+		ghost.Transparency = Constants.FloorGhostTransparency
 	end
 	FormexDesignHighlights.UpdateSelectionHighlight()
 end
@@ -1565,60 +1351,6 @@ local function buildFloorGhostData(levelIndex: number, tile: Vector2int16): Form
 	}
 end
 
-local function getWallEndpoints(wallModel: Model): (Vector2int16, Vector2int16)
-	local startValue = wallModel:GetAttribute("Start") or Vector2.new(0, 0)
-	local endValue = wallModel:GetAttribute("End") or Vector2.new(0, 0)
-	local startPoint = Vector2int16.new(math.round(startValue.X), math.round(startValue.Y))
-	local endPoint = Vector2int16.new(math.round(endValue.X), math.round(endValue.Y))
-	return startPoint, endPoint
-end
-
-local function getWallAppearanceFromPart(wallModel: Instance)
-	if not wallModel or not wallModel:IsA("Model") then
-		return {
-			Height = nil,
-			FrontSplitHeight = 0,
-			BackSplitHeight = 0,
-			FrontTopMaterial = Formex.DefaultWallMaterial,
-			FrontBottomMaterial = Formex.DefaultWallMaterial,
-			BackTopMaterial = Formex.DefaultWallMaterial,
-			BackBottomMaterial = Formex.DefaultWallMaterial,
-			FrontTopColor = Color3.new(1, 1, 1),
-			FrontBottomColor = Color3.new(1, 1, 1),
-			BackTopColor = Color3.new(1, 1, 1),
-			BackBottomColor = Color3.new(1, 1, 1),
-		}
-	end
-
-	local height = wallModel:GetAttribute("WallHeight") or Formex.LevelHeight
-	local frontSplitHeight = wallModel:GetAttribute("FrontSplitHeight") or 0
-	local backSplitHeight = wallModel:GetAttribute("BackSplitHeight") or 0
-
-	local frontTopMaterial = wallModel:GetAttribute("FrontTopMaterial") or Formex.DefaultWallMaterial
-	local frontBottomMaterial = wallModel:GetAttribute("FrontBottomMaterial") or frontTopMaterial
-	local backTopMaterial = wallModel:GetAttribute("BackTopMaterial") or frontTopMaterial
-	local backBottomMaterial = wallModel:GetAttribute("BackBottomMaterial") or backTopMaterial
-
-	local frontTopColor = wallModel:GetAttribute("FrontTopColor") or Color3.new(1, 1, 1)
-	local frontBottomColor = wallModel:GetAttribute("FrontBottomColor") or frontTopColor
-	local backTopColor = wallModel:GetAttribute("BackTopColor") or frontTopColor
-	local backBottomColor = wallModel:GetAttribute("BackBottomColor") or backTopColor
-
-	return {
-		Height = height,
-		FrontSplitHeight = frontSplitHeight,
-		BackSplitHeight = backSplitHeight,
-		FrontTopMaterial = frontTopMaterial,
-		FrontBottomMaterial = frontBottomMaterial,
-		BackTopMaterial = backTopMaterial,
-		BackBottomMaterial = backBottomMaterial,
-		FrontTopColor = frontTopColor,
-		FrontBottomColor = frontBottomColor,
-		BackTopColor = backTopColor,
-		BackBottomColor = backBottomColor,
-	}
-end
-
 local function getWallPart(plotInfo: FormexClient.PlotInfo, wallId: number, level: number): Model?
 	if not plotInfo.PlotPart then
 		return nil
@@ -1634,20 +1366,6 @@ local function getWallPart(plotInfo: FormexClient.PlotInfo, wallId: number, leve
 	local wallModel = wallsFolder:FindFirstChild(tostring(wallId))
 	if wallModel and wallModel:IsA("Model") then
 		return wallModel
-	end
-	return nil
-end
-
-local function getWallModelFromInstance(instance: Instance?): Model?
-	if not instance then
-		return nil
-	end
-	if instance:IsA("Model") and instance.Parent and instance.Parent:IsA("Folder") and instance.Parent.Name == "Walls" then
-		return instance
-	end
-	local model = instance:FindFirstAncestorOfClass("Model")
-	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Walls" then
-		return model
 	end
 	return nil
 end
@@ -1733,8 +1451,8 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 
 	ghost.Size = Vector3.new(tileSize, thickness, tileSize)
 	ghost.CFrame = plotPart.CFrame * CFrame.new(xOffset, centerY, zOffset)
-	ghost.Transparency = floorGhostTransparency
-	ghost.Color = ghostIsValid and ghostValidColor or ghostInvalidColor
+	ghost.Transparency = Constants.FloorGhostTransparency
+	ghost.Color = ghostIsValid and Constants.GhostValidColor or Constants.GhostInvalidColor
 
 	ghostActive = true
 	FormexDesignHighlights.UpdateSelectionHighlight()
@@ -1804,127 +1522,27 @@ local function getSelectionInfoFromInstance(part: Instance?): (SelectionType?, n
 	return nil, nil, nil
 end
 
-local function applyWallAppearance(plotInfo: FormexClient.PlotInfo, wallModel: Instance, overrides: {[string]: any})
-	if not plotInfo.PlotPart then
-		return
-	end
-
-	local startPoint, endPoint = getWallEndpoints(wallModel)
-	local existing = getWallAppearanceFromPart(wallModel)
-
-	local height = existing.Height
-	if overrides.Height ~= nil then
-		height = overrides.Height == false and 0 or clampWallHeight(overrides.Height)
-	end
-
-	local heightForSplit = height == 0 and nil or height
-
-	local frontSplitHeight = existing.FrontSplitHeight
-	if overrides.FrontSplitHeight ~= nil then
-		frontSplitHeight = overrides.FrontSplitHeight == false and 0 or clampWallSplit(overrides.FrontSplitHeight, heightForSplit)
-	end
-
-	local backSplitHeight = existing.BackSplitHeight
-	if overrides.BackSplitHeight ~= nil then
-		backSplitHeight = overrides.BackSplitHeight == false and 0 or clampWallSplit(overrides.BackSplitHeight, heightForSplit)
-	end
-
-	if heightForSplit then
-		if frontSplitHeight ~= 0 then
-			frontSplitHeight = clampWallSplit(frontSplitHeight, heightForSplit)
-		end
-		if backSplitHeight ~= 0 then
-			backSplitHeight = clampWallSplit(backSplitHeight, heightForSplit)
-		end
-	end
-
-	local frontTopMaterial = overrides.FrontTopMaterial or existing.FrontTopMaterial
-	local frontBottomMaterial = overrides.FrontBottomMaterial or existing.FrontBottomMaterial
-	local backTopMaterial = overrides.BackTopMaterial or existing.BackTopMaterial
-	local backBottomMaterial = overrides.BackBottomMaterial or existing.BackBottomMaterial
-
-	local frontTopColor = overrides.FrontTopColor or overrides.FrontColor or existing.FrontTopColor
-	local frontBottomColor = overrides.FrontBottomColor or overrides.FrontColor or existing.FrontBottomColor
-	local backTopColor = overrides.BackTopColor or overrides.BackColor or existing.BackTopColor
-	local backBottomColor = overrides.BackBottomColor or overrides.BackColor or existing.BackBottomColor
-
-	local clientData = {
-		WallId = tonumber(wallModel.Name) or 0,
-		Level = tonumber(wallModel.Parent.Parent.Name) or currentLevel,
-		Start = startPoint,
-		End = endPoint,
-		Height = height,
-		FrontSplitHeight = frontSplitHeight,
-		BackSplitHeight = backSplitHeight,
-		FrontTopMaterial = frontTopMaterial,
-		FrontBottomMaterial = frontBottomMaterial,
-		BackTopMaterial = backTopMaterial,
-		BackBottomMaterial = backBottomMaterial,
-		FrontTopColor = frontTopColor,
-		FrontBottomColor = frontBottomColor,
-		BackTopColor = backTopColor,
-		BackBottomColor = backBottomColor,
-		Part = wallModel,
-	}
-	Formex.Walls.Edit(clientData, plotInfo.PlotPart)
-
-	local serverData = {
-		WallId = clientData.WallId,
-		Level = clientData.Level,
-		Start = startPoint,
-		End = endPoint,
-		Height = height,
-		FrontSplitHeight = frontSplitHeight,
-		BackSplitHeight = backSplitHeight,
-		FrontTopMaterial = frontTopMaterial,
-		FrontBottomMaterial = frontBottomMaterial,
-		BackTopMaterial = backTopMaterial,
-		BackBottomMaterial = backBottomMaterial,
-		FrontTopColor = frontTopColor,
-		FrontBottomColor = frontBottomColor,
-		BackTopColor = backTopColor,
-		BackBottomColor = backBottomColor,
-		Part = nil,
-	}
-	FormexClient.BuildWall(serverData, Formex.BuildAction.Edit)
-end
-
-local function getFloorModelFromInstance(instance: Instance?): Model?
-	if not instance then
-		return nil
-	end
-	if instance:IsA("Model") and instance.Parent and instance.Parent:IsA("Folder") and instance.Parent.Name == "Floors" then
-		return instance
-	end
-	local model = instance:FindFirstAncestorOfClass("Model")
-	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then
-		return model
-	end
-	return nil
-end
-
 local function updateSelectionSettingsFromSelection()
 	if selectionType == FormexDesign.SelectionType.Wall then
 		floorSelectedSettings.HasSelection = false
-		local wallModel = getWallModelFromInstance(selectionPart)
-		if not wallModel then
+		local wallData = Walls.GetSelectedWallData()
+		if not wallData then
 			wallSelectedSettings.HasSelection = false
 			return
 		end
 
-		local appearance = getWallAppearanceFromPart(wallModel)
 		wallSelectedSettings = {
-			Height = appearance.Height,
-			FrontSplitHeight = appearance.FrontSplitHeight,
-			BackSplitHeight = appearance.BackSplitHeight,
-			FrontTopMaterial = appearance.FrontTopMaterial,
-			FrontBottomMaterial = appearance.FrontBottomMaterial,
-			BackTopMaterial = appearance.BackTopMaterial,
-			BackBottomMaterial = appearance.BackBottomMaterial,
-			FrontTopColor = appearance.FrontTopColor,
-			FrontBottomColor = appearance.FrontBottomColor,
-			BackTopColor = appearance.BackTopColor,
-			BackBottomColor = appearance.BackBottomColor,
+			Height = wallData.Height,
+			FrontSplitHeight = wallData.FrontSplitHeight,
+			BackSplitHeight = wallData.BackSplitHeight,
+			FrontTopMaterial = wallData.FrontTopMaterial,
+			FrontBottomMaterial = wallData.FrontBottomMaterial,
+			BackTopMaterial = wallData.BackTopMaterial,
+			BackBottomMaterial = wallData.BackBottomMaterial,
+			FrontTopColor = wallData.FrontTopColor,
+			FrontBottomColor = wallData.FrontBottomColor,
+			BackTopColor = wallData.BackTopColor,
+			BackBottomColor = wallData.BackBottomColor,
 			HasSelection = true,
 		} :: WallSelectedSettings
 		return
@@ -1932,13 +1550,12 @@ local function updateSelectionSettingsFromSelection()
 
 	if selectionType == FormexDesign.SelectionType.Floor then
 		wallSelectedSettings.HasSelection = false
-		local floorModel = getFloorModelFromInstance(selectionPart)
-		if not floorModel then
+		local floorData = Floors.GetSelectedFloorData()
+		if not floorData then
 			floorSelectedSettings.HasSelection = false
 			return
 		end
 
-		local floorData = getFloorDataFromModel(floorModel)
 		floorSelectedSettings = {
 			RaiseHeight = floorData.RaiseHeight,
 			FloorMaterial = floorData.FloorMaterial,
@@ -2216,10 +1833,7 @@ local function applyWallStateUpdate(update: WallStateUpdate?)
 	end
 
 	if applyToSelection and next(overrides) ~= nil then
-		local plotInfo = FormexClient.CurrentPlot
-		local wallModel = getWallModelFromInstance(selectionPart)
-		if plotInfo and plotInfo.IsValid and plotInfo.PlotPart and wallModel then
-			applyWallAppearance(plotInfo, wallModel, overrides)
+		if Walls.ApplySelectedAppearance(overrides) then
 			updateSelectionSettingsFromSelection()
 		end
 	end
@@ -2602,19 +2216,9 @@ FormexDesignContext.Init({
 	OverlayFolder = overlayFolder,
 	Handles = FormexDesign.Handles,
 	Highlight = FormexDesignHighlights,
-	Enums = {
-		DesignMode = FormexDesign.DesignMode,
-		ActionType = FormexDesign.ActionType,
-		SelectionType = FormexDesign.SelectionType,
-		HandleLocation = FormexDesign.HandleLocation,
-	},
-	Constants = {
-		Epsilon = EPSILON,
-		HandleOffset = HANDLE_OFFSET,
-		SelectionColor = selectionColor,
-		GhostValidColor = ghostValidColor,
-		GhostInvalidColor = ghostInvalidColor,
-	},
+	Enums = Enums,
+	Constants = Constants,
+	Modules = {},
 	GetActionType = function()
 		return actionType
 	end,
@@ -2700,7 +2304,8 @@ FormexDesignContext.Init({
 	CancelAction = FormexDesign.CancelAction,
 })
 
-FormexDesignHighlights.Init(FormexDesignContext.Get())
+FormexDesign.Handles.Init()
+FormexDesignHighlights.Init()
 
 Walls = require(script.Parent:WaitForChild("FormexDesignWalls"))
 Floors = require(script.Parent:WaitForChild("FormexDesignFloors"))
@@ -2709,6 +2314,12 @@ Objects = require(script.Parent:WaitForChild("FormexDesignObjects"))
 Walls.Init()
 Floors.Init()
 Objects.Init()
+
+FormexDesignContext.RegisterModule("Walls", Walls)
+FormexDesignContext.RegisterModule("Floors", Floors)
+FormexDesignContext.RegisterModule("Objects", Objects)
+FormexDesignContext.RegisterModule("Handles", FormexDesign.Handles)
+FormexDesignContext.RegisterModule("Highlights", FormexDesignHighlights)
 
 FormexClient.ClientEvents:Connect(function(eventName, _plotId, _partType, _levelIndex, _partId, model, changeType)
 	if eventName == "CurrentPlotChanged" then

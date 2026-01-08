@@ -1,4 +1,21 @@
 --!strict
+--[[
+FormexDesignWalls
+Handles wall design actions (placement, handles, paint/dropper).
+Exports:
+- Init(): load shared dependencies
+- ApplyPaintToTarget(target, hitPosition): boolean
+- CopyPaintFromTarget(target, hitPosition): boolean
+- ApplySelectedAppearance(overrides): boolean
+- GetSelectedWallData(): Formex.WallData?
+- UpdateHandles(plotInfo): ()
+- StartWall(): ()
+- CancelAction(): ()
+- ClearSelection(): ()
+- HandleUpdate(input): ()
+- HandlePrimaryRelease(input): ()
+- HandlePrimaryClick(input): ()
+]]
 local Workspace = game:GetService("Workspace")
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 
@@ -29,14 +46,7 @@ type WallHandleType = "Start" | "End" | "Center" | "StartSolo" | "EndSolo" | "Ex
 
 type WallSide = "Front" | "Back"
 
-type WallPaintSettings = {
-	Height: number?,
-	SplitHeight: number?,
-	TopMaterial: number,
-	BottomMaterial: number,
-	TopColor: Color3,
-	BottomColor: Color3,
-}
+type WallPaintSettings = Context.WallPaintSettings
 
 local FormexClient: any
 local Formex: any
@@ -438,6 +448,18 @@ local function getWallDataFromPart(wallModel: Model, wallId: number, level: numb
 	}
 end
 
+function Walls.GetSelectedWallData(): Formex.WallData?
+	local selectionPart = getSelectionPart()
+	local wallModel = getWallModelFromInstance(selectionPart)
+	if not wallModel then
+		return nil
+	end
+
+	local level = tonumber(wallModel.Parent.Parent.Name) or getCurrentLevel()
+	local wallId = tonumber(wallModel.Name) or 0
+	return getWallDataFromPart(wallModel, wallId, level)
+end
+
 local function applyWallAppearance(plotInfo: any, wallModel: Model, overrides: {[string]: any})
 	if not plotInfo or not plotInfo.PlotPart then
 		return
@@ -485,6 +507,21 @@ local function applyWallAppearance(plotInfo: any, wallModel: Model, overrides: {
 	local serverData = table.clone(updated)
 	serverData.Part = nil
 	FormexClient.BuildWall(serverData, Formex.BuildAction.Edit)
+end
+
+function Walls.ApplySelectedAppearance(overrides: {[string]: any}): boolean
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
+		return false
+	end
+
+	local wallModel = getWallModelFromInstance(getSelectionPart())
+	if not wallModel then
+		return false
+	end
+
+	applyWallAppearance(plotInfo, wallModel, overrides)
+	return true
 end
 
 function Walls.ApplyPaintToTarget(target: Instance, hitPosition: Vector3?): boolean

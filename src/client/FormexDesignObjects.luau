@@ -1,4 +1,14 @@
 --!strict
+--[[
+FormexDesignObjects
+Placeholder for object design interactions (selection/build/paint).
+Exports:
+- Init(): ()
+- HandleUpdate(input): ()
+- HandlePrimaryClick(input): ()
+- HandlePrimaryRelease(input): ()
+- CancelAction(): ()
+]]
 local Objects = {}
 
 function Objects.Init() end

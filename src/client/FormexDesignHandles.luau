@@ -1,9 +1,18 @@
 --!strict
-local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
-local Formex = FormexClient.Formex
+--[[
+FormexDesignHandles
+Creates and manages interactive 3D handles used by design submodules.
+Exports:
+- Init(): load shared dependencies
+- CreateHandle(name, color, iconAsset, onClick, argument): BasePart
+- SetHandleVisible(handle, visible): ()
+- Clear(): ()
+- ClearHandleHover(): ()
+- CheckHover(ray): ()
+- HandleClicked(ray): boolean
+]]
+local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 local Workspace = game:GetService("Workspace")
-local formexWorkspace = Workspace:WaitForChild("Formex")
-local overlayFolder = Formex.Util.EnsureFolder("FormexDesignOverlays", formexWorkspace)
 
 local HANDLE_SIZE = 3
 local HANDLE_ICON_SIZE = 48
@@ -11,6 +20,10 @@ local HANDLE_HOVER_SCALE = 1.2
 local HANDLE_HOVER_TINT = 0.35
 
 local Handles = {}
+
+local Formex: any
+local overlayFolder: Folder
+local handleIconBackground: any
 
 type HandleInfo = {
     Part: BasePart,
@@ -26,7 +39,12 @@ type HandleInfo = {
 local handles = {} :: {[string]: HandleInfo}
 local hoveredHandle: HandleInfo? = nil
 
-local handleIconBackground = Content.fromAssetId(Formex.Icons.CircleBackground)
+function Handles.Init()
+	local ctx = Context.Get()
+	Formex = ctx.Formex
+	overlayFolder = ctx.OverlayFolder
+	handleIconBackground = Content.fromAssetId(Formex.Icons.CircleBackground)
+end
 
 local function checkHit(ray: Ray): HandleInfo?
     local instances = {}
@@ -46,6 +64,10 @@ local function checkHit(ray: Ray): HandleInfo?
 end
 
 function Handles.CreateHandle(name: string, color: Color3, iconAsset: number | string, onClick: (any) -> nil, argument: any): BasePart
+	if not overlayFolder or not Formex then
+		error("FormexDesignHandles not initialized", 2)
+	end
+
     if type(iconAsset) == "number" then
         iconAsset = Content.fromAssetId(iconAsset)
     else

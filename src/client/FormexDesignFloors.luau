@@ -1,4 +1,23 @@
 --!strict
+--[[
+FormexDesignFloors
+Handles floor design actions (placement, handles, paint/dropper).
+Exports:
+- Init(): load shared dependencies
+- ApplyPaintToTarget(target): boolean
+- CopyPaintFromTarget(target): boolean
+- ApplySelectedAppearance(overrides): boolean
+- GetSelectedFloorModel(): Model?
+- GetSelectedFloorData(): Formex.FloorData?
+- GetFloorDataFromModel(model): Formex.FloorData
+- UpdateHandles(plotInfo): ()
+- StartFloor(): ()
+- CancelAction(): ()
+- ClearSelection(): ()
+- HandleUpdate(input): ()
+- HandlePrimaryRelease(input): ()
+- HandlePrimaryClick(input): ()
+]]
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 
 local Floors = {}
@@ -207,6 +226,22 @@ local function getFloorDataFromModel(model: Model): Formex.FloorData
 	}
 end
 
+function Floors.GetSelectedFloorModel(): Model?
+	return getFloorModelFromSelection()
+end
+
+function Floors.GetSelectedFloorData(): Formex.FloorData?
+	local model = getFloorModelFromSelection()
+	if not model then
+		return nil
+	end
+	return getFloorDataFromModel(model)
+end
+
+function Floors.GetFloorDataFromModel(model: Model): Formex.FloorData
+	return getFloorDataFromModel(model)
+end
+
 local function getFloorModelFromTarget(target: Instance?): Model?
 	if not target then
 		return nil
@@ -248,6 +283,40 @@ function Floors.ApplyPaintToTarget(target: Instance): boolean
 		FloorColor = getFloorColor(),
 		CeilingColor = getCeilingColor(),
 		FoundationColor = getFoundationColor(),
+		Model = model,
+	}
+
+	FormexClient.BuildFloor(updated, Formex.BuildAction.Edit)
+	return true
+end
+
+function Floors.ApplySelectedAppearance(overrides: {[string]: any}): boolean
+	local model = getFloorModelFromSelection()
+	if not model then
+		return false
+	end
+
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid then
+		return false
+	end
+
+	local current = getFloorDataFromModel(model)
+	if #current.Points < 3 then
+		return false
+	end
+	local raiseHeight = overrides.RaiseHeight ~= nil and overrides.RaiseHeight or current.RaiseHeight
+	local updated = {
+		FloorId = current.FloorId,
+		LevelIndex = current.LevelIndex,
+		Points = current.Points,
+		RaiseHeight = raiseHeight,
+		FloorMaterial = overrides.FloorMaterial or current.FloorMaterial,
+		CeilingMaterial = overrides.CeilingMaterial or current.CeilingMaterial,
+		FoundationMaterial = overrides.FoundationMaterial or current.FoundationMaterial,
+		FloorColor = overrides.FloorColor or current.FloorColor,
+		CeilingColor = overrides.CeilingColor or current.CeilingColor,
+		FoundationColor = overrides.FoundationColor or current.FoundationColor,
 		Model = model,
 	}
 

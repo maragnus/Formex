@@ -132,6 +132,17 @@ When updating `PlotData`, `LevelData`, `WallData`, `FloorData`, or `ObjectData`:
 - `FormexPrompts`: UI popups
 - `FormexUI`: custom UI component library
 
+## Design System (Client)
+- `src/client/FormexDesign.luau`: entry point; manages design state, selection, and input dispatch; initializes the context and submodules.
+- `src/client/FormexDesignContext.luau`: owns design enums/constants/shared types and stores shared dependencies/modules; submodules access each other through the context.
+- `src/client/FormexDesignWalls.luau`: wall build/edit/paint/handle logic; reads wall appearance from model attributes.
+- `src/client/FormexDesignFloors.luau`: floor build/edit/paint/handle logic; reads floor appearance from model attributes.
+- `src/client/FormexDesignObjects.luau`: object design interactions (currently minimal).
+- `src/client/FormexDesignHandles.luau`: shared handle creation, hover, and click behavior.
+- `src/client/FormexDesignHighlights.lua`: selection and edge preview highlighting.
+
+Design flow: `FormexDesign` initializes the context with Formex client/camera dependencies, then calls `Init()` on handles/highlights/walls/floors/objects. Submodules use `FormexDesignContext.Get()` for shared dependencies and for cross-module access, and all wall/floor materials/colors are sourced from model attributes.
+
 ## Communication
 - `FormexClient` has methods that call methods named in `Formex.Function`
 - `FormexServerFunctions` is the receiver for client functions and dispatches them to `FormexBuild`, `FormexServer`, etc

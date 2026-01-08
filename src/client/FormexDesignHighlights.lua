@@ -1,4 +1,16 @@
 --!strict
+--[[
+FormexDesignHighlights
+Renders selection highlights and edge previews for walls/floors.
+Exports:
+- Init(): load shared dependencies
+- IsHighlightInstance(instance): boolean
+- UpdateSelectionHighlight(): ()
+- UpdateFloorEdgePreview(plotInfo, levelIndex, points, isValid, raiseHeight): ()
+- UpdateWallEdgePreview(plotInfo, levelIndex, startPoint, endPoint, isValid): ()
+- ClearFloorEdgePreview(): ()
+]]
+local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 local FormexDesignHighlights = {}
 
 local Formex: any
@@ -18,7 +30,8 @@ local selectionHighlight: Highlight? = nil
 local edgeParts = {} :: {BasePart}
 local edgeHighlights = {} :: {Highlight}
 
-function FormexDesignHighlights.Init(ctx: any)
+function FormexDesignHighlights.Init()
+	local ctx = Context.Get()
 	Formex = ctx.Formex
 	OverlayFolder = ctx.OverlayFolder
 	Constants = ctx.Constants

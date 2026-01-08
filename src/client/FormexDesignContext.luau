@@ -1,5 +1,203 @@
 --!strict
+--[[
+FormexDesignContext
+Owns shared enums/types/constants and stores design dependencies/modules.
+Exports:
+- Enums, Constants
+- Init(context): Context
+- Get(): Context
+- RegisterModule(name, module): any
+- GetModule(name): any?
+]]
+
 local Context = {}
+
+export type WallMode = "Full" | "Half" | "Hidden"
+export type HandleLocation = "Top" | "Middle" | "Bottom"
+export type DesignMode = "Play" | "Design" | "Select" | "Expand" | "Floor" | "Wall" | "Object"
+export type DesignSubMode = "Normal" | "Paint" | "Dropper"
+export type ActionType = "Select" | "Start" | "Step" | "Rotate" | "Move"
+export type SelectionType = "None" | "Wall" | "Floor" | "Object"
+
+export type WallPaintSettings = {
+	Height: number?,
+	SplitHeight: number?,
+	TopMaterial: number,
+	BottomMaterial: number,
+	TopColor: Color3,
+	BottomColor: Color3,
+}
+
+export type WallBuildSettings = {
+	Height: number?,
+	FrontSplitHeight: number?,
+	BackSplitHeight: number?,
+	FrontTopMaterial: number,
+	FrontBottomMaterial: number,
+	BackTopMaterial: number,
+	BackBottomMaterial: number,
+	FrontTopColor: Color3,
+	FrontBottomColor: Color3,
+	BackTopColor: Color3,
+	BackBottomColor: Color3,
+}
+
+export type WallSelectedSettings = {
+	Height: number?,
+	FrontSplitHeight: number?,
+	BackSplitHeight: number?,
+	FrontTopMaterial: number,
+	FrontBottomMaterial: number,
+	BackTopMaterial: number,
+	BackBottomMaterial: number,
+	FrontTopColor: Color3,
+	FrontBottomColor: Color3,
+	BackTopColor: Color3,
+	BackBottomColor: Color3,
+	HasSelection: boolean,
+}
+
+export type FloorPaintSettings = {
+	RaiseHeight: number,
+	FloorMaterial: number,
+	CeilingMaterial: number,
+	FoundationMaterial: number,
+	FloorColor: Color3,
+	CeilingColor: Color3,
+	FoundationColor: Color3,
+}
+
+export type FloorSelectedSettings = {
+	RaiseHeight: number,
+	FloorMaterial: number,
+	CeilingMaterial: number,
+	FoundationMaterial: number,
+	FloorColor: Color3,
+	CeilingColor: Color3,
+	FoundationColor: Color3,
+	HasSelection: boolean,
+}
+
+export type WallStateUpdate = {
+	Height: number? | false?,
+	FrontSplitHeight: number? | false?,
+	BackSplitHeight: number? | false?,
+	FrontTopMaterial: number?,
+	FrontBottomMaterial: number?,
+	BackTopMaterial: number?,
+	BackBottomMaterial: number?,
+	FrontTopColor: Color3?,
+	FrontBottomColor: Color3?,
+	BackTopColor: Color3?,
+	BackBottomColor: Color3?,
+	SplitHeight: number? | false?,
+	TopMaterial: number?,
+	BottomMaterial: number?,
+	TopColor: Color3?,
+	BottomColor: Color3?,
+}
+
+export type FloorStateUpdate = {
+	RaiseHeight: number?,
+	FloorMaterial: number?,
+	CeilingMaterial: number?,
+	FoundationMaterial: number?,
+	FloorColor: Color3?,
+	CeilingColor: Color3?,
+	FoundationColor: Color3?,
+}
+
+export type DesignState = {
+	Mode: DesignMode,
+	SubMode: DesignSubMode,
+	ActionType: ActionType,
+	SelectionType: SelectionType,
+	Wall: {
+		Selected: WallSelectedSettings,
+		Build: WallBuildSettings,
+		Paint: WallPaintSettings,
+	},
+	Floor: {
+		Selected: FloorSelectedSettings,
+		Paint: FloorPaintSettings,
+	},
+}
+
+export type DesignStateUpdate = {
+	Mode: DesignMode?,
+	SubMode: DesignSubMode?,
+	Wall: WallStateUpdate?,
+	Floor: FloorStateUpdate?,
+}
+
+export type WallModeEnum = {
+	Full: WallMode,
+	Half: WallMode,
+	Hidden: WallMode,
+}
+
+export type HandleLocationEnum = {
+	Top: HandleLocation,
+	Middle: HandleLocation,
+	Bottom: HandleLocation,
+}
+
+export type DesignModeEnum = {
+	Play: DesignMode,
+	Design: DesignMode,
+	Select: DesignMode,
+	Expand: DesignMode,
+	Floor: DesignMode,
+	Wall: DesignMode,
+	Object: DesignMode,
+}
+
+export type DesignSubModeEnum = {
+	Normal: DesignSubMode,
+	Paint: DesignSubMode,
+	Dropper: DesignSubMode,
+}
+
+export type ActionTypeEnum = {
+	Select: ActionType,
+	Start: ActionType,
+	Step: ActionType,
+	Move: ActionType,
+	Rotate: ActionType,
+}
+
+export type SelectionTypeEnum = {
+	None: SelectionType,
+	Wall: SelectionType,
+	Floor: SelectionType,
+	Object: SelectionType,
+}
+
+export type Enums = {
+	WallMode: WallModeEnum,
+	HandleLocation: HandleLocationEnum,
+	DesignMode: DesignModeEnum,
+	DesignSubMode: DesignSubModeEnum,
+	ActionType: ActionTypeEnum,
+	SelectionType: SelectionTypeEnum,
+}
+
+export type Constants = {
+	Epsilon: number,
+	HandleOffset: number,
+	SelectionColor: Color3,
+	GhostValidColor: Color3,
+	GhostInvalidColor: Color3,
+	FloorGhostTransparency: number,
+}
+
+export type Modules = {
+	Walls: any?,
+	Floors: any?,
+	Objects: any?,
+	Handles: any?,
+	Highlights: any?,
+}
 
 export type Context = {
 	FormexClient: any,
@@ -8,26 +206,16 @@ export type Context = {
 	OverlayFolder: Folder,
 	Handles: any,
 	Highlight: any,
-	Enums: {
-		DesignMode: {DesignMode: string},
-		ActionType: {ActionType: string},
-		SelectionType: {SelectionType: string},
-		HandleLocation: {HandleLocation: string},
-	},
-	Constants: {
-		Epsilon: number,
-		HandleOffset: number,
-		SelectionColor: Color3,
-		GhostValidColor: Color3,
-		GhostInvalidColor: Color3,
-	},
-	GetActionType: () -> string,
-	SetActionType: (string) -> (),
-	GetDesignMode: () -> string,
+	Enums: Enums,
+	Constants: Constants,
+	Modules: Modules,
+	GetActionType: () -> ActionType,
+	SetActionType: (ActionType) -> (),
+	GetDesignMode: () -> DesignMode,
 	GetCurrentLevel: () -> number,
 	SetCurrentLevel: (number) -> (),
 	GetViewSettings: () -> any,
-	GetSelectionType: () -> string,
+	GetSelectionType: () -> SelectionType,
 	GetSelectionPart: () -> Instance?,
 	GetLastInputInfo: () -> any?,
 	GetSnappedPoint: (BasePart, Vector3) -> Vector2int16,
@@ -52,19 +240,79 @@ export type Context = {
 	GetCeilingColor: () -> Color3,
 	GetFoundationMaterialId: () -> number,
 	GetFoundationColor: () -> Color3,
-	GetWallPaintSettings: () -> any,
-	UpdateDesignState: (any) -> (),
+	GetWallPaintSettings: () -> WallPaintSettings,
+	UpdateDesignState: (DesignStateUpdate) -> (),
 	NotifyDesignModeChange: () -> (),
 	ClearSelection: () -> (),
 	Select: (Instance) -> boolean,
-	GetSelectionInfoFromInstance: (Instance?) -> (string?, number?, number?),
+	GetSelectionInfoFromInstance: (Instance?) -> (SelectionType?, number?, number?),
 	DeleteAfterDelay: (Instance, number) -> (),
 	CancelAction: () -> (),
 }
 
+Context.Enums = table.freeze({
+	WallMode = table.freeze({
+		Full = "Full",
+		Half = "Half",
+		Hidden = "Hidden",
+	}),
+	HandleLocation = table.freeze({
+		Top = "Top",
+		Middle = "Middle",
+		Bottom = "Bottom",
+	}),
+	DesignMode = table.freeze({
+		Play = "Play",
+		Design = "Design",
+		Select = "Select",
+		Expand = "Expand",
+		Floor = "Floor",
+		Wall = "Wall",
+		Object = "Object",
+	}),
+	DesignSubMode = table.freeze({
+		Normal = "Normal",
+		Paint = "Paint",
+		Dropper = "Dropper",
+	}),
+	ActionType = table.freeze({
+		Select = "Select",
+		Start = "Start",
+		Step = "Step",
+		Move = "Move",
+		Rotate = "Rotate",
+	}),
+	SelectionType = table.freeze({
+		None = "None",
+		Wall = "Wall",
+		Floor = "Floor",
+		Object = "Object",
+	}),
+}) :: Enums
+
+local selectionColor = Color3.fromRGB(255, 201, 107)
+
+Context.Constants = table.freeze({
+	Epsilon = 1e-4,
+	HandleOffset = 5,
+	SelectionColor = selectionColor,
+	GhostValidColor = selectionColor,
+	GhostInvalidColor = Color3.fromRGB(245, 110, 110),
+	FloorGhostTransparency = 0.6,
+}) :: Constants
+
 local current: Context? = nil
 
 function Context.Init(context: Context): Context
+	if not context.Enums then
+		context.Enums = Context.Enums
+	end
+	if not context.Constants then
+		context.Constants = Context.Constants
+	end
+	if not context.Modules then
+		context.Modules = {}
+	end
 	current = context
 	return context
 end
@@ -74,6 +322,17 @@ function Context.Get(): Context
 		error("FormexDesignContext not initialized", 2)
 	end
 	return current
+end
+
+function Context.RegisterModule(name: string, module: any): any
+	local ctx = Context.Get()
+	ctx.Modules[name] = module
+	return module
+end
+
+function Context.GetModule(name: string): any?
+	local ctx = Context.Get()
+	return ctx.Modules[name]
 end
 
 return Context
