@@ -294,6 +294,10 @@ function Formex.Floors.IsValid(plot: Formex.PlotData, floor: Formex.FloorData): 
 	return true
 end
 
+function Formex.Floors.IsFloorValid(plot: Formex.PlotData, floor: Formex.FloorData): boolean
+	return Formex.Floors.IsValid(plot, floor)
+end
+
 local function addTriangle(triangles: { Triangle }, a: Vector2, b: Vector2, c: Vector2, maxTriangles: number): boolean
 	-- Insert a CCW triangle if it has area, while respecting the max triangle budget.
 	if #triangles >= maxTriangles then

@@ -21,6 +21,7 @@ Exports:
 ]]
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 local ManualFloors = require(script.Parent:WaitForChild("FormexDesignFloorsManual"))
+local AutofillFloors = require(script.Parent:WaitForChild("FormexDesignFloorsAutofill"))
 
 local Floors = {}
 
@@ -146,10 +147,146 @@ function Floors.Init()
 	cancelAction = ctx.CancelAction
 
 	ManualFloors.Init()
+	AutofillFloors.Init()
 end
 
 local function pointsEqual(a: Vector2int16, b: Vector2int16): boolean
 	return a.X == b.X and a.Y == b.Y
+end
+
+local function toVector2(point: Vector2int16): Vector2
+	return Vector2.new(point.X, point.Y)
+end
+
+local function cross2(a: Vector2, b: Vector2): number
+	return a.X * b.Y - a.Y * b.X
+end
+
+local function isPointOnSegment(point: Vector2, a: Vector2, b: Vector2): boolean
+	if math.abs(cross2(b - a, point - a)) > Formex.EPSILON then
+		return false
+	end
+	return math.min(a.X, b.X) - Formex.EPSILON <= point.X and point.X <= math.max(a.X, b.X) + Formex.EPSILON
+		and math.min(a.Y, b.Y) - Formex.EPSILON <= point.Y and point.Y <= math.max(a.Y, b.Y) + Formex.EPSILON
+end
+
+local function isPointInsidePolygon(point: Vector2, polygon: {Vector2int16}, includeBoundary: boolean?): boolean
+	if #polygon < 3 then
+		return false
+	end
+
+	for i = 1, #polygon do
+		local a = toVector2(polygon[i])
+		local b = toVector2(polygon[(i % #polygon) + 1])
+		if isPointOnSegment(point, a, b) then
+			return includeBoundary == true
+		end
+	end
+
+	local inside = false
+	local j = #polygon
+	for i = 1, #polygon do
+		local pi = polygon[i]
+		local pj = polygon[j]
+		local xi = pi.X
+		local yi = pi.Y
+		local xj = pj.X
+		local yj = pj.Y
+
+		local intersects = ((yi > point.Y) ~= (yj > point.Y))
+			and (point.X < (xj - xi) * (point.Y - yi) / ((yj - yi) + 0.0000001) + xi)
+		if intersects then
+			inside = not inside
+		end
+		j = i
+	end
+	return inside
+end
+
+local function orientation(a: Vector2, b: Vector2, c: Vector2): number
+	local value = (b.Y - a.Y) * (c.X - b.X) - (b.X - a.X) * (c.Y - b.Y)
+	if math.abs(value) <= Formex.EPSILON then
+		return 0
+	end
+	return value > 0 and 1 or 2
+end
+
+local function onSegment(a: Vector2, b: Vector2, c: Vector2): boolean
+	return math.min(a.X, c.X) - Formex.EPSILON <= b.X and b.X <= math.max(a.X, c.X) + Formex.EPSILON
+		and math.min(a.Y, c.Y) - Formex.EPSILON <= b.Y and b.Y <= math.max(a.Y, c.Y) + Formex.EPSILON
+end
+
+local function segmentsIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2): boolean
+	local o1 = orientation(p1, p2, q1)
+	local o2 = orientation(p1, p2, q2)
+	local o3 = orientation(q1, q2, p1)
+	local o4 = orientation(q1, q2, p2)
+
+	if o1 ~= o2 and o3 ~= o4 then
+		return true
+	end
+
+	if o1 == 0 and onSegment(p1, q1, p2) then return true end
+	if o2 == 0 and onSegment(p1, q2, p2) then return true end
+	if o3 == 0 and onSegment(q1, p1, q2) then return true end
+	if o4 == 0 and onSegment(q1, p2, q2) then return true end
+
+	return false
+end
+
+local function pointsEqualVector2(a: Vector2, b: Vector2): boolean
+	return math.abs(a.X - b.X) <= Formex.EPSILON and math.abs(a.Y - b.Y) <= Formex.EPSILON
+end
+
+local function segmentsProperlyIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2): boolean
+	if not segmentsIntersect(p1, p2, q1, q2) then
+		return false
+	end
+	if pointsEqualVector2(p1, q1) or pointsEqualVector2(p1, q2)
+		or pointsEqualVector2(p2, q1) or pointsEqualVector2(p2, q2) then
+		return false
+	end
+
+	local collinear = orientation(p1, p2, q1) == 0 and orientation(p1, p2, q2) == 0
+	if collinear then
+		return false
+	end
+
+	return true
+end
+
+local function polygonsProperlyIntersect(a: {Vector2int16}, b: {Vector2int16}): boolean
+	if #a < 2 or #b < 2 then
+		return false
+	end
+
+	for i = 1, #a do
+		local a1 = toVector2(a[i])
+		local a2 = toVector2(a[(i % #a) + 1])
+		for j = 1, #b do
+			local b1 = toVector2(b[j])
+			local b2 = toVector2(b[(j % #b) + 1])
+			if segmentsProperlyIntersect(a1, a2, b1, b2) then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+local function isPolygonInside(outer: {Vector2int16}, inner: {Vector2int16}): boolean
+	if #outer < 3 or #inner < 3 then
+		return false
+	end
+
+	for _, point in ipairs(inner) do
+		if not isPointInsidePolygon(Vector2.new(point.X, point.Y), outer, false) then
+			return false
+		end
+	end
+
+	return true
 end
 
 local function getPointKey(point: Vector2int16): string
@@ -185,6 +322,39 @@ local function buildFloorDataFromTile(tile: Vector2int16): Formex.FloorData
 		FoundationColor = foundationColor,
 		Model = nil,
 	}
+end
+
+local function isOverlappingExistingFloor(plotInfo: any, previewPoints: {Vector2int16}): boolean
+	if not plotInfo or not plotInfo.PlotData or not previewPoints or #previewPoints < 3 then
+		return false
+	end
+
+	local levelIndex = getCurrentLevel()
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
+	if not levelData or not levelData.Floors then
+		return false
+	end
+
+	local preview = Formex.Floors.CleanPolygon(previewPoints)
+	if #preview < 3 then
+		return false
+	end
+
+	for _, floor in pairs(levelData.Floors) do
+		if floor.Points and #floor.Points >= 3 then
+			local existing = Formex.Floors.CleanPolygon(floor.Points)
+			if #existing >= 3 then
+				if polygonsProperlyIntersect(preview, existing) then
+					return true
+				end
+				if isPolygonInside(preview, existing) or isPolygonInside(existing, preview) then
+					return true
+				end
+			end
+		end
+	end
+
+	return false
 end
 
 local function getFloorModelFromSelection(): Model?
@@ -692,7 +862,31 @@ local function handlePointMove(plotInfo: any, input: any)
 end
 
 local function createFloorFromTile(tile: Vector2int16, floorData: Formex.FloorData?)
-	FormexClient.BuildFloor(floorData or buildFloorDataFromTile(tile), Formex.BuildAction.Add, getSelectionSnapshot())
+	local plotInfo = FormexClient.CurrentPlot
+	local data = floorData or buildFloorDataFromTile(tile)
+	local result = FormexClient.BuildFloor(data, Formex.BuildAction.Add, getSelectionSnapshot())
+	if plotInfo and plotInfo.PlotPart and result and result.FloorId then
+		local plotPart = plotInfo.PlotPart
+		local levelIndex = data.LevelIndex
+		local floorId = result.FloorId
+		task.spawn(function()
+			local deadline = time() + 2
+			while time() < deadline do
+				local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
+				if levelPart then
+					local floorsFolder = levelPart:FindFirstChild("Floors")
+					if floorsFolder then
+						local floorModel = floorsFolder:FindFirstChild(tostring(floorId))
+						if floorModel and floorModel:IsA("Model") then
+							select(floorModel)
+							return
+						end
+					end
+				end
+				task.wait(0.05)
+			end
+		end)
+	end
 end
 
 local function updateFloorGhost(plotInfo: any, tile: Vector2int16): (boolean, Formex.FloorData)
@@ -703,6 +897,9 @@ local function updateFloorGhost(plotInfo: any, tile: Vector2int16): (boolean, Fo
 	local floorData = buildFloorDataFromTile(tile)
 	ensureFloorGhost(plotInfo.PlotPart, getCurrentLevel(), tile, Formex.PartType.Floor)
 	local isValid = Formex.Floors.IsValid(plotInfo :: any, floorData)
+	if isValid and isOverlappingExistingFloor(plotInfo, floorData.Points) then
+		isValid = false
+	end
 	updateGhostValidity(isValid)
 	return isValid, floorData
 end
@@ -959,6 +1156,9 @@ function Floors.StartFloor()
 	if getFloorMode() == Enums.FloorMode.Manual then
 		ManualFloors.StartFloor()
 		return
+	elseif getFloorMode() == Enums.FloorMode.Autofill then
+		AutofillFloors.StartFloor()
+		return
 	end
 
 	local plotInfo = FormexClient.CurrentPlot
@@ -977,6 +1177,11 @@ function Floors.CancelAction()
 	if getFloorMode() == Enums.FloorMode.Manual then
 		if getActionType() == Enums.ActionType.Start or getActionType() == Enums.ActionType.Step then
 			ManualFloors.CancelAction()
+			return
+		end
+	elseif getFloorMode() == Enums.FloorMode.Autofill then
+		if getActionType() == Enums.ActionType.Start then
+			AutofillFloors.CancelAction()
 			return
 		end
 	end
@@ -1008,6 +1213,7 @@ end
 
 function Floors.ClearSelection()
 	ManualFloors.ClearSelection()
+	AutofillFloors.ClearSelection()
 	movePreviewPoints = nil
 	moveOriginalPoints = nil
 	moveSharedPoints = {}
@@ -1025,6 +1231,11 @@ function Floors.HandleUpdate(input: any)
 	if getFloorMode() == Enums.FloorMode.Manual then
 		if actionType == Enums.ActionType.Start or actionType == Enums.ActionType.Step then
 			ManualFloors.HandleUpdate(input)
+			return
+		end
+	elseif getFloorMode() == Enums.FloorMode.Autofill then
+		if actionType == Enums.ActionType.Start then
+			AutofillFloors.HandleUpdate(input)
 			return
 		end
 	end
@@ -1074,6 +1285,11 @@ function Floors.HandlePrimaryClick(input: any)
 			ManualFloors.HandlePrimaryClick(input)
 			return
 		end
+	elseif getFloorMode() == Enums.FloorMode.Autofill then
+		if actionType == Enums.ActionType.Start then
+			AutofillFloors.HandlePrimaryClick(input)
+			return
+		end
 	end
 	if actionType == Enums.ActionType.Select then
 		local currentSelection = getSelectionPart()
@@ -1114,6 +1330,8 @@ function Floors.HandleSecondaryClick(input: any): boolean
 	end
 	if getFloorMode() == Enums.FloorMode.Manual then
 		return ManualFloors.HandleSecondaryClick(input)
+	elseif getFloorMode() == Enums.FloorMode.Autofill then
+		return AutofillFloors.HandleSecondaryClick(input)
 	end
 	return false
 end

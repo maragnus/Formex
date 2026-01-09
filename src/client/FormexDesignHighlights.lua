@@ -7,8 +7,10 @@ Exports:
 - IsHighlightInstance(instance): boolean
 - UpdateSelectionHighlight(): ()
 - UpdateFloorEdgePreview(plotInfo, levelIndex, points, isValid, raiseHeight): ()
+- UpdateFloorHolePreview(plotInfo, levelIndex, points, raiseHeight): ()
 - UpdateWallEdgePreview(plotInfo, levelIndex, startPoint, endPoint, isValid): ()
 - ClearFloorEdgePreview(): ()
+- ClearFloorHolePreview(): ()
 ]]
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 local FormexDesignHighlights = {}
@@ -29,6 +31,8 @@ local ENABLE_FLOOR_SELECTION_HIGHLIGHT = false
 local selectionHighlight: Highlight? = nil
 local edgeParts = {} :: {BasePart}
 local edgeHighlights = {} :: {Highlight}
+local holeEdgeParts = {} :: {BasePart}
+local holeEdgeHighlights = {} :: {Highlight}
 
 function FormexDesignHighlights.Init()
 	local ctx = Context.Get()
@@ -108,28 +112,32 @@ function FormexDesignHighlights.UpdateSelectionHighlight()
 	highlight.Enabled = false
 end
 
-local function clearEdgePreviews()
-	for _, part in ipairs(edgeParts) do
+local function clearEdgePreviews(edgeList: {BasePart}, highlightList: {Highlight})
+	for _, part in ipairs(edgeList) do
 		if part and part.Parent then
 			part:Destroy()
 		end
 	end
-	for _, highlight in ipairs(edgeHighlights) do
+	for _, highlight in ipairs(highlightList) do
 		if highlight and highlight.Parent then
 			highlight:Destroy()
 		end
 	end
-	edgeParts = {}
-	edgeHighlights = {}
+	for index = #edgeList, 1, -1 do
+		edgeList[index] = nil
+	end
+	for index = #highlightList, 1, -1 do
+		highlightList[index] = nil
+	end
 end
 
-local function ensureEdgePreview(index: number): (BasePart, Highlight)
-	local part = edgeParts[index]
-	local highlight = edgeHighlights[index]
+local function ensureEdgePreview(edgeList: {BasePart}, highlightList: {Highlight}, index: number, nameSuffix: string): (BasePart, Highlight)
+	local part = edgeList[index]
+	local highlight = highlightList[index]
 
 	if not part or not part.Parent then
 		part = Instance.new("Part")
-		part.Name = "FloorEdge_" .. tostring(index)
+		part.Name = "FloorEdge_" .. nameSuffix .. "_" .. tostring(index)
 		part.Shape = Enum.PartType.Block
 		part.Anchored = true
 		part.CanCollide = false
@@ -138,18 +146,18 @@ local function ensureEdgePreview(index: number): (BasePart, Highlight)
 		part.CastShadow = false
 		part.Material = Enum.Material.Metal
 		part.Parent = OverlayFolder
-		edgeParts[index] = part
+		edgeList[index] = part
 	end
 
 	if not highlight or not highlight.Parent then
 		highlight = Instance.new("Highlight")
-		highlight.Name = "FloorEdgeHighlight"
+		highlight.Name = "FloorEdgeHighlight_" .. nameSuffix
 		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 		highlight.OutlineTransparency = 0
 		highlight.FillTransparency = 0.35
 		highlight.Adornee = part
 		highlight.Parent = part
-		edgeHighlights[index] = highlight
+		highlightList[index] = highlight
 	end
 
 	return part, highlight
@@ -161,16 +169,19 @@ local function updateEdgePreview(
 	points: {Vector2int16},
 	isValid: boolean,
 	closed: boolean,
-	heightOffset: number?
+	heightOffset: number?,
+	edgeList: {BasePart},
+	highlightList: {Highlight},
+	nameSuffix: string
 )
 	if not plotInfo or not plotInfo.PlotPart or not points or #points < 2 then
-		clearEdgePreviews()
+		clearEdgePreviews(edgeList, highlightList)
 		return
 	end
 
 	local edgeCount = closed and #points or (#points - 1)
 	if edgeCount <= 0 then
-		clearEdgePreviews()
+		clearEdgePreviews(edgeList, highlightList)
 		return
 	end
 
@@ -190,7 +201,7 @@ local function updateEdgePreview(
 		local startPoint = points[index]
 		local endPoint = points[nextIndex]
 		local dir = Vector3.new(endPoint.X - startPoint.X, 0, endPoint.Y - startPoint.Y)
-		local part, highlight = ensureEdgePreview(index)
+		local part, highlight = ensureEdgePreview(edgeList, highlightList, index, nameSuffix)
 
 		part.Color = color
 		highlight.FillColor = color
@@ -216,17 +227,17 @@ local function updateEdgePreview(
 		part.CFrame = plotInfo.PlotPart.CFrame * CFrame.fromMatrix(mid, right, up, back)
 	end
 
-	for index = edgeCount + 1, #edgeParts do
-		local part = edgeParts[index]
+	for index = edgeCount + 1, #edgeList do
+		local part = edgeList[index]
 		if part and part.Parent then
 			part:Destroy()
 		end
-		local highlight = edgeHighlights[index]
+		local highlight = highlightList[index]
 		if highlight and highlight.Parent then
 			highlight:Destroy()
 		end
-		edgeParts[index] = nil
-		edgeHighlights[index] = nil
+		edgeList[index] = nil
+		highlightList[index] = nil
 	end
 end
 
@@ -237,15 +248,28 @@ function FormexDesignHighlights.UpdateFloorEdgePreview(
 	isValid: boolean,
 	raiseHeight: number?
 )
-	updateEdgePreview(plotInfo, levelIndex, points, isValid, true, raiseHeight)
+	updateEdgePreview(plotInfo, levelIndex, points, isValid, true, raiseHeight, edgeParts, edgeHighlights, "Main")
 end
 
 function FormexDesignHighlights.UpdateWallEdgePreview(plotInfo: any, levelIndex: number, startPoint: Vector2int16, endPoint: Vector2int16, isValid: boolean)
-	updateEdgePreview(plotInfo, levelIndex, { startPoint, endPoint }, isValid, false, nil)
+	updateEdgePreview(plotInfo, levelIndex, { startPoint, endPoint }, isValid, false, nil, edgeParts, edgeHighlights, "Wall")
 end
 
 function FormexDesignHighlights.ClearFloorEdgePreview()
-	clearEdgePreviews()
+	clearEdgePreviews(edgeParts, edgeHighlights)
+end
+
+function FormexDesignHighlights.UpdateFloorHolePreview(
+	plotInfo: any,
+	levelIndex: number,
+	points: {Vector2int16},
+	raiseHeight: number?
+)
+	updateEdgePreview(plotInfo, levelIndex, points, false, true, raiseHeight, holeEdgeParts, holeEdgeHighlights, "Hole")
+end
+
+function FormexDesignHighlights.ClearFloorHolePreview()
+	clearEdgePreviews(holeEdgeParts, holeEdgeHighlights)
 end
 
 return FormexDesignHighlights

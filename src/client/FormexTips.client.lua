@@ -217,6 +217,7 @@ local function getTipData(designState)
     local subMode = designState.SubMode
     local floorMode = designState.Floor and designState.Floor.Mode or nil
     local actionType = designState.ActionType
+    local tipMessage = FormexDesign.GetTipMessage and FormexDesign.GetTipMessage() or nil
 
     local title = "Design Mode"
     local iconId = Formex.Icons.DesignStart
@@ -331,15 +332,25 @@ local function getTipData(designState)
                 }
             end
         elseif actionType == FormexDesign.ActionType.Start then
-            title = "Floor Start"
             toolLabel = "Tool: Build"
             toolIcon = Formex.Icons.DesignBuild
-            lines = {
-                "- Hover to preview the floor tile.",
-                "- Click a tile to place a new floor.",
-                "- Switch to Manual for custom shapes.",
-                "- Right-click to cancel back to Select mode.",
-            }
+            if floorMode == FormexDesign.FloorMode.Autofill then
+                title = "Floor Start (Autofill)"
+                lines = {
+                    "- Hover to preview the room outline.",
+                    "- Click to place the autofill floor.",
+                    "- Autofill traces walls and floors.",
+                    "- Right-click to cancel back to Select mode.",
+                }
+            else
+                title = "Floor Start"
+                lines = {
+                    "- Hover to preview the floor tile.",
+                    "- Click a tile to place a new floor.",
+                    "- Switch to Manual for custom shapes.",
+                    "- Right-click to cancel back to Select mode.",
+                }
+            end
         else
             title = "Floor Mode"
             toolLabel = "Tool: Build"
@@ -357,6 +368,10 @@ local function getTipData(designState)
         elseif floorMode == FormexDesign.FloorMode.Autofill then
             floorLabel = "Floor: Autofill"
             floorIcon = Formex.Icons.ModeAutomatic
+        end
+
+        if tipMessage and tipMessage ~= "" then
+            table.insert(lines, "Autofill: " .. tipMessage)
         end
     elseif mode == FormexDesign.DesignMode.Object then
         iconId = Formex.Icons.DesignFurniture

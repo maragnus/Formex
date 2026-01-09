@@ -126,6 +126,7 @@ local canRedo = false
 local altDropperForced = false
 local altDropperUsed = false
 local lastSubModeBeforeAlt: DesignSubMode? = nil
+local designTipMessage: string? = nil
 type TopDownState = FormexCamera.TopDownState
 local topDownStateByPlotId: {[number]: TopDownState} = {}
 
@@ -424,6 +425,21 @@ function FormexDesign.GetDesignState(): DesignState
 		Paint = getFloorPaintSettings(),
 	},
 	} :: DesignState
+end
+
+function FormexDesign.GetTipMessage(): string?
+	return designTipMessage
+end
+
+function FormexDesign.SetTipMessage(message: string?)
+	if message == "" then
+		message = nil
+	end
+	if designTipMessage == message then
+		return
+	end
+	designTipMessage = message
+	notifyDesignStateChange()
 end
 
 function FormexDesign.GetDesignMode(): DesignMode
@@ -2366,6 +2382,9 @@ function FormexDesign.SetDesignMode(mode: DesignMode?, preserveSelection: boolea
 		altDropperUsed = false
 		lastSubModeBeforeAlt = nil
 	end
+	if designMode ~= FormexDesign.DesignMode.Floor then
+		designTipMessage = nil
+	end
 	viewSettings = designModeViewSettings[mode]
 	actionType = FormexDesign.ActionType.Select
 	refresh(preserveSelection)
@@ -2467,6 +2486,10 @@ FormexDesignContext.Init({
 	end,
 	UpdateDesignState = FormexDesign.UpdateDesignState,
 	NotifyDesignModeChange = notifyDesignModeChange,
+	GetTipMessage = function()
+		return designTipMessage
+	end,
+	SetTipMessage = FormexDesign.SetTipMessage,
 	ClearSelection = FormexDesign.ClearSelection,
 	Select = FormexDesign.Select,
 	GetSelectionInfoFromInstance = getSelectionInfoFromInstance,

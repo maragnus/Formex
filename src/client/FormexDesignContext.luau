@@ -274,6 +274,8 @@ export type Context = {
 	GetWallPaintSettings: () -> WallPaintSettings,
 	UpdateDesignState: (DesignStateUpdate) -> (),
 	NotifyDesignModeChange: () -> (),
+	GetTipMessage: () -> string?,
+	SetTipMessage: (string?) -> (),
 	ClearSelection: () -> (),
 	Select: (Instance) -> boolean,
 	GetSelectionInfoFromInstance: (Instance?) -> (SelectionType?, number?, number?),
