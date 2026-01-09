@@ -98,6 +98,7 @@ local wallHandleExtendStart: BasePart? = nil
 local wallHandleExtendEnd: BasePart? = nil
 local wallHandleDelete: BasePart? = nil
 local wallHandleFlip: BasePart? = nil
+local wallHandleDivide: BasePart? = nil
 local activeWallHandle: WallHandleType? = nil
 local moveWallOriginal: SelectedWall? = nil
 local moveWallOriginals: {[number]: WallInfo} = {}
@@ -787,6 +788,37 @@ local function onWallFlip()
 	notifyDesignModeChange()
 end
 
+local function onWallDivide()
+	local input = getLastInputInfo()
+	if not selectedWall or not input or not input.PlotInfo or not input.PlotInfo.PlotPart then
+		return
+	end
+
+	local startPoint = selectedWall.Start
+	local endPoint = selectedWall.End
+	local midpoint = Vector2.new((startPoint.X + endPoint.X) / 2, (startPoint.Y + endPoint.Y) / 2)
+	local snapped = toSnappedVector2int16(midpoint)
+	if not isPointOnSegment(snapped, startPoint, endPoint) then
+		return
+	end
+
+	local ok = splitWallAtPoint(input.PlotInfo, {
+		WallId = selectedWall.WallId,
+		Level = selectedWall.Level,
+		Start = startPoint,
+		End = endPoint,
+		Part = selectedWall.Part,
+	}, snapped)
+
+	if not ok then
+		cancelAction()
+		return
+	end
+
+	clearSelection()
+	notifyDesignModeChange()
+end
+
 local function resetMoveState()
 	activeWallHandle = nil
 	moveWallOriginal = nil
@@ -812,6 +844,7 @@ local function setWallHandlesVisible(visible: boolean)
 		wallHandleExtendEnd,
 		wallHandleDelete,
 		wallHandleFlip,
+		wallHandleDivide,
 	}) do
 		Handles.SetHandleVisible(handle, visible)
 	end
@@ -925,15 +958,16 @@ local function updateWallHandles(plotInfo: any)
 	}
 	Highlight.UpdateWallEdgePreview(plotInfo, level, startPoint, endPoint, true)
 
-	wallHandleStart = Handles.CreateHandle("WallHandleStart", Constants.SelectionColor, Formex.Icons.ResizeItem, onWallMove, "Start")
-	wallHandleEnd = Handles.CreateHandle("WallHandleEnd", Constants.SelectionColor, Formex.Icons.ResizeItem, onWallMove, "End")
-	wallHandleCenter = Handles.CreateHandle("WallHandleCenter", Constants.GhostValidColor, Formex.Icons.MoveItem, onWallMove, "Center")
-	wallHandleStartSolo = Handles.CreateHandle("WallHandleStartSolo", Constants.SelectionColor, Formex.Icons.WallDisconnect, onWallMove, "StartSolo")
-	wallHandleEndSolo = Handles.CreateHandle("WallHandleEndSolo", Constants.SelectionColor, Formex.Icons.WallDisconnect, onWallMove, "EndSolo")
-	wallHandleExtendStart = Handles.CreateHandle("WallHandleExtendStart", Constants.GhostValidColor, Formex.Icons.WallExtend, onWallExtendStart)
-	wallHandleExtendEnd = Handles.CreateHandle("WallHandleExtendEnd", Constants.GhostValidColor, Formex.Icons.WallExtend, onWallExtendEnd)
-	wallHandleDelete = Handles.CreateHandle("WallHandleDelete", Constants.GhostInvalidColor, Formex.Icons.DeleteItem, onWallDelete)
-	wallHandleFlip = Handles.CreateHandle("WallHandleFlip", Constants.GhostValidColor, Formex.Icons.DirectionIndicator, onWallFlip)
+	wallHandleStart = Handles.CreateHandle("WallHandleStart", Constants.HandleMoveColor, Formex.Icons.ResizeItem, onWallMove, "Start")
+	wallHandleEnd = Handles.CreateHandle("WallHandleEnd", Constants.HandleMoveColor, Formex.Icons.ResizeItem, onWallMove, "End")
+	wallHandleCenter = Handles.CreateHandle("WallHandleCenter", Constants.HandleMoveColor, Formex.Icons.MoveItem, onWallMove, "Center")
+	wallHandleStartSolo = Handles.CreateHandle("WallHandleStartSolo", Constants.HandleDisconnectColor, Formex.Icons.WallDisconnect, onWallMove, "StartSolo")
+	wallHandleEndSolo = Handles.CreateHandle("WallHandleEndSolo", Constants.HandleDisconnectColor, Formex.Icons.WallDisconnect, onWallMove, "EndSolo")
+	wallHandleExtendStart = Handles.CreateHandle("WallHandleExtendStart", Constants.HandleAddColor, Formex.Icons.WallExtend, onWallExtendStart)
+	wallHandleExtendEnd = Handles.CreateHandle("WallHandleExtendEnd", Constants.HandleAddColor, Formex.Icons.WallExtend, onWallExtendEnd)
+	wallHandleDelete = Handles.CreateHandle("WallHandleDelete", Constants.HandleDeleteColor, Formex.Icons.DeleteItem, onWallDelete)
+	wallHandleFlip = Handles.CreateHandle("WallHandleFlip", Constants.HandleFlipColor, Formex.Icons.DirectionIndicator, onWallFlip)
+	wallHandleDivide = Handles.CreateHandle("WallHandleDivide", Constants.HandleAddColor, Formex.Icons.WallDivide, onWallDivide)
 
 	local viewSettings = getViewSettings()
 	local handleY = getWallHandleY(level, viewSettings.HandleLocation or Enums.HandleLocation.Middle)
@@ -958,6 +992,7 @@ local function updateWallHandles(plotInfo: any)
 	local deletePosition = toWorld(Vector2.new(midPoint.X, math.min(startPoint.Y, endPoint.Y) - Constants.HandleOffset * 2))
 	wallHandleDelete.Position = deletePosition - Vector3.new(0, wallHandleDelete.Size.Y / 2, 0)
 	wallHandleFlip.Position = toWorld(midPoint + offset)
+	wallHandleDivide.Position = toWorld(midPoint - offset)
 	local frontWorld = plotInfo.PlotPart.CFrame:VectorToWorldSpace(Vector3.new(frontNormal.X, 0, frontNormal.Y))
 	setHandleIconRotation(wallHandleFlip, getScreenRotationForDirection(frontWorld))
 

@@ -22,12 +22,22 @@ local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 
 local Floors = {}
 
-type FloorHandleType = "Point" | "Midpoint" | "Delete"
+type FloorHandleType = "Point" | "Midpoint" | "Delete" | "Side" | "Height"
 
 type FloorHandle = {
 	Kind: FloorHandleType,
 	Index: number,
+	NextIndex: number?,
 	Handle: BasePart,
+}
+
+type ActiveFloorHandle = {
+	Kind: FloorHandleType,
+	Index: number,
+	NextIndex: number?,
+	Handle: BasePart,
+	OriginKey: string?,
+	OriginKey2: string?,
 }
 
 type SharedFloorPoint = {
@@ -35,6 +45,7 @@ type SharedFloorPoint = {
 	LevelIndex: number,
 	Points: {Vector2int16},
 	PointIndex: number,
+	OriginKey: string,
 	RaiseHeight: number,
 	FloorMaterial: number,
 	CeilingMaterial: number,
@@ -77,18 +88,21 @@ local notifyDesignModeChange: () -> ()
 local cancelAction: () -> ()
 
 local floorHandles = {} :: {FloorHandle}
-local activeHandle: FloorHandle? = nil
+local activeHandle: ActiveFloorHandle? = nil
 local moveOriginalPoints: {Vector2int16}? = nil
 local moveSharedPoints: {SharedFloorPoint} = {}
 local moveFloorId: number? = nil
 local moveLevelIndex: number? = nil
 local moveRaiseHeight: number = 0
+local moveRaiseHeightOriginal: number? = nil
 local movePreviewPoints: {Vector2int16}? = nil
 local lastHandleFloorId: number? = nil
 local lastHandleLevelIndex: number? = nil
 local lastHandlePointsKey: string? = nil
 local lastHandleRaiseHeight: number = 0
+local lastHandleAltHeld: boolean? = nil
 local lastPreviewTile: Vector2int16? = nil
+local lastAltHeld: boolean = false
 
 function Floors.Init()
 	local ctx = Context.Get()
@@ -127,6 +141,10 @@ end
 
 local function pointsEqual(a: Vector2int16, b: Vector2int16): boolean
 	return a.X == b.X and a.Y == b.Y
+end
+
+local function getPointKey(point: Vector2int16): string
+	return tostring(point.X) .. "," .. tostring(point.Y)
 end
 
 local function buildFloorDataFromTile(tile: Vector2int16): Formex.FloorData
@@ -364,6 +382,7 @@ local function clearFloorHandles()
 	lastHandleLevelIndex = nil
 	lastHandlePointsKey = nil
 	lastHandleRaiseHeight = 0
+	lastHandleAltHeld = nil
 end
 
 local function updateFloorEdgePreview(plotInfo: any, levelIndex: number, points: {Vector2int16})
@@ -377,41 +396,61 @@ local function addFloorHandle(name: string, color: Color3, iconAsset: string, on
 	return handle
 end
 
+local function getSnappedMidpoint(points: {Vector2int16}, index: number): Vector2int16?
+	local nextIndex = (index % #points) + 1
+	local startPoint = points[index]
+	local endPoint = points[nextIndex]
+	local dx = endPoint.X - startPoint.X
+	local dy = endPoint.Y - startPoint.Y
+	local distance = math.sqrt(dx * dx + dy * dy)
+	local minHandleLength = Formex.LayoutGridSize * 2
+	if distance < minHandleLength then
+		return nil
+	end
+
+	local grid = Formex.LayoutGridSize
+	local midX = math.round(((startPoint.X + endPoint.X) / 2) / grid) * grid
+	local midY = math.round(((startPoint.Y + endPoint.Y) / 2) / grid) * grid
+	return Vector2int16.new(midX, midY)
+end
+
+local function getFloorBounds(points: {Vector2int16}): (number, Vector2)
+	local maxX = -math.huge
+	local sumX = 0
+	local sumY = 0
+	for _, point in ipairs(points) do
+		maxX = math.max(maxX, point.X)
+		sumX += point.X
+		sumY += point.Y
+	end
+	local count = math.max(#points, 1)
+	local centroid = Vector2.new(sumX / count, sumY / count)
+	return maxX, centroid
+end
+
 local function updateHandlePositions(plotPart: BasePart, floorData: Formex.FloorData, handlePoints: {Vector2int16})
 	local y = getHandleY(floorData.LevelIndex)
+	local raisedY = y + (floorData.RaiseHeight or 0)
+	local maxX, centroid = getFloorBounds(handlePoints)
 	for index, handle in ipairs(floorHandles) do
-		if handle.Kind ~= "Point" then
-			continue
-		end
-		local point = handlePoints[handle.Index]
-		if point then
-			local worldPos = plotPart.CFrame * Vector3.new(point.X, y, point.Y)
+		if handle.Kind == "Point" then
+			local point = handlePoints[handle.Index]
+			if point then
+				local worldPos = plotPart.CFrame * Vector3.new(point.X, y, point.Y)
+				handle.Handle.CFrame = CFrame.new(worldPos)
+			end
+		elseif handle.Kind == "Side" then
+			local midpoint = getSnappedMidpoint(handlePoints, handle.Index)
+			if midpoint then
+				local worldPos = plotPart.CFrame * Vector3.new(midpoint.X, y, midpoint.Y)
+				handle.Handle.CFrame = CFrame.new(worldPos)
+			end
+		elseif handle.Kind == "Height" then
+			local offsetX = maxX + (Constants.HandleOffset * 2)
+			local worldPos = plotPart.CFrame * Vector3.new(offsetX, raisedY, centroid.Y)
 			handle.Handle.CFrame = CFrame.new(worldPos)
 		end
 	end
-end
-
-local function buildMidpoints(points: {Vector2int16}): {Vector2int16}
-	local midpoints = {}
-	local grid = Formex.LayoutGridSize
-	local minHandleLength = Formex.LayoutGridSize * 2
-	for i = 1, #points do
-		local nextIndex = (i % #points) + 1
-		local startPoint = points[i]
-		local endPoint = points[nextIndex]
-		local dx = endPoint.X - startPoint.X
-		local dy = endPoint.Y - startPoint.Y
-		local distance = math.sqrt(dx * dx + dy * dy)
-		if distance >= minHandleLength then
-			local midX = math.round(((startPoint.X + endPoint.X) / 2) / grid) * grid
-			local midY = math.round(((startPoint.Y + endPoint.Y) / 2) / grid) * grid
-			local mid = Vector2int16.new(midX, midY)
-			table.insert(midpoints, mid)
-		else
-			table.insert(midpoints, Vector2int16.new(0, 0))
-		end
-	end
-	return midpoints
 end
 
 local function getPolygonArea2(points: {Vector2int16}): number
@@ -452,7 +491,7 @@ local function getMidpointOffset(points: {Vector2int16}, index: number, handleOf
 	return Vector2int16.new(offsetX, offsetY)
 end
 
-local function collectSharedFloors(plotPart: BasePart, levelIndex: number, originPoint: Vector2int16, ignoreFloorId: number): {SharedFloorPoint}
+local function collectSharedFloors(plotPart: BasePart, levelIndex: number, originPoint: Vector2int16, originKey: string, ignoreFloorId: number): {SharedFloorPoint}
 	local shared = {}
 	local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
 	if not levelPart then
@@ -476,6 +515,7 @@ local function collectSharedFloors(plotPart: BasePart, levelIndex: number, origi
 								LevelIndex = levelIndex,
 								Points = floorData.Points,
 								PointIndex = index,
+								OriginKey = originKey,
 								RaiseHeight = floorData.RaiseHeight,
 								FloorMaterial = floorData.FloorMaterial,
 								CeilingMaterial = floorData.CeilingMaterial,
@@ -550,11 +590,37 @@ local function finalizeMove(plotInfo: any)
 	moveFloorId = nil
 	moveLevelIndex = nil
 	moveRaiseHeight = 0
+	moveRaiseHeightOriginal = nil
 	activeHandle = nil
 end
 
 local function handlePointMove(plotInfo: any, input: any)
 	if not activeHandle or activeHandle.Kind == "Delete" then
+		return
+	end
+	if activeHandle.Kind == "Height" then
+		if not input.HitPosition or not plotInfo or not plotInfo.PlotPart or not moveLevelIndex then
+			return
+		end
+		local localPosition = plotInfo.PlotPart.CFrame:PointToObjectSpace(input.HitPosition)
+		local baseY = getHandleY(moveLevelIndex)
+		local newHeight = localPosition.Y - baseY
+		updateDesignState({
+			Floor = {
+				RaiseHeight = newHeight,
+			},
+		})
+		moveRaiseHeight = getFloorRaiseHeight()
+		if movePreviewPoints then
+			updateHandlePositions(plotInfo.PlotPart, {
+				FloorId = moveFloorId or 0,
+				LevelIndex = moveLevelIndex,
+				Points = movePreviewPoints,
+				RaiseHeight = moveRaiseHeight,
+				FloorMaterial = Formex.DefaultFloorMaterial,
+				CeilingMaterial = Formex.DefaultFloorMaterial,
+			}, movePreviewPoints)
+		end
 		return
 	end
 	if not input.SnapPoint then
@@ -566,12 +632,41 @@ local function handlePointMove(plotInfo: any, input: any)
 	end
 
 	local newPoint = input.SnapPoint
-	movePreviewPoints[activeHandle.Index] = newPoint
-	movePreviewPoints = mergeDuplicatePoints(movePreviewPoints)
+	if activeHandle.Kind == "Side" then
+		local nextIndex = activeHandle.NextIndex or ((activeHandle.Index % #movePreviewPoints) + 1)
+		local midpoint = getSnappedMidpoint(movePreviewPoints, activeHandle.Index)
+		if not midpoint then
+			return
+		end
+		local deltaX = newPoint.X - midpoint.X
+		local deltaY = newPoint.Y - midpoint.Y
+		local startPoint = movePreviewPoints[activeHandle.Index]
+		local endPoint = movePreviewPoints[nextIndex]
+		local newStart = Vector2int16.new(math.round(startPoint.X + deltaX), math.round(startPoint.Y + deltaY))
+		local newEnd = Vector2int16.new(math.round(endPoint.X + deltaX), math.round(endPoint.Y + deltaY))
 
-	for _, shared in ipairs(moveSharedPoints) do
-		shared.Points[shared.PointIndex] = newPoint
-		shared.Points = mergeDuplicatePoints(shared.Points)
+		movePreviewPoints[activeHandle.Index] = newStart
+		movePreviewPoints[nextIndex] = newEnd
+		movePreviewPoints = mergeDuplicatePoints(movePreviewPoints)
+
+		for _, shared in ipairs(moveSharedPoints) do
+			if shared.OriginKey == activeHandle.OriginKey then
+				shared.Points[shared.PointIndex] = newStart
+			elseif shared.OriginKey == activeHandle.OriginKey2 then
+				shared.Points[shared.PointIndex] = newEnd
+			end
+			shared.Points = mergeDuplicatePoints(shared.Points)
+		end
+	else
+		movePreviewPoints[activeHandle.Index] = newPoint
+		movePreviewPoints = mergeDuplicatePoints(movePreviewPoints)
+
+		for _, shared in ipairs(moveSharedPoints) do
+			if shared.OriginKey == activeHandle.OriginKey then
+				shared.Points[shared.PointIndex] = newPoint
+				shared.Points = mergeDuplicatePoints(shared.Points)
+			end
+		end
 	end
 
 	local plotPart = plotInfo.PlotPart
@@ -661,12 +756,12 @@ local function onFloorHandleClicked(info: any)
 		if #points >= Formex.MaxFloorPoints then
 			return
 		end
-		local midpoints = buildMidpoints(points)
-		local midpoint = midpoints[handleIndex]
-		if midpoint then
-			table.insert(points, handleIndex + 1, midpoint)
-			handleIndex = handleIndex + 1
+		local midpoint = getSnappedMidpoint(points, handleIndex)
+		if not midpoint then
+			return
 		end
+		table.insert(points, handleIndex + 1, midpoint)
+		handleIndex = handleIndex + 1
 	end
 
 	moveOriginalPoints = table.clone(points)
@@ -674,13 +769,46 @@ local function onFloorHandleClicked(info: any)
 	moveFloorId = floorData.FloorId
 	moveLevelIndex = floorData.LevelIndex
 	moveRaiseHeight = floorData.RaiseHeight
-	moveSharedPoints = collectSharedFloors(plotInfo.PlotPart, floorData.LevelIndex, points[handleIndex], floorData.FloorId)
+	moveRaiseHeightOriginal = floorData.RaiseHeight
+	moveSharedPoints = {}
 
-	activeHandle = {
-		Kind = "Point",
-		Index = handleIndex,
-		Handle = info.Handle,
-	}
+	if info.Kind == "Side" then
+		local nextIndex = info.NextIndex or ((handleIndex % #points) + 1)
+		local originKey = getPointKey(points[handleIndex])
+		local originKey2 = getPointKey(points[nextIndex])
+		local sharedStart = collectSharedFloors(plotInfo.PlotPart, floorData.LevelIndex, points[handleIndex], originKey, floorData.FloorId)
+		local sharedEnd = collectSharedFloors(plotInfo.PlotPart, floorData.LevelIndex, points[nextIndex], originKey2, floorData.FloorId)
+		for _, shared in ipairs(sharedStart) do
+			table.insert(moveSharedPoints, shared)
+		end
+		for _, shared in ipairs(sharedEnd) do
+			table.insert(moveSharedPoints, shared)
+		end
+
+		activeHandle = {
+			Kind = "Side",
+			Index = handleIndex,
+			NextIndex = nextIndex,
+			Handle = info.Handle,
+			OriginKey = originKey,
+			OriginKey2 = originKey2,
+		}
+	elseif info.Kind == "Height" then
+		activeHandle = {
+			Kind = "Height",
+			Index = handleIndex,
+			Handle = info.Handle,
+		}
+	else
+		local originKey = getPointKey(points[handleIndex])
+		moveSharedPoints = collectSharedFloors(plotInfo.PlotPart, floorData.LevelIndex, points[handleIndex], originKey, floorData.FloorId)
+		activeHandle = {
+			Kind = "Point",
+			Index = handleIndex,
+			Handle = info.Handle,
+			OriginKey = originKey,
+		}
+	end
 	setActionType(Enums.ActionType.Move)
 end
 
@@ -702,11 +830,13 @@ local function updateFloorHandles(plotInfo: any)
 
 	local floorData = getFloorDataFromModel(floorModel)
 	local points = movePreviewPoints or floorData.Points
+	local altHeld = lastAltHeld
 	local pointsKey = Formex.EncodeFloorPoints(points)
 	local shouldRebuild = floorData.FloorId ~= lastHandleFloorId
 		or floorData.LevelIndex ~= lastHandleLevelIndex
 		or pointsKey ~= lastHandlePointsKey
 		or floorData.RaiseHeight ~= lastHandleRaiseHeight
+		or lastHandleAltHeld ~= altHeld
 	if not shouldRebuild then
 		return
 	end
@@ -719,7 +849,7 @@ local function updateFloorHandles(plotInfo: any)
 	local y = getHandleY(levelIndex)
 
 	for index, point in ipairs(points) do
-		local handle = addFloorHandle("FloorPoint_" .. tostring(index), Constants.SelectionColor, Formex.Icons.ResizeItem, onFloorHandleClicked, {
+		local handle = addFloorHandle("FloorPoint_" .. tostring(index), Constants.HandleMoveColor, Formex.Icons.ResizeItem, onFloorHandleClicked, {
 			Kind = "Point",
 			Index = index,
 			Handle = nil,
@@ -732,12 +862,32 @@ local function updateFloorHandles(plotInfo: any)
 		}
 	end
 
-	if #points < Formex.MaxFloorPoints then
-		local midpoints = buildMidpoints(points)
-		for index, midpoint in ipairs(midpoints) do
-			if midpoint.X ~= 0 or midpoint.Y ~= 0 then
+	if altHeld then
+		for index = 1, #points do
+			local midpoint = getSnappedMidpoint(points, index)
+			if midpoint then
+				local nextIndex = (index % #points) + 1
+				local handle = addFloorHandle("FloorSide_" .. tostring(index), Constants.HandleMoveColor, Formex.Icons.MoveItem, onFloorHandleClicked, {
+					Kind = "Side",
+					Index = index,
+					NextIndex = nextIndex,
+					Handle = nil,
+				})
+				handle.CFrame = plotInfo.PlotPart.CFrame * CFrame.new(midpoint.X, y, midpoint.Y)
+				floorHandles[#floorHandles + 1] = {
+					Kind = "Side",
+					Index = index,
+					NextIndex = nextIndex,
+					Handle = handle,
+				}
+			end
+		end
+	elseif #points < Formex.MaxFloorPoints then
+		for index = 1, #points do
+			local midpoint = getSnappedMidpoint(points, index)
+			if midpoint then
 				local offset = getMidpointOffset(points, index, Constants.HandleOffset)
-				local handle = addFloorHandle("FloorMid_" .. tostring(index), Constants.GhostValidColor, Formex.Icons.WallExtend, onFloorHandleClicked, {
+				local handle = addFloorHandle("FloorMid_" .. tostring(index), Constants.HandleAddColor, Formex.Icons.WallExtend, onFloorHandleClicked, {
 					Kind = "Midpoint",
 					Index = index,
 					Handle = nil,
@@ -752,12 +902,8 @@ local function updateFloorHandles(plotInfo: any)
 		end
 	end
 
-	local centroid = Vector2.new(0, 0)
-	for _, point in ipairs(points) do
-		centroid += Vector2.new(point.X, point.Y)
-	end
-	centroid /= math.max(#points, 1)
-	local deleteHandle = addFloorHandle("FloorDelete", Constants.GhostInvalidColor, Formex.Icons.DeleteItem, onFloorHandleClicked, {
+	local maxX, centroid = getFloorBounds(points)
+	local deleteHandle = addFloorHandle("FloorDelete", Constants.HandleDeleteColor, Formex.Icons.DeleteItem, onFloorHandleClicked, {
 		Kind = "Delete",
 		Index = 0,
 		Handle = nil,
@@ -769,10 +915,23 @@ local function updateFloorHandles(plotInfo: any)
 		Handle = deleteHandle,
 	}
 
+	local heightHandle = addFloorHandle("FloorRaiseHeight", Constants.HandleHeightColor, Formex.Icons.ElevateItem, onFloorHandleClicked, {
+		Kind = "Height",
+		Index = 0,
+		Handle = nil,
+	})
+	heightHandle.CFrame = plotInfo.PlotPart.CFrame * CFrame.new(maxX + (Constants.HandleOffset * 2), y + floorData.RaiseHeight, centroid.Y)
+	floorHandles[#floorHandles + 1] = {
+		Kind = "Height",
+		Index = 0,
+		Handle = heightHandle,
+	}
+
 	lastHandleFloorId = floorData.FloorId
 	lastHandleLevelIndex = floorData.LevelIndex
 	lastHandlePointsKey = pointsKey
 	lastHandleRaiseHeight = floorData.RaiseHeight
+	lastHandleAltHeld = altHeld
 	setHandlesVisible(true)
 end
 
@@ -800,15 +959,25 @@ end
 
 function Floors.CancelAction()
 	if getActionType() == Enums.ActionType.Move then
-		movePreviewPoints = moveOriginalPoints
+		if activeHandle and activeHandle.Kind == "Height" and moveRaiseHeightOriginal ~= nil then
+			updateDesignState({
+				Floor = {
+					RaiseHeight = moveRaiseHeightOriginal,
+				},
+			})
+			moveRaiseHeight = moveRaiseHeightOriginal
+		else
+			movePreviewPoints = moveOriginalPoints
+			local plotInfo = FormexClient.CurrentPlot
+			if plotInfo and plotInfo.PlotPart and movePreviewPoints and moveLevelIndex then
+				updateFloorEdgePreview(plotInfo, moveLevelIndex, movePreviewPoints)
+			end
+		end
 		moveOriginalPoints = nil
 		moveSharedPoints = {}
 		moveRaiseHeight = 0
+		moveRaiseHeightOriginal = nil
 		activeHandle = nil
-		local plotInfo = FormexClient.CurrentPlot
-		if plotInfo and plotInfo.PlotPart and movePreviewPoints and moveLevelIndex then
-			updateFloorEdgePreview(plotInfo, moveLevelIndex, movePreviewPoints)
-		end
 	end
 	lastPreviewTile = nil
 	setActionType(Enums.ActionType.Select)
@@ -820,6 +989,7 @@ function Floors.ClearSelection()
 	moveOriginalPoints = nil
 	moveSharedPoints = {}
 	moveRaiseHeight = 0
+	moveRaiseHeightOriginal = nil
 	activeHandle = nil
 	lastPreviewTile = nil
 	clearFloorHandles()
@@ -830,6 +1000,7 @@ end
 function Floors.HandleUpdate(input: any)
 	local actionType = getActionType()
 	if actionType == Enums.ActionType.Select then
+		lastAltHeld = input.AltHeld
 		updateFloorHandles(input.PlotInfo)
 		Handles.CheckHover(input.Ray)
 		if isGhostActive() and getGhostType() == Formex.PartType.Floor then
@@ -855,9 +1026,16 @@ end
 
 function Floors.HandlePrimaryRelease(input: any)
 	if getActionType() == Enums.ActionType.Move then
-		finalizeMove(input.PlotInfo)
-		setActionType(Enums.ActionType.Select)
-		updateFloorHandles(input.PlotInfo)
+		if activeHandle and activeHandle.Kind == "Height" then
+			activeHandle = nil
+			moveRaiseHeightOriginal = nil
+			setActionType(Enums.ActionType.Select)
+			updateFloorHandles(input.PlotInfo)
+		else
+			finalizeMove(input.PlotInfo)
+			setActionType(Enums.ActionType.Select)
+			updateFloorHandles(input.PlotInfo)
+		end
 	end
 end
 

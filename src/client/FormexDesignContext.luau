@@ -188,6 +188,12 @@ export type Constants = {
 	SelectionColor: Color3,
 	GhostValidColor: Color3,
 	GhostInvalidColor: Color3,
+	HandleMoveColor: Color3,
+	HandleDeleteColor: Color3,
+	HandleAddColor: Color3,
+	HandleDisconnectColor: Color3,
+	HandleFlipColor: Color3,
+	HandleHeightColor: Color3,
 	FloorGhostTransparency: number,
 }
 
@@ -291,13 +297,23 @@ Context.Enums = table.freeze({
 }) :: Enums
 
 local selectionColor = Color3.fromRGB(255, 201, 107)
+local handleDeleteColor = Color3.fromRGB(245, 110, 110)
+local handleAddColor = Color3.fromRGB(118, 214, 136)
+local handleDisconnectColor = Color3.fromRGB(255, 164, 92)
+local handleAdjustColor = Color3.fromRGB(104, 170, 255)
 
 Context.Constants = table.freeze({
 	Epsilon = 1e-4,
 	HandleOffset = 5,
 	SelectionColor = selectionColor,
 	GhostValidColor = selectionColor,
-	GhostInvalidColor = Color3.fromRGB(245, 110, 110),
+	GhostInvalidColor = handleDeleteColor,
+	HandleMoveColor = selectionColor,
+	HandleDeleteColor = handleDeleteColor,
+	HandleAddColor = handleAddColor,
+	HandleDisconnectColor = handleDisconnectColor,
+	HandleFlipColor = handleAdjustColor,
+	HandleHeightColor = handleAdjustColor,
 	FloorGhostTransparency = 0.6,
 }) :: Constants
 
