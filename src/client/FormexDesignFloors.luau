@@ -1108,6 +1108,10 @@ function Floors.HandlePrimaryClick(input: any)
 end
 
 function Floors.HandleSecondaryClick(input: any): boolean
+	if getActionType() == Enums.ActionType.Start then
+		Floors.CancelAction()
+		return true
+	end
 	if getFloorMode() == Enums.FloorMode.Manual then
 		return ManualFloors.HandleSecondaryClick(input)
 	end
