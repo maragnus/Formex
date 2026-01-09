@@ -115,6 +115,8 @@ local altHeld, alt1Held, alt2Held, alt3Held = false, false, false, false
 local selectionType: SelectionType = FormexDesign.SelectionType.None
 local selectionData: SelectionData = nil
 local selectionPart: Instance? = nil
+local canUndo = false
+local canRedo = false
 local altDropperForced = false
 local altDropperUsed = false
 local lastSubModeBeforeAlt: DesignSubMode? = nil
@@ -180,6 +182,9 @@ local floorSelectedSettings: FloorSelectedSettings = {
 	FoundationColor = Color3.new(1, 1, 1),
 	HasSelection = false,
 } :: FloorSelectedSettings
+
+local designModeViewSettings: {DesignMode: ViewSettings}? = nil
+local designModeBySelectionType: {[SelectionType]: DesignMode}? = nil
 
 local designStateChangeDepth = 0
 local designStateDirty = false
@@ -399,6 +404,8 @@ function FormexDesign.GetDesignState(): DesignState
 		SubMode = designSubMode,
 		ActionType = actionType,
 		SelectionType = selectionType,
+		CanUndo = canUndo,
+		CanRedo = canRedo,
 		Wall = {
 			Selected = cloneWallSelectedSettings(wallSelectedSettings),
 			Build = cloneWallBuildSettings(wallBuildSettings),
@@ -609,30 +616,189 @@ function FormexDesign.UpdateWallPaintSettings(settings: WallPaintSettings)
 end
 
 function FormexDesign.CanUndo(): boolean
-	return FormexClient.CanUndo()
+	return canUndo
 end
 
 function FormexDesign.CanRedo(): boolean
-	return FormexClient.CanRedo()
+	return canRedo
+end
+
+local function resolveUndoRedoMode(selection: Formex.SelectionSnapshot?): DesignMode?
+	if not selection then
+		return nil
+	end
+
+	local mode = selection.Mode
+	if type(mode) == "string" and designModeViewSettings[mode] then
+		return mode :: DesignMode
+	end
+
+	local selectionMode = selection.SelectionType and designModeBySelectionType[selection.SelectionType :: SelectionType]
+	if selectionMode then
+		return selectionMode
+	end
+
+	return nil
+end
+
+local function findSelectionModel(plotPart: BasePart, selection: Formex.SelectionSnapshot?): Instance?
+	if not selection or selection.SelectionType == FormexDesign.SelectionType.None then
+		return nil
+	end
+
+	local levelIndex = selection.LevelIndex
+	local partId = selection.PartId
+	if not levelIndex or partId == nil then
+		return nil
+	end
+
+	local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
+	if not levelPart then
+		return nil
+	end
+
+	local folderName = selection.SelectionType == FormexDesign.SelectionType.Wall and "Walls"
+		or selection.SelectionType == FormexDesign.SelectionType.Floor and "Floors"
+		or selection.SelectionType == FormexDesign.SelectionType.Object and "Objects"
+		or nil
+	if not folderName then
+		return nil
+	end
+
+	local folder = levelPart:FindFirstChild(folderName)
+	if not folder then
+		return nil
+	end
+
+	local model = folder:FindFirstChild(tostring(partId))
+	if model and model:IsA("Model") then
+		return model
+	end
+
+	return nil
+end
+
+local function applyUndoRedoSelection(selection: Formex.SelectionSnapshot?)
+	if not selection then
+		return
+	end
+
+	local targetMode = resolveUndoRedoMode(selection)
+	if targetMode then
+		FormexDesign.SetDesignMode(targetMode)
+	end
+
+	FormexDesign.ClearSelection()
+
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
+		return
+	end
+
+	if selection.SelectionType == FormexDesign.SelectionType.None then
+		return
+	end
+
+	local function trySelect(): boolean
+		local model = findSelectionModel(plotInfo.PlotPart, selection)
+		if model then
+			FormexDesign.Select(model)
+			return true
+		end
+		return false
+	end
+
+	if trySelect() then
+		return
+	end
+
+	task.spawn(function()
+		local deadline = time() + 2
+		while time() < deadline do
+			if trySelect() then
+				return
+			end
+			task.wait(0.05)
+		end
+	end)
+end
+
+local folderNames = { Walls = "Wall", Floors = "Floor", Objects = "Object" } :: {string: SelectionType}
+
+local function getSelectionInfoFromInstance(part: Instance?): (SelectionType?, number?, number?)
+	local currentPart = part
+	while currentPart do
+		local parent = currentPart.Parent
+
+		if not parent or not parent.Parent or parent.Parent:IsA("Workspace") then
+			return nil, nil, nil
+		end
+
+		local partId = tonumber(currentPart.Name)
+		local selectionKind = folderNames[parent.Name]
+		local level = tonumber(parent.Parent.Name)
+
+		if partId and level and selectionKind and parent:IsA("Folder") then
+			return selectionKind, partId, level
+		end
+
+		if parent.Name == "Floors" and parent:IsA("Folder") then
+			local floorId = tonumber(currentPart.Name)
+			local floorLevel = tonumber(parent.Parent.Name)
+			if floorId and floorLevel then
+				return FormexDesign.SelectionType.Floor, floorId, floorLevel
+			end
+		end
+
+		if parent.Parent and parent.Parent:IsA("Folder") and parent.Parent.Name == "Floors" then
+			local floorId = tonumber(parent.Name)
+			local floorLevel = tonumber(parent.Parent.Parent.Name)
+			if floorId and floorLevel then
+				return FormexDesign.SelectionType.Floor, floorId, floorLevel
+			end
+		end
+
+		currentPart = parent
+	end
+
+	return nil, nil, nil
+end
+
+local function getSelectionSnapshot(): Formex.SelectionSnapshot
+	local selectionKind, partId, level = getSelectionInfoFromInstance(selectionPart)
+	local resolvedType = selectionKind or selectionType
+	if resolvedType == FormexDesign.SelectionType.None then
+		partId = nil
+		level = nil
+	end
+
+	return {
+		Mode = designMode,
+		SelectionType = resolvedType,
+		LevelIndex = level,
+		PartId = partId,
+	}
 end
 
 function FormexDesign.Undo(): boolean
 	FormexDesign.CancelAction()
-	local ok = FormexClient.Undo()
+	local ok, _, selection = FormexClient.Undo(getSelectionSnapshot())
 	if ok ~= true then
 		return false
 	end
 	FormexDesign.ClearSelection()
+	applyUndoRedoSelection(selection)
 	return true
 end
 
 function FormexDesign.Redo(): boolean
 	FormexDesign.CancelAction()
-	local ok = FormexClient.Redo()
+	local ok, _, selection = FormexClient.Redo(getSelectionSnapshot())
 	if ok ~= true then
 		return false
 	end
 	FormexDesign.ClearSelection()
+	applyUndoRedoSelection(selection)
 	return true
 end
 
@@ -704,7 +870,7 @@ function FormexDesign.MoveCameraToPlayer()
 	end
 end
 
-local designModeViewSettings: {DesignMode: ViewSettings} = {
+designModeViewSettings = {
 	Play = playViewSettings,
 	Design = playViewSettings,
 	Select = topDownViewSettings,
@@ -1458,9 +1624,6 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 	FormexDesignHighlights.UpdateSelectionHighlight()
 end
 
-
-
-local folderNames = { Walls = "Wall", Floors = "Floor", Objects = "Object" } :: {string: SelectionType}
 local allowedSelectionByMode = {
 	[FormexDesign.DesignMode.Select] = {
 		[FormexDesign.SelectionType.Wall] = true,
@@ -1477,50 +1640,11 @@ local allowedSelectionByMode = {
 		[FormexDesign.SelectionType.Object] = true,
 	},
 } :: { [DesignMode]: {[SelectionType]: boolean} }
-local designModeBySelectionType = {
+designModeBySelectionType = {
 	[FormexDesign.SelectionType.Wall] = FormexDesign.DesignMode.Wall,
 	[FormexDesign.SelectionType.Floor] = FormexDesign.DesignMode.Floor,
 	[FormexDesign.SelectionType.Object] = FormexDesign.DesignMode.Object,
 } :: { [SelectionType]: DesignMode }
-
-local function getSelectionInfoFromInstance(part: Instance?): (SelectionType?, number?, number?)
-	local currentPart = part
-	while currentPart do
-		local parent = currentPart.Parent
-
-		if not parent or not parent.Parent or parent.Parent:IsA("Workspace") then
-			return nil, nil, nil
-		end
-
-		local partId = tonumber(currentPart.Name)
-		local selectionKind = folderNames[parent.Name]
-		local level = tonumber(parent.Parent.Name)
-
-		if partId and level and selectionKind and parent:IsA("Folder") then
-			return selectionKind, partId, level
-		end
-
-		if parent.Name == "Floors" and parent:IsA("Folder") then
-			local floorId = tonumber(currentPart.Name)
-			local floorLevel = tonumber(parent.Parent.Name)
-			if floorId and floorLevel then
-				return FormexDesign.SelectionType.Floor, floorId, floorLevel
-			end
-		end
-
-		if parent.Parent and parent.Parent:IsA("Folder") and parent.Parent.Name == "Floors" then
-			local floorId = tonumber(parent.Name)
-			local floorLevel = tonumber(parent.Parent.Parent.Name)
-			if floorId and floorLevel then
-				return FormexDesign.SelectionType.Floor, floorId, floorLevel
-			end
-		end
-
-		currentPart = parent
-	end
-
-	return nil, nil, nil
-end
 
 local function updateSelectionSettingsFromSelection()
 	if selectionType == FormexDesign.SelectionType.Wall then
@@ -1905,6 +2029,16 @@ function FormexDesign.UpdateDesignState(update: DesignStateUpdate)
 		FormexDesign.SetDesignSubMode(update.SubMode)
 	end
 
+	if update.CanUndo ~= nil and update.CanUndo ~= canUndo then
+		canUndo = update.CanUndo
+		notifyDesignStateChange()
+	end
+
+	if update.CanRedo ~= nil and update.CanRedo ~= canRedo then
+		canRedo = update.CanRedo
+		notifyDesignStateChange()
+	end
+
 	if update.Wall ~= nil then
 		applyWallStateUpdate(update.Wall)
 	end
@@ -2243,6 +2377,7 @@ FormexDesignContext.Init({
 	GetSelectionPart = function()
 		return selectionPart
 	end,
+	GetSelectionSnapshot = getSelectionSnapshot,
 	GetLastInputInfo = function()
 		return inputInfo
 	end,
@@ -2320,6 +2455,20 @@ FormexDesignContext.RegisterModule("Floors", Floors)
 FormexDesignContext.RegisterModule("Objects", Objects)
 FormexDesignContext.RegisterModule("Handles", FormexDesign.Handles)
 FormexDesignContext.RegisterModule("Highlights", FormexDesignHighlights)
+
+local function syncUndoRedoAttributes()
+	local nextCanUndo = localPlayer:GetAttribute("CanUndo") == true
+	local nextCanRedo = localPlayer:GetAttribute("CanRedo") == true
+	if nextCanUndo ~= canUndo or nextCanRedo ~= canRedo then
+		canUndo = nextCanUndo
+		canRedo = nextCanRedo
+		notifyDesignStateChange()
+	end
+end
+
+syncUndoRedoAttributes()
+localPlayer:GetAttributeChangedSignal("CanUndo"):Connect(syncUndoRedoAttributes)
+localPlayer:GetAttributeChangedSignal("CanRedo"):Connect(syncUndoRedoAttributes)
 
 FormexClient.ClientEvents:Connect(function(eventName, _plotId, _partType, _levelIndex, _partId, model, changeType)
 	if eventName == "CurrentPlotChanged" then

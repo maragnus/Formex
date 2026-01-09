@@ -922,16 +922,16 @@ function FormexClient.GetSavePermissions(): {[number]: Formex.Permission}
     return FormexFunctions:InvokeServer(Formex.Function.GetPermissions)
 end
 
-function FormexClient.BuildWall(wall: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction): Formex.WallData | {Formex.WallData}
-    return FormexFunctions:InvokeServer(Formex.Function.BuildWall, wall, action)
+function FormexClient.BuildWall(wall: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?): Formex.WallData | {Formex.WallData}
+    return FormexFunctions:InvokeServer(Formex.Function.BuildWall, wall, action, selection)
 end
 
-function FormexClient.BuildFloor(floor: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction): Formex.FloorData | {Formex.FloorData}
-    return FormexFunctions:InvokeServer(Formex.Function.BuildFloor, floor, action)
+function FormexClient.BuildFloor(floor: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?): Formex.FloorData | {Formex.FloorData}
+    return FormexFunctions:InvokeServer(Formex.Function.BuildFloor, floor, action, selection)
 end
 
-function FormexClient.BuildObject(wall: Formex.ObjectData, action: Formex.BuildAction): Formex.ObjectData
-    return FormexFunctions:InvokeServer(Formex.Function.BuildObject, wall, action)
+function FormexClient.BuildObject(wall: Formex.ObjectData, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?): Formex.ObjectData
+    return FormexFunctions:InvokeServer(Formex.Function.BuildObject, wall, action, selection)
 end
 
 function FormexClient.CanUndo(): boolean
@@ -942,20 +942,20 @@ function FormexClient.CanRedo(): boolean
     return FormexFunctions:InvokeServer(Formex.Function.CanRedo)
 end
 
-function FormexClient.Undo(): (boolean, string?)
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.Undo)
+function FormexClient.Undo(selection: Formex.SelectionSnapshot?): (boolean, string?, Formex.SelectionSnapshot?)
+    local result, message, undoSelection = FormexFunctions:InvokeServer(Formex.Function.Undo, selection)
     if result == false then
         warn("Undo failed:", message)
     end
-    return result, message
+    return result, message, undoSelection
 end
 
-function FormexClient.Redo(): (boolean, string?)
-    local result, message = FormexFunctions:InvokeServer(Formex.Function.Redo)
+function FormexClient.Redo(selection: Formex.SelectionSnapshot?): (boolean, string?, Formex.SelectionSnapshot?)
+    local result, message, redoSelection = FormexFunctions:InvokeServer(Formex.Function.Redo, selection)
     if result == false then
         warn("Redo failed:", message)
     end
-    return result, message
+    return result, message, redoSelection
 end
 
 

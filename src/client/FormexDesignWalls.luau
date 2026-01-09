@@ -63,6 +63,7 @@ local getCurrentLevel: () -> number
 local getViewSettings: () -> any
 local getSelectionType: () -> string
 local getSelectionPart: () -> Instance?
+local getSelectionSnapshot: () -> any?
 local getLastInputInfo: () -> any?
 local getSnappedPoint: (BasePart, Vector3) -> Vector2int16
 local snapWallEndPoint: (Vector2 | Vector2int16, Vector2) -> Vector2int16
@@ -128,6 +129,7 @@ function Walls.Init()
 	getViewSettings = ctx.GetViewSettings
 	getSelectionType = ctx.GetSelectionType
 	getSelectionPart = ctx.GetSelectionPart
+	getSelectionSnapshot = ctx.GetSelectionSnapshot
 	getLastInputInfo = ctx.GetLastInputInfo
 	getSnappedPoint = ctx.GetSnappedPoint
 	snapWallEndPoint = ctx.SnapWallEndPoint
@@ -305,7 +307,7 @@ local function isZeroLength(startPoint: Vector2int16, endPoint: Vector2int16): b
 end
 
 local function safeBuildWall(wallData: any, action: any): (boolean, any)
-	local ok, result = pcall(FormexClient.BuildWall, wallData, action)
+	local ok, result = pcall(FormexClient.BuildWall, wallData, action, getSelectionSnapshot())
 	if not ok then
 		warn("FormexClient.BuildWall failed:", result)
 		return false, nil
@@ -507,7 +509,7 @@ local function applyWallAppearance(plotInfo: any, wallModel: Model, overrides: {
 	Formex.Walls.Edit(updated, plotInfo.PlotPart)
 	local serverData = table.clone(updated)
 	serverData.Part = nil
-	FormexClient.BuildWall(serverData, Formex.BuildAction.Edit)
+	FormexClient.BuildWall(serverData, Formex.BuildAction.Edit, getSelectionSnapshot())
 end
 
 function Walls.ApplySelectedAppearance(overrides: {[string]: any}): boolean
@@ -780,7 +782,7 @@ local function onWallFlip()
 	wallData.End = selectedWall.Start
 	wallData.Part = nil
 
-	FormexClient.BuildWall(wallData, Formex.BuildAction.Edit)
+	FormexClient.BuildWall(wallData, Formex.BuildAction.Edit, getSelectionSnapshot())
 
 	selectedWall.Start = wallData.Start
 	selectedWall.End = wallData.End

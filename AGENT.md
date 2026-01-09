@@ -100,6 +100,20 @@ Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Cont
 
 Always update `FormexSerialization.luau` when changing `Formex.PlotData`, `Formex.LevelData`, `Formex.WallData`, `Formex.FloorData`, `Formex.ObjectData`
 
+## Multiplayer Undo/Redo System
+
+- Each plot maintains an in-memory undo/redo history per player, created on the player’s first edit transaction for that plot.
+- Undo/redo history never persists to saves/serialization and remains in memory even after a player disconnects.
+- `Formex.MaxUndoQueueSize` caps the undo depth (32). When exceeded, drop the oldest undo entry.
+- Any non-undo/redo change clears the redo queue for that player/plot.
+- Undo pushes the current state into the redo queue. Redo pushes the current state into the undo queue.
+- Transactions store the full snapshot of the plot state before a change, plus selection metadata.
+- Selection metadata includes the edit mode and the selected item (type + level + id) at snapshot time.
+- Undo/redo should restore the snapshot and reselect the stored item, switching design modes accordingly.
+- `CanUndo`/`CanRedo` are player attributes (not plot attributes). Update them when the player’s `CurrentPlotId` changes and after any history mutation.
+- `FormexDesign.luau` subscribes to player `CanUndo`/`CanRedo` and updates Design State.
+- `FormexSidebar.client.luau` reads `DesignState.CanUndo`/`CanRedo` to enable/disable undo/redo UI.
+
 ## Changing PlotData Types
 
 When updating `PlotData`, `LevelData`, `WallData`, `FloorData`, or `ObjectData`:

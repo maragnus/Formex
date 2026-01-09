@@ -112,6 +112,8 @@ export type DesignState = {
 	SubMode: DesignSubMode,
 	ActionType: ActionType,
 	SelectionType: SelectionType,
+	CanUndo: boolean,
+	CanRedo: boolean,
 	Wall: {
 		Selected: WallSelectedSettings,
 		Build: WallBuildSettings,
@@ -126,6 +128,8 @@ export type DesignState = {
 export type DesignStateUpdate = {
 	Mode: DesignMode?,
 	SubMode: DesignSubMode?,
+	CanUndo: boolean?,
+	CanRedo: boolean?,
 	Wall: WallStateUpdate?,
 	Floor: FloorStateUpdate?,
 }
@@ -223,6 +227,7 @@ export type Context = {
 	GetViewSettings: () -> any,
 	GetSelectionType: () -> SelectionType,
 	GetSelectionPart: () -> Instance?,
+	GetSelectionSnapshot: () -> any?,
 	GetLastInputInfo: () -> any?,
 	GetSnappedPoint: (BasePart, Vector3) -> Vector2int16,
 	SnapWallEndPoint: (Vector2 | Vector2int16, Vector2) -> Vector2int16,

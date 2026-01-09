@@ -119,6 +119,13 @@ export type ObjectInfo = {
 	Properties: {[string]: any}?,
 }
 
+export type SelectionSnapshot = {
+	Mode: string?,
+	SelectionType: string?,
+	LevelIndex: number?,
+	PartId: number | string?,
+}
+
 export type SegmentBounds = {
 	Index: number,
 	Row: number,
@@ -149,6 +156,7 @@ Formex.Serialization = {} :: {
 Formex.GridSize = 2 -- studs
 Formex.LayoutGridSize = 4 -- studs
 Formex.MaxSaveSlots = 3
+Formex.MaxUndoQueueSize = 32
 Formex.ProximityBorder = 25 -- studs
 Formex.InterfloorHeight = 2  -- studs (thickness of floor on upper levels)
 Formex.FoundationHeight = 8 -- studs (thickness of foundation floor)

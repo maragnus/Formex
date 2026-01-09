@@ -494,6 +494,12 @@ Players.PlayerAdded:Connect(function(player)
     if player:GetAttribute("CurrentPlotId") == nil then
         player:SetAttribute("CurrentPlotId", 0)
     end
+    if player:GetAttribute("CanUndo") == nil then
+        player:SetAttribute("CanUndo", false)
+    end
+    if player:GetAttribute("CanRedo") == nil then
+        player:SetAttribute("CanRedo", false)
+    end
 end)
 
 -- TODO every minute try and save all plots in saveQueue

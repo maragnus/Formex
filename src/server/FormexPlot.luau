@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 
 local Formex = require(script.Parent:FindFirstChild("FormexServer"))
 local FormexSystem = require(script.Parent:FindFirstChild("FormexSystem"))
+local FormexBuild = require(script.Parent:FindFirstChild("FormexBuild"))
 
 local FormexPlot = {}
 
@@ -182,22 +183,28 @@ RunService.Heartbeat:Connect(function(deltaTime)
         local currentPlotId = player:GetAttribute("CurrentPlotId") or 0
         local playerPosition = player.Character.HumanoidRootPart.Position
 
+        local nextPlotId = currentPlotId
         if currentPlotId == 0 then
             -- Identify nearest plot
             for _, plotPart in pairs(FormexSystem.Plots) do
                 local near = Formex.Plot.IsPointNear(plotPart.Position, playerPosition, proximityBorder)
                 if not near then continue end
 
-                FormexSystem.SetPlayerCurrentPlot(player, plotPart:GetAttribute("PlotId") or 0)
+                nextPlotId = plotPart:GetAttribute("PlotId") or 0
                 break
             end
         else
             -- Confirm still near current plot
             local plotPart = FormexSystem.Plots[currentPlotId]
-            local near = Formex.Plot.IsPointNear(plotPart.Position, playerPosition, proximityBorder * 1.1)
+            local near = plotPart and Formex.Plot.IsPointNear(plotPart.Position, playerPosition, proximityBorder * 1.1)
             if not near then
-                FormexSystem.SetPlayerCurrentPlot(player, 0)
+                nextPlotId = 0
             end
+        end
+
+        if nextPlotId ~= currentPlotId then
+            FormexSystem.SetPlayerCurrentPlot(player, nextPlotId)
+            FormexBuild.UpdatePlayerUndoRedoAttributes(player, nextPlotId)
         end
     end
 end)

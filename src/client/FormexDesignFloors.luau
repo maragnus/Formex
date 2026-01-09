@@ -68,6 +68,7 @@ local getDesignMode: () -> string
 local getCurrentLevel: () -> number
 local getSelectionType: () -> string
 local getSelectionPart: () -> Instance?
+local getSelectionSnapshot: () -> any?
 local getFloorMaterialId: () -> number
 local getCeilingMaterialId: () -> number
 local getFloorRaiseHeight: () -> number
@@ -119,6 +120,7 @@ function Floors.Init()
 	getCurrentLevel = ctx.GetCurrentLevel
 	getSelectionType = ctx.GetSelectionType
 	getSelectionPart = ctx.GetSelectionPart
+	getSelectionSnapshot = ctx.GetSelectionSnapshot
 	getFloorMaterialId = ctx.GetFloorMaterialId
 	getCeilingMaterialId = ctx.GetCeilingMaterialId
 	getFloorRaiseHeight = ctx.GetFloorRaiseHeight
@@ -304,7 +306,7 @@ function Floors.ApplyPaintToTarget(target: Instance): boolean
 		Model = model,
 	}
 
-	FormexClient.BuildFloor(updated, Formex.BuildAction.Edit)
+	FormexClient.BuildFloor(updated, Formex.BuildAction.Edit, getSelectionSnapshot())
 	return true
 end
 
@@ -338,7 +340,7 @@ function Floors.ApplySelectedAppearance(overrides: {[string]: any}): boolean
 		Model = model,
 	}
 
-	FormexClient.BuildFloor(updated, Formex.BuildAction.Edit)
+	FormexClient.BuildFloor(updated, Formex.BuildAction.Edit, getSelectionSnapshot())
 	return true
 end
 
@@ -581,7 +583,7 @@ local function finalizeMove(plotInfo: any)
 	end
 
 	if #updates > 0 then
-		FormexClient.BuildFloor(updates, Formex.BuildAction.Edit)
+		FormexClient.BuildFloor(updates, Formex.BuildAction.Edit, getSelectionSnapshot())
 	end
 
 	movePreviewPoints = nil
@@ -683,7 +685,7 @@ local function handlePointMove(plotInfo: any, input: any)
 end
 
 local function createFloorFromTile(tile: Vector2int16, floorData: Formex.FloorData?)
-	FormexClient.BuildFloor(floorData or buildFloorDataFromTile(tile), Formex.BuildAction.Add)
+	FormexClient.BuildFloor(floorData or buildFloorDataFromTile(tile), Formex.BuildAction.Add, getSelectionSnapshot())
 end
 
 local function updateFloorGhost(plotInfo: any, tile: Vector2int16): (boolean, Formex.FloorData)
@@ -745,7 +747,7 @@ local function onFloorHandleClicked(info: any)
 			RaiseHeight = floorData.RaiseHeight,
 			FloorMaterial = floorData.FloorMaterial,
 			CeilingMaterial = floorData.CeilingMaterial,
-		}, Formex.BuildAction.Delete)
+		}, Formex.BuildAction.Delete, getSelectionSnapshot())
 		clearSelection()
 		return
 	end

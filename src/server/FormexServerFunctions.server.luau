@@ -40,14 +40,14 @@ local remoteFunctions = {
     [Formex.Function.UnlockSegment] = function(player, segmentIndex)
         return FormexPlot.UnlockSegment(player, segmentIndex)
     end,
-    [Formex.Function.BuildWall] = function(player, wallData, action)
-        return FormexBuild.BuildWall(player, wallData, action)
+    [Formex.Function.BuildWall] = function(player, wallData, action, selection)
+        return FormexBuild.BuildWall(player, wallData, action, selection)
     end,
-    [Formex.Function.BuildFloor] = function(player, floorData, action)
-        return FormexBuild.BuildFloor(player, floorData, action)
+    [Formex.Function.BuildFloor] = function(player, floorData, action, selection)
+        return FormexBuild.BuildFloor(player, floorData, action, selection)
     end,
-    [Formex.Function.BuildObject] = function(player, objectData, action)
-        return FormexBuild.BuildObject(player, objectData, action)
+    [Formex.Function.BuildObject] = function(player, objectData, action, selection)
+        return FormexBuild.BuildObject(player, objectData, action, selection)
     end,
     [Formex.Function.CanUndo] = function(player)
         return FormexBuild.CanUndo(player)
@@ -55,11 +55,11 @@ local remoteFunctions = {
     [Formex.Function.CanRedo] = function(player)
         return FormexBuild.CanRedo(player)
     end,
-    [Formex.Function.Undo] = function(player)
-        return FormexBuild.Undo(player)
+    [Formex.Function.Undo] = function(player, selection)
+        return FormexBuild.Undo(player, selection)
     end,
-    [Formex.Function.Redo] = function(player)
-        return FormexBuild.Redo(player)
+    [Formex.Function.Redo] = function(player, selection)
+        return FormexBuild.Redo(player, selection)
     end,
 }
 

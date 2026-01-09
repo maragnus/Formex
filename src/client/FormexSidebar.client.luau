@@ -1167,8 +1167,8 @@ local function refreshUI()
     setIconButtonActive(ui.SubModeButtons.Paint, designSubMode == FormexDesign.DesignSubMode.Paint)
     setIconButtonActive(ui.SubModeButtons.Dropper, designSubMode == FormexDesign.DesignSubMode.Dropper)
 
-    local canUndo = plot.CanUndo == true
-    local canRedo = plot.CanRedo == true
+    local canUndo = designState.CanUndo == true
+    local canRedo = designState.CanRedo == true
     setIconButtonEnabled(ui.UndoButton, canUndo)
     setIconButtonEnabled(ui.RedoButton, canRedo)
 

@@ -32,27 +32,73 @@ local function getNextId(entries: {[number]: any}): number
 	return maxId + 1
 end
 
-local undoStacks = {} :: {[number]: {Formex.LevelArray}}
-local redoStacks = {} :: {[number]: {Formex.LevelArray}}
+type HistoryTransaction = {
+	Levels: Formex.LevelArray,
+	Selection: Formex.SelectionSnapshot?,
+}
 
-local function getHistory(plotId: number): ({Formex.LevelArray}, {Formex.LevelArray})
-	local undo = undoStacks[plotId]
-	if not undo then
-		undo = {}
-		undoStacks[plotId] = undo
+type HistoryState = {
+	Undo: {HistoryTransaction},
+	Redo: {HistoryTransaction},
+}
+
+local historyByPlot = {} :: {[number]: {[number]: HistoryState}}
+
+local function getHistory(plotId: number, userId: number): HistoryState
+	local plotHistory = historyByPlot[plotId]
+	if not plotHistory then
+		plotHistory = {}
+		historyByPlot[plotId] = plotHistory
 	end
-	local redo = redoStacks[plotId]
-	if not redo then
-		redo = {}
-		redoStacks[plotId] = redo
+
+	local history = plotHistory[userId]
+	if not history then
+		history = {
+			Undo = {},
+			Redo = {},
+		}
+		plotHistory[userId] = history
 	end
-	return undo, redo
+
+	return history
 end
 
-local function pushUndo(plotId: number, snapshot: Formex.LevelArray)
-	local undo, redo = getHistory(plotId)
-	table.insert(undo, snapshot)
-	table.clear(redo)
+local function getHistoryIfExists(plotId: number, userId: number): HistoryState?
+	local plotHistory = historyByPlot[plotId]
+	if not plotHistory then
+		return nil
+	end
+	return plotHistory[userId]
+end
+
+local function pushUndo(plotId: number, userId: number, snapshot: Formex.LevelArray, selection: Formex.SelectionSnapshot?)
+	local history = getHistory(plotId, userId)
+	table.insert(history.Undo, {
+		Levels = snapshot,
+		Selection = selection,
+	})
+	if #history.Undo > Formex.MaxUndoQueueSize then
+		table.remove(history.Undo, 1)
+	end
+	table.clear(history.Redo)
+end
+
+local function updatePlayerUndoRedoAttributes(player: Player, plotId: number?)
+	if not player then
+		return
+	end
+
+	if not plotId or plotId == 0 then
+		player:SetAttribute("CanUndo", false)
+		player:SetAttribute("CanRedo", false)
+		return
+	end
+
+	local history = getHistoryIfExists(plotId, player.UserId)
+	local canUndo = history ~= nil and #history.Undo > 0
+	local canRedo = history ~= nil and #history.Redo > 0
+	player:SetAttribute("CanUndo", canUndo)
+	player:SetAttribute("CanRedo", canRedo)
 end
 
 local function normalizeWallList(wallData: Formex.WallData | {Formex.WallData}): ({Formex.WallData}, boolean)
@@ -109,33 +155,29 @@ local function collectWallLevels(walls: {Formex.WallData}): {number}
 	return levels
 end
 
-local function cloneLevelForSnapshot(snapshot: Formex.LevelArray, levels: Formex.LevelArray, levelIndex: number, partType: Formex.PartType)
+local function cloneLevelForSnapshot(snapshot: Formex.LevelArray, levels: Formex.LevelArray, levelIndex: number)
 	local levelData = levels[levelIndex]
 	if not levelData then
 		return
 	end
 
 	local levelClone = table.clone(levelData)
-	if partType == Formex.PartType.Wall then
-		levelClone.Walls = table.clone(levelData.Walls)
-	elseif partType == Formex.PartType.Floor then
-		levelClone.Floors = table.clone(levelData.Floors)
-	elseif partType == Formex.PartType.Object then
-		levelClone.Objects = table.clone(levelData.Objects)
-	end
+	levelClone.Walls = table.clone(levelData.Walls)
+	levelClone.Floors = table.clone(levelData.Floors)
+	levelClone.Objects = table.clone(levelData.Objects)
 	snapshot[levelIndex] = levelClone
 end
 
-local function createSnapshot(levels: Formex.LevelArray, levelIndex: number, partType: Formex.PartType): Formex.LevelArray
+local function createSnapshot(levels: Formex.LevelArray, levelIndex: number): Formex.LevelArray
 	local snapshot = table.clone(levels)
-	cloneLevelForSnapshot(snapshot, levels, levelIndex, partType)
+	cloneLevelForSnapshot(snapshot, levels, levelIndex)
 	return snapshot
 end
 
-local function createSnapshotForLevels(levels: Formex.LevelArray, levelIndices: {number}, partType: Formex.PartType): Formex.LevelArray
+local function createSnapshotForLevels(levels: Formex.LevelArray, levelIndices: {number}): Formex.LevelArray
 	local snapshot = table.clone(levels)
 	for _, levelIndex in ipairs(levelIndices) do
-		cloneLevelForSnapshot(snapshot, levels, levelIndex, partType)
+		cloneLevelForSnapshot(snapshot, levels, levelIndex)
 	end
 	return snapshot
 end
@@ -233,7 +275,7 @@ local function resolveSideColors(entryTop: Color3?, entryBottom: Color3?, existi
 	return bottom, top
 end
 
-function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction)
+function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?)
 	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
 	if not plotData then error("No current plot") end
 	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
@@ -244,7 +286,7 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 	plotData.Levels = plotData.Levels or {}
 	local wallList, isBatch = normalizeWallList(wallData)
 	local levelsTouched = collectWallLevels(wallList)
-	local snapshot = createSnapshotForLevels(plotData.Levels, levelsTouched, Formex.PartType.Wall)
+	local snapshot = createSnapshotForLevels(plotData.Levels, levelsTouched)
 
 	local updatedWalls = {} :: {Formex.WallData}
 	local returnWalls = {} :: {Formex.WallData}
@@ -496,7 +538,8 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 		end
 	end
 
-	pushUndo(plotData.PlotId, snapshot)
+	pushUndo(plotData.PlotId, player.UserId, snapshot, selection)
+	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
 	FormexSystem.QueueSave(plotData.PlotId)
 
 	if action == Formex.BuildAction.Delete then
@@ -509,7 +552,7 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 	return returnWalls[1]
 end
 
-function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction)
+function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?)
 	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
 	if not plotData then error("No current plot") end
 	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
@@ -520,7 +563,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 	plotData.Levels = plotData.Levels or {}
 	local floorList, isBatch = normalizeFloorList(floorData)
 	local levelsTouched = collectFloorLevels(floorList)
-	local snapshot = createSnapshotForLevels(plotData.Levels, levelsTouched, Formex.PartType.Floor)
+	local snapshot = createSnapshotForLevels(plotData.Levels, levelsTouched)
 
 	local updatedFloors = {} :: {Formex.FloorData}
 	local returnFloors = {} :: {Formex.FloorData}
@@ -691,7 +734,8 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 		end
 	end
 
-	pushUndo(plotData.PlotId, snapshot)
+	pushUndo(plotData.PlotId, player.UserId, snapshot, selection)
+	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
 	FormexSystem.QueueSave(plotData.PlotId)
 
 	if action == Formex.BuildAction.Delete then
@@ -704,7 +748,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 	return returnFloors[1]
 end
 
-function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, action: Formex.BuildAction)
+function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?)
     local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
     if permission ~= Formex.Permission.Manager then error("Access denied") end
     
@@ -720,8 +764,8 @@ function FormexBuild.CanUndo(player: Player): boolean
 		error("Access denied")
 	end
 
-	local undo = undoStacks[plotData.PlotId]
-	return undo ~= nil and #undo > 0
+	local history = getHistoryIfExists(plotData.PlotId, player.UserId)
+	return history ~= nil and #history.Undo > 0
 end
 
 function FormexBuild.CanRedo(player: Player): boolean
@@ -731,11 +775,11 @@ function FormexBuild.CanRedo(player: Player): boolean
 		error("Access denied")
 	end
 
-	local redo = redoStacks[plotData.PlotId]
-	return redo ~= nil and #redo > 0
+	local history = getHistoryIfExists(plotData.PlotId, player.UserId)
+	return history ~= nil and #history.Redo > 0
 end
 
-function FormexBuild.Undo(player: Player): (boolean, string?)
+function FormexBuild.Undo(player: Player, selection: Formex.SelectionSnapshot?): (boolean, string?, Formex.SelectionSnapshot?)
 	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
 	if not plotData then error("No current plot") end
 	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
@@ -743,22 +787,26 @@ function FormexBuild.Undo(player: Player): (boolean, string?)
 	end
 
 	plotData.Levels = plotData.Levels or {}
-	local undo, redo = getHistory(plotData.PlotId)
-	if #undo == 0 then
+	local history = getHistoryIfExists(plotData.PlotId, player.UserId)
+	if not history or #history.Undo == 0 then
 		return false, "Nothing to undo"
 	end
 
-	local snapshot = undo[#undo]
-	undo[#undo] = nil
-	table.insert(redo, plotData.Levels)
-	plotData.Levels = snapshot
+	local transaction = history.Undo[#history.Undo]
+	history.Undo[#history.Undo] = nil
+	table.insert(history.Redo, {
+		Levels = plotData.Levels,
+		Selection = selection,
+	})
+	plotData.Levels = transaction.Levels
 
 	FormexSystem.RenderPlot(plotData.PlotId)
 	FormexSystem.QueueSave(plotData.PlotId)
-	return true
+	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
+	return true, nil, transaction.Selection
 end
 
-function FormexBuild.Redo(player: Player): (boolean, string?)
+function FormexBuild.Redo(player: Player, selection: Formex.SelectionSnapshot?): (boolean, string?, Formex.SelectionSnapshot?)
 	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
 	if not plotData then error("No current plot") end
 	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
@@ -766,19 +814,30 @@ function FormexBuild.Redo(player: Player): (boolean, string?)
 	end
 
 	plotData.Levels = plotData.Levels or {}
-	local undo, redo = getHistory(plotData.PlotId)
-	if #redo == 0 then
+	local history = getHistoryIfExists(plotData.PlotId, player.UserId)
+	if not history or #history.Redo == 0 then
 		return false, "Nothing to redo"
 	end
 
-	local snapshot = redo[#redo]
-	redo[#redo] = nil
-	table.insert(undo, plotData.Levels)
-	plotData.Levels = snapshot
+	local transaction = history.Redo[#history.Redo]
+	history.Redo[#history.Redo] = nil
+	table.insert(history.Undo, {
+		Levels = plotData.Levels,
+		Selection = selection,
+	})
+	if #history.Undo > Formex.MaxUndoQueueSize then
+		table.remove(history.Undo, 1)
+	end
+	plotData.Levels = transaction.Levels
 
 	FormexSystem.RenderPlot(plotData.PlotId)
 	FormexSystem.QueueSave(plotData.PlotId)
-	return true
+	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
+	return true, nil, transaction.Selection
+end
+
+function FormexBuild.UpdatePlayerUndoRedoAttributes(player: Player, plotId: number?)
+	updatePlayerUndoRedoAttributes(player, plotId)
 end
 
 return FormexBuild
