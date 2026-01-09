@@ -621,6 +621,15 @@ local function buildSidebar()
 		end),
 	}
 
+	local floorModeButtons = {
+		Manual = createIconButton(subModeRow, "FloorManual", Formex.Icons.ModeManual, function()
+			FormexDesign.UpdateDesignState({ Floor = { Mode = FormexDesign.FloorMode.Manual } })
+		end),
+		Autofill = createIconButton(subModeRow, "FloorAutofill", Formex.Icons.ModeAutomatic, function()
+			FormexDesign.UpdateDesignState({ Floor = { Mode = FormexDesign.FloorMode.Autofill } })
+		end),
+	}
+
     local undoRow = Instance.new("Frame", designControls)
     undoRow.Name = "UndoRedo"
     undoRow.BackgroundTransparency = 1
@@ -1055,6 +1064,7 @@ local function buildSidebar()
     ui.DesignModeButtons = designModeButtons
     ui.SubModeRow = subModeRow
     ui.SubModeButtons = subModeButtons
+    ui.FloorModeButtons = floorModeButtons
     ui.UndoButton = undoButton
     ui.RedoButton = redoButton
     ui.DesignContentTitle = contentTitle
@@ -1166,6 +1176,14 @@ local function refreshUI()
     setIconButtonActive(ui.SubModeButtons.Normal, designSubMode == FormexDesign.DesignSubMode.Normal)
     setIconButtonActive(ui.SubModeButtons.Paint, designSubMode == FormexDesign.DesignSubMode.Paint)
     setIconButtonActive(ui.SubModeButtons.Dropper, designSubMode == FormexDesign.DesignSubMode.Dropper)
+    if ui.FloorModeButtons then
+        local floorMode = designState.Floor.Mode
+        local showFloorModes = designMode == FormexDesign.DesignMode.Floor and designSubMode == FormexDesign.DesignSubMode.Normal
+        ui.FloorModeButtons.Manual.Button.Visible = showFloorModes
+        ui.FloorModeButtons.Autofill.Button.Visible = showFloorModes
+        setIconButtonActive(ui.FloorModeButtons.Manual, floorMode == FormexDesign.FloorMode.Manual)
+        setIconButtonActive(ui.FloorModeButtons.Autofill, floorMode == FormexDesign.FloorMode.Autofill)
+    end
 
     local canUndo = designState.CanUndo == true
     local canRedo = designState.CanRedo == true

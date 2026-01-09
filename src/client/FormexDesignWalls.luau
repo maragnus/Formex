@@ -506,7 +506,7 @@ local function applyWallAppearance(plotInfo: any, wallModel: Model, overrides: {
 		Part = wallModel,
 	}
 
-	Formex.Walls.Edit(updated, plotInfo.PlotPart)
+	Formex.Walls.Edit(updated, plotInfo.PlotPart, false)
 	local serverData = table.clone(updated)
 	serverData.Part = nil
 	FormexClient.BuildWall(serverData, Formex.BuildAction.Edit, getSelectionSnapshot())
@@ -604,7 +604,7 @@ local function applyWallTransform(plotPart: BasePart, wall: WallInfo)
 	wallData.Start = wall.Start
 	wallData.End = wall.End
 	wallData.Part = wall.Part
-	Formex.Walls.Edit(wallData, plotPart)
+	Formex.Walls.Edit(wallData, plotPart, false)
 end
 
 local function isPointOnSegment(point: Vector2int16, startPoint: Vector2int16, endPoint: Vector2int16): boolean

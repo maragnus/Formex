@@ -18,6 +18,7 @@ export type DesignMode = "Play" | "Design" | "Select" | "Expand" | "Floor" | "Wa
 export type DesignSubMode = "Normal" | "Paint" | "Dropper"
 export type ActionType = "Select" | "Start" | "Step" | "Rotate" | "Move"
 export type SelectionType = "None" | "Wall" | "Floor" | "Object"
+export type FloorMode = "Manual" | "Autofill"
 
 export type WallPaintSettings = {
 	Height: number?,
@@ -98,6 +99,7 @@ export type WallStateUpdate = {
 }
 
 export type FloorStateUpdate = {
+	Mode: FloorMode?,
 	RaiseHeight: number?,
 	FloorMaterial: number?,
 	CeilingMaterial: number?,
@@ -120,6 +122,7 @@ export type DesignState = {
 		Paint: WallPaintSettings,
 	},
 	Floor: {
+		Mode: FloorMode,
 		Selected: FloorSelectedSettings,
 		Paint: FloorPaintSettings,
 	},
@@ -144,6 +147,11 @@ export type HandleLocationEnum = {
 	Top: HandleLocation,
 	Middle: HandleLocation,
 	Bottom: HandleLocation,
+}
+
+export type FloorModeEnum = {
+	Manual: FloorMode,
+	Autofill: FloorMode,
 }
 
 export type DesignModeEnum = {
@@ -180,6 +188,7 @@ export type SelectionTypeEnum = {
 export type Enums = {
 	WallMode: WallModeEnum,
 	HandleLocation: HandleLocationEnum,
+	FloorMode: FloorModeEnum,
 	DesignMode: DesignModeEnum,
 	DesignSubMode: DesignSubModeEnum,
 	ActionType: ActionTypeEnum,
@@ -244,6 +253,7 @@ export type Context = {
 	GetGhostType: () -> any?,
 	GetGhostInstance: () -> Instance?,
 	GetGhostFloorData: () -> any?,
+	GetFloorMode: () -> FloorMode,
 	GetFloorMaterialId: () -> number,
 	GetCeilingMaterialId: () -> number,
 	GetFloorRaiseHeight: () -> number,
@@ -271,6 +281,10 @@ Context.Enums = table.freeze({
 		Top = "Top",
 		Middle = "Middle",
 		Bottom = "Bottom",
+	}),
+	FloorMode = table.freeze({
+		Manual = "Manual",
+		Autofill = "Autofill",
 	}),
 	DesignMode = table.freeze({
 		Play = "Play",

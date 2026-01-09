@@ -24,6 +24,7 @@ local Walls, Floors, Objects
 
 FormexDesign.WallMode = Enums.WallMode
 FormexDesign.HandleLocation = Enums.HandleLocation
+FormexDesign.FloorMode = Enums.FloorMode
 FormexDesign.DesignMode = Enums.DesignMode
 FormexDesign.DesignSubMode = Enums.DesignSubMode
 FormexDesign.ActionType = Enums.ActionType
@@ -31,6 +32,7 @@ FormexDesign.SelectionType = Enums.SelectionType
 
 export type WallMode = FormexDesignContext.WallMode
 export type HandleLocation = FormexDesignContext.HandleLocation
+export type FloorMode = FormexDesignContext.FloorMode
 
 type ViewSettings = {
 	HandleLocation: HandleLocation,
@@ -110,6 +112,7 @@ local ceilingColor = Color3.new(1, 1, 1)
 local foundationMaterialId = Formex.DefaultFoundationMaterial
 local foundationColor = Color3.new(1, 1, 1)
 local floorRaiseHeight: number = 0
+local floorMode: FloorMode = FormexDesign.FloorMode.Manual
 local actionHeld = false
 local altHeld, alt1Held, alt2Held, alt3Held = false, false, false, false
 local selectionType: SelectionType = FormexDesign.SelectionType.None
@@ -411,10 +414,11 @@ function FormexDesign.GetDesignState(): DesignState
 			Build = cloneWallBuildSettings(wallBuildSettings),
 			Paint = cloneWallPaintSettings(wallPaintSettings),
 		},
-		Floor = {
-			Selected = cloneFloorSelectedSettings(floorSelectedSettings),
-			Paint = getFloorPaintSettings(),
-		},
+	Floor = {
+		Mode = floorMode,
+		Selected = cloneFloorSelectedSettings(floorSelectedSettings),
+		Paint = getFloorPaintSettings(),
+	},
 	} :: DesignState
 end
 
@@ -1972,6 +1976,15 @@ local function applyFloorStateUpdate(update: FloorStateUpdate?)
 		and selectionType == FormexDesign.SelectionType.Floor
 		and floorSelectedSettings.HasSelection
 	local updatedSelection = false
+	local modeChanged = false
+
+	if update.Mode ~= nil and update.Mode ~= floorMode then
+		if actionType ~= FormexDesign.ActionType.Select then
+			FormexDesign.CancelAction()
+		end
+		floorMode = update.Mode
+		modeChanged = true
+	end
 
 	if update.RaiseHeight ~= nil then
 		local clamped = clampFloorRaiseHeight(update.RaiseHeight)
@@ -2011,6 +2024,9 @@ local function applyFloorStateUpdate(update: FloorStateUpdate?)
 
 	if applyToSelection and updatedSelection then
 		updateSelectionSettingsFromSelection()
+	end
+	if modeChanged then
+		notifyDesignModeChange()
 	end
 end
 
@@ -2406,6 +2422,9 @@ FormexDesignContext.Init({
 	GetGhostFloorData = function()
 		return ghostFloorData
 	end,
+	GetFloorMode = function()
+		return floorMode
+	end,
 	GetFloorMaterialId = function()
 		return floorMaterialId
 	end,
@@ -2512,6 +2531,12 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		if designMode == FormexDesign.DesignMode.Floor and Floors then
+			local info = getInputInfo(true)
+			if info and Floors.HandleSecondaryClick(info) then
+				return
+			end
+		end
 		FormexDesign.CancelAction()
 		return
 	end

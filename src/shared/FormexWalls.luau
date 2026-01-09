@@ -14,10 +14,14 @@ Formex.Walls.FrontPartName = FRONT_PART_NAME
 local FRONT_TOP_NAME = "FrontTop"
 local BACK_TOP_NAME = "BackTop"
 
-local function ensureChildPart(parent: Instance, name: string): BasePart
+local function ensureChildPart(parent: Instance, name: string, allowCreate: boolean): BasePart?
 	local existing = parent:FindFirstChild(name)
 	if existing and existing:IsA("BasePart") then
 		return existing
+	end
+
+	if not allowCreate then
+		return nil
 	end
 
 	local part = Instance.new("Part")
@@ -26,12 +30,12 @@ local function ensureChildPart(parent: Instance, name: string): BasePart
 	return part
 end
 
-local function ensureFrontPart(model: Model): BasePart
-	return ensureChildPart(model, FRONT_PART_NAME)
+local function ensureFrontPart(model: Model, allowCreate: boolean): BasePart?
+	return ensureChildPart(model, FRONT_PART_NAME, allowCreate)
 end
 
-local function ensureBackPart(model: Model): BasePart
-	return ensureChildPart(model, BACK_PART_NAME)
+local function ensureBackPart(model: Model, allowCreate: boolean): BasePart?
+	return ensureChildPart(model, BACK_PART_NAME, allowCreate)
 end
 
 local function clearTextures(part: Instance)
@@ -180,7 +184,7 @@ end
 function Formex.Walls.Create(wall: Formex.WallData, plotPart: BasePart?): Model
 	local model = Instance.new("Model")
 	model.Name = tostring(wall.WallId)
-	local frontPart = ensureFrontPart(model)
+	local frontPart = ensureFrontPart(model, true)
 	frontPart.Anchored = true
 	frontPart.CollisionGroup = Formex.CollisionGroup.Structure
 	model.PrimaryPart = frontPart
@@ -189,13 +193,17 @@ function Formex.Walls.Create(wall: Formex.WallData, plotPart: BasePart?): Model
 	return model
 end
 
-function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
+function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?, allowCreateParts: boolean?)
 	local model = wall.Part
 	if not model or not plotPart then return end
 	model.Name = tostring(wall.WallId)
-	local frontPart = ensureFrontPart(model)
+	local allowCreate = allowCreateParts ~= false
+	local frontPart = ensureFrontPart(model, allowCreate)
+	local backPart = ensureBackPart(model, allowCreate)
+	if not frontPart or not backPart then
+		return
+	end
 	frontPart.Name = FRONT_PART_NAME
-	local backPart = ensureBackPart(model)
 	model.PrimaryPart = frontPart
 	wall.FrontPart = frontPart
 	wall.BackPart = backPart
@@ -276,9 +284,11 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?)
 		local topPart: BasePart? = nil
 		local hasSplit = splitHeight ~= nil and splitHeight > 0
 		if hasSplit then
-			topPart = ensureChildPart(model, topName)
-			clearTextures(topPart)
-		else
+			topPart = ensureChildPart(model, topName, allowCreate)
+			if topPart then
+				clearTextures(topPart)
+			end
+		elseif allowCreate then
 			local existing = model:FindFirstChild(topName)
 			if existing and existing:IsA("BasePart") then
 				existing:Destroy()

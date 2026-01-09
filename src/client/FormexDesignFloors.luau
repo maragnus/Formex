@@ -17,8 +17,10 @@ Exports:
 - HandleUpdate(input): ()
 - HandlePrimaryRelease(input): ()
 - HandlePrimaryClick(input): ()
+- HandleSecondaryClick(input): boolean
 ]]
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
+local ManualFloors = require(script.Parent:WaitForChild("FormexDesignFloorsManual"))
 
 local Floors = {}
 
@@ -76,6 +78,7 @@ local getFloorColor: () -> Color3
 local getCeilingColor: () -> Color3
 local getFoundationMaterialId: () -> number
 local getFoundationColor: () -> Color3
+local getFloorMode: () -> string
 local updateGhostValidity: (boolean) -> ()
 local ensureFloorGhost: (BasePart, number, Vector2int16, any) -> ()
 local clearGhost: () -> ()
@@ -128,6 +131,7 @@ function Floors.Init()
 	getCeilingColor = ctx.GetCeilingColor
 	getFoundationMaterialId = ctx.GetFoundationMaterialId
 	getFoundationColor = ctx.GetFoundationColor
+	getFloorMode = ctx.GetFloorMode
 	updateGhostValidity = ctx.UpdateGhostValidity
 	ensureFloorGhost = ctx.EnsureFloorGhost
 	clearGhost = ctx.ClearGhost
@@ -139,6 +143,8 @@ function Floors.Init()
 	getSelectionInfoFromInstance = ctx.GetSelectionInfoFromInstance
 	notifyDesignModeChange = ctx.NotifyDesignModeChange
 	cancelAction = ctx.CancelAction
+
+	ManualFloors.Init()
 end
 
 local function pointsEqual(a: Vector2int16, b: Vector2int16): boolean
@@ -947,6 +953,11 @@ function Floors.StartFloor()
 		cancelAction()
 	end
 
+	if getFloorMode() == Enums.FloorMode.Manual then
+		ManualFloors.StartFloor()
+		return
+	end
+
 	local plotInfo = FormexClient.CurrentPlot
 	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
 		return
@@ -960,6 +971,12 @@ function Floors.StartFloor()
 end
 
 function Floors.CancelAction()
+	if getFloorMode() == Enums.FloorMode.Manual then
+		if getActionType() == Enums.ActionType.Start or getActionType() == Enums.ActionType.Step then
+			ManualFloors.CancelAction()
+			return
+		end
+	end
 	if getActionType() == Enums.ActionType.Move then
 		if activeHandle and activeHandle.Kind == "Height" and moveRaiseHeightOriginal ~= nil then
 			updateDesignState({
@@ -987,6 +1004,7 @@ function Floors.CancelAction()
 end
 
 function Floors.ClearSelection()
+	ManualFloors.ClearSelection()
 	movePreviewPoints = nil
 	moveOriginalPoints = nil
 	moveSharedPoints = {}
@@ -1001,6 +1019,12 @@ end
 
 function Floors.HandleUpdate(input: any)
 	local actionType = getActionType()
+	if getFloorMode() == Enums.FloorMode.Manual then
+		if actionType == Enums.ActionType.Start or actionType == Enums.ActionType.Step then
+			ManualFloors.HandleUpdate(input)
+			return
+		end
+	end
 	if actionType == Enums.ActionType.Select then
 		lastAltHeld = input.AltHeld
 		updateFloorHandles(input.PlotInfo)
@@ -1043,6 +1067,12 @@ end
 
 function Floors.HandlePrimaryClick(input: any)
 	local actionType = getActionType()
+	if getFloorMode() == Enums.FloorMode.Manual then
+		if actionType == Enums.ActionType.Start or actionType == Enums.ActionType.Step then
+			ManualFloors.HandlePrimaryClick(input)
+			return
+		end
+	end
 	if actionType == Enums.ActionType.Select then
 		local currentSelection = getSelectionPart()
 		local hadSelection = getSelectionType() ~= Enums.SelectionType.None or currentSelection ~= nil
@@ -1073,6 +1103,13 @@ function Floors.HandlePrimaryClick(input: any)
 			finalizeFloorPlacement(input.PlotInfo, input.LayoutTile)
 		end
 	end
+end
+
+function Floors.HandleSecondaryClick(input: any): boolean
+	if getFloorMode() == Enums.FloorMode.Manual then
+		return ManualFloors.HandleSecondaryClick(input)
+	end
+	return false
 end
 
 return Floors

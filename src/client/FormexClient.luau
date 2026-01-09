@@ -279,14 +279,10 @@ local function disconnectConnections(connections: {RBXScriptConnection})
 end
 
 local function subscribeWallModel(plotState: PlotSubscription, levelIndex: number, model: Model)
-    if plotState.Walls[model] then
-        return
-    end
+    if plotState.Walls[model] then return end
 
     local wallId = tonumber(model.Name)
-    if not wallId then
-        return
-    end
+    if not wallId then return end
 
     local levelData = ensureLevelData(plotState.Data, levelIndex, nil)
     local wallData = levelData.Walls[wallId] or {
@@ -344,14 +340,10 @@ local function unsubscribeWallModel(plotState: PlotSubscription, levelIndex: num
 end
 
 local function subscribeFloorModel(plotState: PlotSubscription, levelIndex: number, model: Model)
-    if plotState.Floors[model] then
-        return
-    end
+    if plotState.Floors[model] then return end
 
     local floorId = tonumber(model.Name)
-    if not floorId then
-        return
-    end
+    if not floorId then return end
 
     local levelData = ensureLevelData(plotState.Data, levelIndex, nil)
     local floorData = levelData.Floors[floorId] or {
@@ -369,14 +361,44 @@ local function subscribeFloorModel(plotState: PlotSubscription, levelIndex: numb
     }
     plotState.Floors[model] = subscription
 
+    local function markFloorDebug(key: string, value: any)
+        model:SetAttribute(key, value)
+    end
+
+    local function hasClientMeshes(): boolean
+        return getChildPart(model, "Floor" .. meshClientSuffix) ~= nil
+            or getChildPart(model, "Foundation" .. meshClientSuffix) ~= nil
+            or getChildPart(model, "Ceiling" .. meshClientSuffix) ~= nil
+    end
+
+    local function ensureClientMeshes(reason: string)
+        if hasClientMeshes() then
+            return
+        end
+        if not floorData.Points or #floorData.Points < 3 then
+            markFloorDebug("ClientMeshEnsureLast", "SkippedNoPoints:" .. reason)
+            return
+        end
+        local ensureCount = (model:GetAttribute("ClientMeshEnsureCount") or 0) + 1
+        markFloorDebug("ClientMeshEnsureCount", ensureCount)
+        markFloorDebug("ClientMeshEnsureLast", reason)
+        markFloorDebug("ClientMeshEnsurePointsKey", model:GetAttribute("Points") or "")
+        markFloorDebug("ClientMeshEnsureRaiseHeight", model:GetAttribute("RaiseHeight") or 0)
+        markFloorDebug("ClientMeshEnsureAt", os.clock())
+        Formex.Floors.RenderClientMeshes(model, plotState.PlotPart)
+        refreshFloorParts(floorData, model)
+    end
+
     local function refreshGeometry()
         local pointsKey = model:GetAttribute("Points") or ""
         local raiseHeight = model:GetAttribute("RaiseHeight") or 0
         if pointsKey == subscription.PointsKey and raiseHeight == subscription.RaiseHeight then
+            ensureClientMeshes("GeometryUnchanged")
             return
         end
         subscription.PointsKey = pointsKey
         subscription.RaiseHeight = raiseHeight
+        markFloorDebug("ClientMeshLastGeometryChange", os.clock())
         Formex.Floors.RenderClientMeshes(model, plotState.PlotPart)
         refreshFloorParts(floorData, model)
     end
@@ -391,11 +413,14 @@ local function subscribeFloorModel(plotState: PlotSubscription, levelIndex: numb
     end
 
     refreshData()
+    markFloorDebug("ClientFloorSubscribed", true)
+    markFloorDebug("ClientFloorSubscribedAt", os.clock())
     Formex.Floors.RenderClientMeshes(model, plotState.PlotPart)
     refreshAppearance()
     refreshData()
     subscription.PointsKey = model:GetAttribute("Points") or ""
     subscription.RaiseHeight = model:GetAttribute("RaiseHeight") or 0
+    ensureClientMeshes("InitialSubscribe")
 
     table.insert(subscription.Connections, model.AttributeChanged:Connect(function(attributeName)
         refreshData()
@@ -523,12 +548,6 @@ local function watchModelFolder(plotState: PlotSubscription, levelIndex: number,
         end
     end
 
-    for _, child in ipairs(folder:GetChildren()) do
-        if child:IsA("Model") then
-            addModel(child)
-        end
-    end
-
     local connections = {
         folder.ChildAdded:Connect(function(child)
             if child:IsA("Model") then
@@ -541,6 +560,12 @@ local function watchModelFolder(plotState: PlotSubscription, levelIndex: number,
             end
         end),
     }
+
+    for _, child in ipairs(folder:GetChildren()) do
+        if child:IsA("Model") then
+            addModel(child)
+        end
+    end
 
     return connections
 end
@@ -564,18 +589,10 @@ local function watchLevelPart(plotState: PlotSubscription, levelPart: BasePart)
     plotState.Levels[levelPart] = levelSubscription
 
     local function attachFolder(folder: Instance)
-        if not folder:IsA("Folder") then
-            return
-        end
+        if not folder:IsA("Folder") then return end
 
         local name = folder.Name
-        if name ~= "Walls" and name ~= "Floors" and name ~= "Objects" then
-            return
-        end
-
-        if levelSubscription.Folders[name] then
-            return
-        end
+        if levelSubscription.Folders[name] then return end
 
         levelSubscription.Folders[name] = watchModelFolder(plotState, levelIndex, folder, name)
     end
@@ -605,19 +622,17 @@ local function watchLevelPart(plotState: PlotSubscription, levelPart: BasePart)
         end
     end
 
+    table.insert(levelSubscription.Connections, levelPart.ChildAdded:Connect(attachFolder))
+    table.insert(levelSubscription.Connections, levelPart.ChildRemoved:Connect(detachFolder))
+
     for _, child in ipairs(levelPart:GetChildren()) do
         attachFolder(child)
     end
-
-    table.insert(levelSubscription.Connections, levelPart.ChildAdded:Connect(attachFolder))
-    table.insert(levelSubscription.Connections, levelPart.ChildRemoved:Connect(detachFolder))
 end
 
 local function unwatchLevelPart(plotState: PlotSubscription, levelPart: BasePart)
     local levelSubscription = plotState.Levels[levelPart]
-    if not levelSubscription then
-        return
-    end
+    if not levelSubscription then return end
 
     local levelIndex = tonumber(levelPart.Name) or 0
     for _, child in ipairs(levelPart:GetChildren()) do
@@ -656,12 +671,6 @@ end
 local function watchPlotStructure(plotState: PlotSubscription)
     local plotPart = plotState.PlotPart
 
-    for _, child in ipairs(plotPart:GetChildren()) do
-        if child:IsA("BasePart") then
-            watchLevelPart(plotState, child)
-        end
-    end
-
     table.insert(plotState.Connections, plotPart.ChildAdded:Connect(function(child)
         if child:IsA("BasePart") then
             watchLevelPart(plotState, child)
@@ -673,6 +682,12 @@ local function watchPlotStructure(plotState: PlotSubscription)
             unwatchLevelPart(plotState, child)
         end
     end))
+    
+    for _, child in ipairs(plotPart:GetChildren()) do
+        if child:IsA("BasePart") then
+            watchLevelPart(plotState, child)
+        end
+    end
 end
 
 local function subscribeToPlot(plotPart: Part)
@@ -680,7 +695,7 @@ local function subscribeToPlot(plotPart: Part)
     if existing then
         return existing.Info
     end
-    -- CHECK: Wait for attribute using GetAttributeChangedSignal?
+
     local plotId = plotPart:GetAttribute("PlotId") or 0
 
     local ownerUserId = plotPart:GetAttribute("OwnerUserId") or 0
