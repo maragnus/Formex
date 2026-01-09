@@ -74,7 +74,8 @@ function Handles.CreateHandle(name: string, color: Color3, iconAsset: number | s
         iconAsset = Content.fromUri(iconAsset)
     end
 
-    local part = handles[name] and handles[name].Part
+    local handleInfo = handles[name]
+    local part = handleInfo and handleInfo.Part
     local icon: ImageLabel
     
     if not part or not part.Parent then
@@ -126,10 +127,15 @@ function Handles.CreateHandle(name: string, color: Color3, iconAsset: number | s
             Icon = icon,
             Background = background,
         }
+        handleInfo = handles[name]
     end
 
-    handles[name].OnClick = onClick
-    handles[name].Argument = argument
+    handleInfo.OnClick = onClick
+    handleInfo.Argument = argument
+    handleInfo.Color = color
+    handleInfo.IconAsset = iconAsset
+    handleInfo.Part.Color = color
+    handleInfo.Icon.ImageColor3 = color
 
 	return part
 end

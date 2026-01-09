@@ -630,7 +630,107 @@ local function isPointOnSegment(point: Vector2int16, startPoint: Vector2int16, e
 	return point.X >= minX and point.X <= maxX and point.Y >= minY and point.Y <= maxY
 end
 
-local function splitWallAtPoint(plotInfo: any, wall: WallInfo, splitPoint: Vector2int16): boolean
+local function getGreatestCommonDivisor(a: number, b: number): number
+	a = math.abs(a)
+	b = math.abs(b)
+	while b ~= 0 do
+		local temp = a % b
+		a = b
+		b = temp
+	end
+	return a
+end
+
+local function getGridSplitPointOnLine(startPoint: Vector2int16, endPoint: Vector2int16, grid: number): Vector2int16?
+	local dx = endPoint.X - startPoint.X
+	local dy = endPoint.Y - startPoint.Y
+	local gcdStuds = getGreatestCommonDivisor(dx, dy)
+	if gcdStuds <= 1 then
+		return nil
+	end
+
+	local stepX = dx / gcdStuds
+	local stepY = dy / gcdStuds
+	local midIndex = gcdStuds / 2
+	local bestIndex = nil
+	local bestDistance = math.huge
+
+	for i = 1, gcdStuds - 1 do
+		local x = startPoint.X + stepX * i
+		local y = startPoint.Y + stepY * i
+		if x % grid == 0 and y % grid == 0 then
+			local distance = math.abs(i - midIndex)
+			if distance < bestDistance then
+				bestDistance = distance
+				bestIndex = i
+			end
+		end
+	end
+
+	if not bestIndex then
+		return nil
+	end
+
+	return Vector2int16.new(
+		startPoint.X + stepX * bestIndex,
+		startPoint.Y + stepY * bestIndex
+	)
+end
+
+local function getNearestGridPointToMidpoint(startPoint: Vector2int16, endPoint: Vector2int16, grid: number): Vector2int16
+	local midX = (startPoint.X + endPoint.X) / 2
+	local midY = (startPoint.Y + endPoint.Y) / 2
+	local baseX = math.round(midX / grid) * grid
+	local baseY = math.round(midY / grid) * grid
+
+	local function isEndpoint(point: Vector2int16): boolean
+		return pointsEqual(point, startPoint) or pointsEqual(point, endPoint)
+	end
+
+	local basePoint = Vector2int16.new(baseX, baseY)
+	if not isEndpoint(basePoint) then
+		return basePoint
+	end
+
+	local bestPoint = nil
+	local bestDistance = math.huge
+	for offsetX = -1, 1 do
+		for offsetY = -1, 1 do
+			if offsetX ~= 0 or offsetY ~= 0 then
+				local point = Vector2int16.new(baseX + offsetX * grid, baseY + offsetY * grid)
+				if not isEndpoint(point) then
+					local dist = (point.X - midX) * (point.X - midX) + (point.Y - midY) * (point.Y - midY)
+					if dist < bestDistance then
+						bestDistance = dist
+						bestPoint = point
+					end
+				end
+			end
+		end
+	end
+
+	return bestPoint or basePoint
+end
+
+local function hasWallSplitRoom(startPoint: Vector2int16, endPoint: Vector2int16): boolean
+	local dx = endPoint.X - startPoint.X
+	local dy = endPoint.Y - startPoint.Y
+	local length = math.sqrt(dx * dx + dy * dy)
+	local grid = Formex.LayoutGridSize > 0 and Formex.LayoutGridSize or 1
+	return length + Constants.Epsilon >= grid * 2
+end
+
+local function getWallSplitPoint(startPoint: Vector2int16, endPoint: Vector2int16): Vector2int16
+	local grid = Formex.LayoutGridSize > 0 and Formex.LayoutGridSize or 1
+	local onLine = getGridSplitPointOnLine(startPoint, endPoint, grid)
+	if onLine then
+		return onLine
+	end
+
+	return getNearestGridPointToMidpoint(startPoint, endPoint, grid)
+end
+
+local function splitWallAtPoint(plotInfo: any, wall: WallInfo, splitPoint: Vector2int16): (boolean, Formex.WallData?, Formex.WallData?)
 	if not plotInfo.PlotPart or not wall.Part then
 		return false
 	end
@@ -667,21 +767,21 @@ local function splitWallAtPoint(plotInfo: any, wall: WallInfo, splitPoint: Vecto
 		return false
 	end
 
-	ok = safeBuildWall(wallDataA, Formex.BuildAction.Add)
-	if not ok then
+	local okA, resultA = safeBuildWall(wallDataA, Formex.BuildAction.Add)
+	if not okA then
 		if previewA then previewA:Destroy() end
 		if previewB then previewB:Destroy() end
 		return false
 	end
 
-	ok = safeBuildWall(wallDataB, Formex.BuildAction.Add)
-	if not ok then
+	local okB, resultB = safeBuildWall(wallDataB, Formex.BuildAction.Add)
+	if not okB then
 		if previewA then previewA:Destroy() end
 		if previewB then previewB:Destroy() end
 		return false
 	end
 
-	return true
+	return true, resultA, resultB
 end
 
 local function splitWallsAtPoints(plotInfo: any, level: number, points: {Vector2int16}, ignoreIds: {[number]: boolean})
@@ -792,6 +892,41 @@ local function onWallFlip()
 	notifyDesignModeChange()
 end
 
+local function selectWallByIdAsync(plotInfo: any, levelIndex: number, wallId: number)
+	task.spawn(function()
+		local deadline = time() + 2
+		while time() < deadline do
+			local plotData = plotInfo and plotInfo.PlotData
+			if plotData and plotData.Levels then
+				local levelData = plotData.Levels[levelIndex]
+				if levelData and levelData.Walls then
+					local wallData = levelData.Walls[wallId]
+					local wallPart = wallData and wallData.Part
+					if wallPart and wallPart:IsA("Model") then
+						select(wallPart)
+						return
+					end
+				end
+			end
+			local plotPart = plotInfo and plotInfo.PlotPart
+			if plotPart then
+				local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
+				if levelPart then
+					local wallsFolder = levelPart:FindFirstChild("Walls")
+					if wallsFolder then
+						local wallModel = wallsFolder:FindFirstChild(tostring(wallId))
+						if wallModel and wallModel:IsA("Model") then
+							select(wallModel)
+							return
+						end
+					end
+				end
+			end
+			task.wait(0.05)
+		end
+	end)
+end
+
 local function onWallDivide()
 	local input = getLastInputInfo()
 	if not selectedWall or not input or not input.PlotInfo or not input.PlotInfo.PlotPart then
@@ -800,19 +935,19 @@ local function onWallDivide()
 
 	local startPoint = selectedWall.Start
 	local endPoint = selectedWall.End
-	local midpoint = Vector2.new((startPoint.X + endPoint.X) / 2, (startPoint.Y + endPoint.Y) / 2)
-	local snapped = toSnappedVector2int16(midpoint)
-	if not isPointOnSegment(snapped, startPoint, endPoint) then
+	local selectedLevel = selectedWall.Level
+	if not hasWallSplitRoom(startPoint, endPoint) then
 		return
 	end
+	local splitPoint = getWallSplitPoint(startPoint, endPoint)
 
-	local ok = splitWallAtPoint(input.PlotInfo, {
+	local ok, resultA, resultB = splitWallAtPoint(input.PlotInfo, {
 		WallId = selectedWall.WallId,
 		Level = selectedWall.Level,
 		Start = startPoint,
 		End = endPoint,
 		Part = selectedWall.Part,
-	}, snapped)
+	}, splitPoint)
 
 	if not ok then
 		cancelAction()
@@ -821,6 +956,11 @@ local function onWallDivide()
 
 	clearSelection()
 	notifyDesignModeChange()
+
+	local result = resultA or resultB
+	if result and result.WallId then
+		selectWallByIdAsync(input.PlotInfo, result.Level or selectedLevel, result.WallId)
+	end
 end
 
 local function resetMoveState()
@@ -962,6 +1102,11 @@ local function updateWallHandles(plotInfo: any)
 	}
 	Highlight.UpdateWallEdgePreview(plotInfo, level, startPoint, endPoint, true)
 
+	local canSplit = hasWallSplitRoom(startPoint, endPoint)
+	local splitPoint = getWallSplitPoint(startPoint, endPoint)
+	local isPerfectSplit = isPointOnSegment(splitPoint, startPoint, endPoint)
+	local divideHandleColor = isPerfectSplit and Constants.HandleAddColor or Constants.HandleDeleteColor
+
 	wallHandleStart = Handles.CreateHandle("WallHandleStart", Constants.HandleMoveColor, Formex.Icons.ResizeItem, onWallMove, "Start")
 	wallHandleEnd = Handles.CreateHandle("WallHandleEnd", Constants.HandleMoveColor, Formex.Icons.ResizeItem, onWallMove, "End")
 	wallHandleCenter = Handles.CreateHandle("WallHandleCenter", Constants.HandleMoveColor, Formex.Icons.MoveItem, onWallMove, "Center")
@@ -971,7 +1116,7 @@ local function updateWallHandles(plotInfo: any)
 	wallHandleExtendEnd = Handles.CreateHandle("WallHandleExtendEnd", Constants.HandleAddColor, Formex.Icons.WallExtend, onWallExtendEnd)
 	wallHandleDelete = Handles.CreateHandle("WallHandleDelete", Constants.HandleDeleteColor, Formex.Icons.DeleteItem, onWallDelete)
 	wallHandleFlip = Handles.CreateHandle("WallHandleFlip", Constants.HandleFlipColor, Formex.Icons.DirectionIndicator, onWallFlip)
-	wallHandleDivide = Handles.CreateHandle("WallHandleDivide", Constants.HandleAddColor, Formex.Icons.WallDivide, onWallDivide)
+	wallHandleDivide = Handles.CreateHandle("WallHandleDivide", divideHandleColor, Formex.Icons.WallDivide, onWallDivide)
 
 	local viewSettings = getViewSettings()
 	local handleY = getWallHandleY(level, viewSettings.HandleLocation or Enums.HandleLocation.Middle)
@@ -985,6 +1130,7 @@ local function updateWallHandles(plotInfo: any)
 	local startPoint2 = Vector2.new(startPoint.X, startPoint.Y)
 	local endPoint2 = Vector2.new(endPoint.X, endPoint.Y)
 	local midPoint = Vector2.new((startPoint.X + endPoint.X) / 2, (startPoint.Y + endPoint.Y) / 2)
+	local dividePoint = Vector2.new(splitPoint.X, splitPoint.Y)
 
 	wallHandleStart.Position = toWorld(startPoint2)
 	wallHandleEnd.Position = toWorld(endPoint2)
@@ -996,7 +1142,7 @@ local function updateWallHandles(plotInfo: any)
 	local deletePosition = toWorld(Vector2.new(midPoint.X, math.min(startPoint.Y, endPoint.Y) - Constants.HandleOffset * 2))
 	wallHandleDelete.Position = deletePosition - Vector3.new(0, wallHandleDelete.Size.Y / 2, 0)
 	wallHandleFlip.Position = toWorld(midPoint + offset)
-	wallHandleDivide.Position = toWorld(midPoint - offset)
+	wallHandleDivide.Position = toWorld(dividePoint - offset)
 	local frontWorld = plotInfo.PlotPart.CFrame:VectorToWorldSpace(Vector3.new(frontNormal.X, 0, frontNormal.Y))
 	setHandleIconRotation(wallHandleFlip, getScreenRotationForDirection(frontWorld))
 
@@ -1015,6 +1161,7 @@ local function updateWallHandles(plotInfo: any)
 	local connectedAtEnd = getConnectedWallsAtPoint(walls, endPoint, wallId)
 	Handles.SetHandleVisible(wallHandleStartSolo, showPointHandles and #connectedAtStart > 0)
 	Handles.SetHandleVisible(wallHandleEndSolo, showPointHandles and #connectedAtEnd > 0)
+	Handles.SetHandleVisible(wallHandleDivide, canSplit)
 end
 
 local function updateWallHandleHover(input: any)
@@ -1220,24 +1367,7 @@ local function finalizeWall(plotInfo: any, endPosition: Vector3)
 		splitWallsAtPoints(plotInfo, result.Level or getCurrentLevel(), { wallData.Start, wallData.End }, ignoreIds)
 
 		local levelIndex = result.Level or getCurrentLevel()
-		local plotPart = plotInfo.PlotPart
-		task.spawn(function()
-			local deadline = time() + 2
-			while time() < deadline do
-				local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
-				if levelPart then
-					local wallsFolder = levelPart:FindFirstChild("Walls")
-					if wallsFolder then
-						local wallModel = wallsFolder:FindFirstChild(tostring(result.WallId))
-						if wallModel and wallModel:IsA("Model") then
-							select(wallModel)
-							return
-						end
-					end
-				end
-				task.wait(0.05)
-			end
-		end)
+		selectWallByIdAsync(plotInfo, levelIndex, result.WallId)
 	end
 end
 
