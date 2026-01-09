@@ -630,6 +630,27 @@ local function buildSidebar()
 		end),
 	}
 
+	local editModeRow = Instance.new("Frame", designControls)
+	editModeRow.Name = "EditModeRow"
+	editModeRow.BackgroundTransparency = 1
+	editModeRow.Size = UDim2.new(1, 0, 0, 40)
+
+	local editModeRowLayout = Instance.new("UIListLayout", editModeRow)
+	editModeRowLayout.FillDirection = Enum.FillDirection.Horizontal
+	editModeRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	editModeRowLayout.Padding = UDim.new(0, 8)
+	editModeRowLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+	editModeRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+	local editModeButtons = {
+		PointMove = createIconButton(editModeRow, "PointMove", Formex.Icons.ResizeItem, function()
+			FormexDesign.UpdateDesignState({ EditMode = FormexDesign.EditMode.PointMove })
+		end),
+		PartMove = createIconButton(editModeRow, "PartMove", Formex.Icons.MoveItem, function()
+			FormexDesign.UpdateDesignState({ EditMode = FormexDesign.EditMode.PartMove })
+		end),
+	}
+
     local undoRow = Instance.new("Frame", designControls)
     undoRow.Name = "UndoRedo"
     undoRow.BackgroundTransparency = 1
@@ -1065,6 +1086,8 @@ local function buildSidebar()
     ui.SubModeRow = subModeRow
     ui.SubModeButtons = subModeButtons
     ui.FloorModeButtons = floorModeButtons
+	ui.EditModeRow = editModeRow
+	ui.EditModeButtons = editModeButtons
     ui.UndoButton = undoButton
     ui.RedoButton = redoButton
     ui.DesignContentTitle = contentTitle
@@ -1184,6 +1207,14 @@ local function refreshUI()
         setIconButtonActive(ui.FloorModeButtons.Manual, floorMode == FormexDesign.FloorMode.Manual)
         setIconButtonActive(ui.FloorModeButtons.Autofill, floorMode == FormexDesign.FloorMode.Autofill)
     end
+	if ui.EditModeButtons and ui.EditModeRow then
+		local editMode = designState.EditMode
+		local showEditModes = (designMode == FormexDesign.DesignMode.Wall or designMode == FormexDesign.DesignMode.Floor)
+			and designSubMode == FormexDesign.DesignSubMode.Normal
+		ui.EditModeRow.Visible = inDesign and showEditModes
+		setIconButtonActive(ui.EditModeButtons.PointMove, editMode == FormexDesign.EditMode.PointMove)
+		setIconButtonActive(ui.EditModeButtons.PartMove, editMode == FormexDesign.EditMode.PartMove)
+	end
 
     local canUndo = designState.CanUndo == true
     local canRedo = designState.CanRedo == true

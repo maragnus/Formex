@@ -27,6 +27,7 @@ FormexDesign.HandleLocation = Enums.HandleLocation
 FormexDesign.FloorMode = Enums.FloorMode
 FormexDesign.DesignMode = Enums.DesignMode
 FormexDesign.DesignSubMode = Enums.DesignSubMode
+FormexDesign.EditMode = Enums.EditMode
 FormexDesign.ActionType = Enums.ActionType
 FormexDesign.SelectionType = Enums.SelectionType
 
@@ -45,6 +46,7 @@ type ViewSettings = {
 
 export type DesignMode = FormexDesignContext.DesignMode
 export type DesignSubMode = FormexDesignContext.DesignSubMode
+export type EditMode = FormexDesignContext.EditMode
 export type ActionType = FormexDesignContext.ActionType
 
 export type SelectionData = nil | Formex.WallData | Formex.FloorData | Formex.ObjectData
@@ -93,6 +95,7 @@ type InputInfo = {
 local inputInfo: InputInfo? = nil
 local designMode: DesignMode = FormexDesign.DesignMode.Play
 local designSubMode: DesignSubMode = FormexDesign.DesignSubMode.Normal
+local editMode: EditMode = FormexDesign.EditMode.PointMove
 local actionType: ActionType = FormexDesign.ActionType.Select
 local currentLevel: number = 1
 local viewSettings: ViewSettings = playViewSettings
@@ -405,6 +408,7 @@ function FormexDesign.GetDesignState(): DesignState
 	return {
 		Mode = designMode,
 		SubMode = designSubMode,
+		EditMode = editMode,
 		ActionType = actionType,
 		SelectionType = selectionType,
 		CanUndo = canUndo,
@@ -428,6 +432,10 @@ end
 
 function FormexDesign.GetDesignSubMode(): DesignSubMode
 	return designSubMode
+end
+
+function FormexDesign.GetEditMode(): EditMode
+	return editMode
 end
 
 function FormexDesign.SetDesignSubMode(mode: DesignSubMode?)
@@ -2045,6 +2053,11 @@ function FormexDesign.UpdateDesignState(update: DesignStateUpdate)
 		FormexDesign.SetDesignSubMode(update.SubMode)
 	end
 
+	if update.EditMode ~= nil and update.EditMode ~= editMode then
+		editMode = update.EditMode
+		notifyDesignStateChange()
+	end
+
 	if update.CanUndo ~= nil and update.CanUndo ~= canUndo then
 		canUndo = update.CanUndo
 		notifyDesignStateChange()
@@ -2377,6 +2390,9 @@ FormexDesignContext.Init({
 	end,
 	GetDesignMode = function()
 		return designMode
+	end,
+	GetEditMode = function()
+		return editMode
 	end,
 	GetCurrentLevel = function()
 		return currentLevel

@@ -79,6 +79,7 @@ local getCeilingColor: () -> Color3
 local getFoundationMaterialId: () -> number
 local getFoundationColor: () -> Color3
 local getFloorMode: () -> string
+local getEditMode: () -> string
 local updateGhostValidity: (boolean) -> ()
 local ensureFloorGhost: (BasePart, number, Vector2int16, any) -> ()
 local clearGhost: () -> ()
@@ -104,9 +105,8 @@ local lastHandleFloorId: number? = nil
 local lastHandleLevelIndex: number? = nil
 local lastHandlePointsKey: string? = nil
 local lastHandleRaiseHeight: number = 0
-local lastHandleAltHeld: boolean? = nil
+local lastHandleEditMode: string? = nil
 local lastPreviewTile: Vector2int16? = nil
-local lastAltHeld: boolean = false
 
 function Floors.Init()
 	local ctx = Context.Get()
@@ -132,6 +132,7 @@ function Floors.Init()
 	getFoundationMaterialId = ctx.GetFoundationMaterialId
 	getFoundationColor = ctx.GetFoundationColor
 	getFloorMode = ctx.GetFloorMode
+	getEditMode = ctx.GetEditMode
 	updateGhostValidity = ctx.UpdateGhostValidity
 	ensureFloorGhost = ctx.EnsureFloorGhost
 	clearGhost = ctx.ClearGhost
@@ -390,7 +391,7 @@ local function clearFloorHandles()
 	lastHandleLevelIndex = nil
 	lastHandlePointsKey = nil
 	lastHandleRaiseHeight = 0
-	lastHandleAltHeld = nil
+	lastHandleEditMode = nil
 end
 
 local function updateFloorEdgePreview(plotInfo: any, levelIndex: number, points: {Vector2int16})
@@ -838,13 +839,13 @@ local function updateFloorHandles(plotInfo: any)
 
 	local floorData = getFloorDataFromModel(floorModel)
 	local points = movePreviewPoints or floorData.Points
-	local altHeld = lastAltHeld
+	local editMode = getEditMode()
 	local pointsKey = Formex.EncodeFloorPoints(points)
 	local shouldRebuild = floorData.FloorId ~= lastHandleFloorId
 		or floorData.LevelIndex ~= lastHandleLevelIndex
 		or pointsKey ~= lastHandlePointsKey
 		or floorData.RaiseHeight ~= lastHandleRaiseHeight
-		or lastHandleAltHeld ~= altHeld
+		or lastHandleEditMode ~= editMode
 	if not shouldRebuild then
 		return
 	end
@@ -856,21 +857,23 @@ local function updateFloorHandles(plotInfo: any)
 	local levelIndex = floorData.LevelIndex
 	local y = getHandleY(levelIndex)
 
-	for index, point in ipairs(points) do
-		local handle = addFloorHandle("FloorPoint_" .. tostring(index), Constants.HandleMoveColor, Formex.Icons.ResizeItem, onFloorHandleClicked, {
-			Kind = "Point",
-			Index = index,
-			Handle = nil,
-		})
-		handle.CFrame = plotInfo.PlotPart.CFrame * CFrame.new(point.X, y, point.Y)
-		floorHandles[#floorHandles + 1] = {
-			Kind = "Point",
-			Index = index,
-			Handle = handle,
-		}
+	if editMode == Enums.EditMode.PointMove then
+		for index, point in ipairs(points) do
+			local handle = addFloorHandle("FloorPoint_" .. tostring(index), Constants.HandleMoveColor, Formex.Icons.ResizeItem, onFloorHandleClicked, {
+				Kind = "Point",
+				Index = index,
+				Handle = nil,
+			})
+			handle.CFrame = plotInfo.PlotPart.CFrame * CFrame.new(point.X, y, point.Y)
+			floorHandles[#floorHandles + 1] = {
+				Kind = "Point",
+				Index = index,
+				Handle = handle,
+			}
+		end
 	end
 
-	if altHeld then
+	if editMode == Enums.EditMode.PartMove then
 		for index = 1, #points do
 			local midpoint = getSnappedMidpoint(points, index)
 			if midpoint then
@@ -890,7 +893,7 @@ local function updateFloorHandles(plotInfo: any)
 				}
 			end
 		end
-	elseif #points < Formex.MaxFloorPoints then
+	elseif editMode == Enums.EditMode.PointMove and #points < Formex.MaxFloorPoints then
 		for index = 1, #points do
 			local midpoint = getSnappedMidpoint(points, index)
 			if midpoint then
@@ -939,7 +942,7 @@ local function updateFloorHandles(plotInfo: any)
 	lastHandleLevelIndex = floorData.LevelIndex
 	lastHandlePointsKey = pointsKey
 	lastHandleRaiseHeight = floorData.RaiseHeight
-	lastHandleAltHeld = altHeld
+	lastHandleEditMode = editMode
 	setHandlesVisible(true)
 end
 
@@ -1026,7 +1029,6 @@ function Floors.HandleUpdate(input: any)
 		end
 	end
 	if actionType == Enums.ActionType.Select then
-		lastAltHeld = input.AltHeld
 		updateFloorHandles(input.PlotInfo)
 		Handles.CheckHover(input.Ray)
 		if isGhostActive() and getGhostType() == Formex.PartType.Floor then

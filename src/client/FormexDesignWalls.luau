@@ -59,6 +59,7 @@ local Constants: any
 local getActionType: () -> string
 local setActionType: (string) -> ()
 local getDesignMode: () -> string
+local getEditMode: () -> string
 local getCurrentLevel: () -> number
 local getViewSettings: () -> any
 local getSelectionType: () -> string
@@ -125,6 +126,7 @@ function Walls.Init()
 	getActionType = ctx.GetActionType
 	setActionType = ctx.SetActionType
 	getDesignMode = ctx.GetDesignMode
+	getEditMode = ctx.GetEditMode
 	getCurrentLevel = ctx.GetCurrentLevel
 	getViewSettings = ctx.GetViewSettings
 	getSelectionType = ctx.GetSelectionType
@@ -1000,11 +1002,19 @@ local function updateWallHandles(plotInfo: any)
 
 	setWallHandlesVisible(true)
 
+	local editMode = getEditMode()
+	local showPointHandles = editMode == Enums.EditMode.PointMove
+	local showPartHandle = editMode == Enums.EditMode.PartMove
+
+	Handles.SetHandleVisible(wallHandleStart, showPointHandles)
+	Handles.SetHandleVisible(wallHandleEnd, showPointHandles)
+	Handles.SetHandleVisible(wallHandleCenter, showPartHandle)
+
 	local walls = getLevelWallInfos(plotInfo.PlotPart, level)
 	local connectedAtStart = getConnectedWallsAtPoint(walls, startPoint, wallId)
 	local connectedAtEnd = getConnectedWallsAtPoint(walls, endPoint, wallId)
-	Handles.SetHandleVisible(wallHandleStartSolo, #connectedAtStart > 0)
-	Handles.SetHandleVisible(wallHandleEndSolo, #connectedAtEnd > 0)
+	Handles.SetHandleVisible(wallHandleStartSolo, showPointHandles and #connectedAtStart > 0)
+	Handles.SetHandleVisible(wallHandleEndSolo, showPointHandles and #connectedAtEnd > 0)
 end
 
 local function updateWallHandleHover(input: any)

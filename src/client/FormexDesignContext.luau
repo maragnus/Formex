@@ -16,6 +16,7 @@ export type WallMode = "Full" | "Half" | "Hidden"
 export type HandleLocation = "Top" | "Middle" | "Bottom"
 export type DesignMode = "Play" | "Design" | "Select" | "Expand" | "Floor" | "Wall" | "Object"
 export type DesignSubMode = "Normal" | "Paint" | "Dropper"
+export type EditMode = "PointMove" | "PartMove"
 export type ActionType = "Select" | "Start" | "Step" | "Rotate" | "Move"
 export type SelectionType = "None" | "Wall" | "Floor" | "Object"
 export type FloorMode = "Manual" | "Autofill"
@@ -112,6 +113,7 @@ export type FloorStateUpdate = {
 export type DesignState = {
 	Mode: DesignMode,
 	SubMode: DesignSubMode,
+	EditMode: EditMode,
 	ActionType: ActionType,
 	SelectionType: SelectionType,
 	CanUndo: boolean,
@@ -131,6 +133,7 @@ export type DesignState = {
 export type DesignStateUpdate = {
 	Mode: DesignMode?,
 	SubMode: DesignSubMode?,
+	EditMode: EditMode?,
 	CanUndo: boolean?,
 	CanRedo: boolean?,
 	Wall: WallStateUpdate?,
@@ -170,6 +173,11 @@ export type DesignSubModeEnum = {
 	Dropper: DesignSubMode,
 }
 
+export type EditModeEnum = {
+	PointMove: EditMode,
+	PartMove: EditMode,
+}
+
 export type ActionTypeEnum = {
 	Select: ActionType,
 	Start: ActionType,
@@ -191,6 +199,7 @@ export type Enums = {
 	FloorMode: FloorModeEnum,
 	DesignMode: DesignModeEnum,
 	DesignSubMode: DesignSubModeEnum,
+	EditMode: EditModeEnum,
 	ActionType: ActionTypeEnum,
 	SelectionType: SelectionTypeEnum,
 }
@@ -231,6 +240,7 @@ export type Context = {
 	GetActionType: () -> ActionType,
 	SetActionType: (ActionType) -> (),
 	GetDesignMode: () -> DesignMode,
+	GetEditMode: () -> EditMode,
 	GetCurrentLevel: () -> number,
 	SetCurrentLevel: (number) -> (),
 	GetViewSettings: () -> any,
@@ -299,6 +309,10 @@ Context.Enums = table.freeze({
 		Normal = "Normal",
 		Paint = "Paint",
 		Dropper = "Dropper",
+	}),
+	EditMode = table.freeze({
+		PointMove = "PointMove",
+		PartMove = "PartMove",
 	}),
 	ActionType = table.freeze({
 		Select = "Select",
