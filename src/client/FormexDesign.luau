@@ -2391,6 +2391,26 @@ function FormexDesign.SetDesignMode(mode: DesignMode?, preserveSelection: boolea
 	notifyDesignModeChange()
 end
 
+local function resetDesignForPlotChange()
+	beginDesignStateBatch()
+	clearGhost()
+	FormexDesign.CancelAction()
+	if designMode ~= FormexDesign.DesignMode.Play then
+		FormexDesign.SetDesignMode(FormexDesign.DesignMode.Play)
+	else
+		designSubMode = FormexDesign.DesignSubMode.Normal
+		altDropperForced = false
+		altDropperUsed = false
+		lastSubModeBeforeAlt = nil
+		designTipMessage = nil
+		designSessionActive = false
+		designSessionPendingFocus = false
+		refresh()
+	end
+	endDesignStateBatch()
+	FormexCamera.SetCameraMode(FormexCamera.CameraMode.Play)
+end
+
 FormexDesignContext.Init({
 	FormexClient = FormexClient,
 	FormexCamera = FormexCamera,
@@ -2530,8 +2550,7 @@ localPlayer:GetAttributeChangedSignal("CanRedo"):Connect(syncUndoRedoAttributes)
 
 FormexClient.ClientEvents:Connect(function(eventName, _plotId, _partType, _levelIndex, _partId, model, changeType)
 	if eventName == "CurrentPlotChanged" then
-		FormexDesign.CancelAction()
-		refresh()
+		resetDesignForPlotChange()
 		return
 	end
 
