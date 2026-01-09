@@ -23,6 +23,7 @@ export type TopDownState = {
 	Position: Vector2,
 	Distance: number,
 	Yaw: number,
+	Tilt: number,
 }
 
 local DEFAULT_CAMERA_DISTANCE = 50
@@ -45,6 +46,12 @@ local CAMERA_ROTATE_KEYBOARD_SPEED = math.rad(90)
 local CAMERA_ROTATE_ACCELERATION = 12
 local CAMERA_ROTATE_DAMPING = 8
 local CAMERA_ROTATE_DEADZONE = 0.0001
+local CAMERA_TILT_MOUSE_SENSITIVITY = 0.004
+local CAMERA_TILT_ACCELERATION = 12
+local CAMERA_TILT_DAMPING = 8
+local CAMERA_TILT_DEADZONE = 0.0001
+local CAMERA_TILT_MIN = 0
+local CAMERA_TILT_MAX = math.rad(45)
 
 local camera = workspace.CurrentCamera :: Camera
 local cameraMode: CameraMode = "Play"
@@ -55,12 +62,14 @@ local cameraCenter: Vector3? = nil
 local cameraPosition = Vector2.new(0, 0) -- offset of cameraCenter
 local cameraBaseUpDirection = Vector3.new(0, 0, 1)
 local cameraYaw = 0
+local cameraTilt = 0
 local cameraMin: Vector2? = nil
 local cameraMax: Vector2? = nil
 local isCameraDirty = false
 local moveFunction = Controls.moveFunction
 
 local cameraMoveVector: Vector3 = Vector3.new(0, 0, 0)
+local cameraMoveRelativeToCamera = false
 local cameraVelocity = Vector2.new(0, 0)
 local isMousePanning = false
 local mousePanLastPosition: Vector2? = nil
@@ -78,6 +87,7 @@ local gamepadZoomInValue = 0
 local gamepadZoomOutValue = 0
 local zoomVelocity = 0
 local rotateVelocity = 0
+local tiltVelocity = 0
 local zoomAnchorScreen: Vector2? = nil
 local touchPoints: {[InputObject]: Vector2} = {}
 local touchCount = 0
@@ -94,6 +104,10 @@ end
 
 local function clampCameraDistance(distance: number): number
     return math.clamp(distance, cameraDistanceMin, cameraDistanceMax)
+end
+
+local function clampCameraTilt(tilt: number): number
+    return math.clamp(tilt, CAMERA_TILT_MIN, CAMERA_TILT_MAX)
 end
 
 local function toVector2(position: Vector3): Vector2
@@ -154,7 +168,9 @@ local function resetInputState()
     gamepadZoomOutValue = 0
     zoomVelocity = 0
     rotateVelocity = 0
+    tiltVelocity = 0
     cameraYaw = 0
+    cameraTilt = 0
     zoomAnchorScreen = nil
     touchPoints = {}
     touchCount = 0
@@ -178,6 +194,39 @@ local function getCameraRightVector(): Vector3
     return rightVector.Unit
 end
 
+local function getCameraForwardVector(): Vector3
+    local forward = Vector3.new(0, -1, 0)
+    if cameraTilt == 0 then
+        return forward
+    end
+    local rightVector = getCameraRightVector()
+    local rotation = CFrame.fromAxisAngle(rightVector, -cameraTilt)
+    return rotation:VectorToWorldSpace(forward)
+end
+
+local function getPanAxes(): (Vector3, Vector3)
+    local right = camera.CFrame.RightVector
+    local up = camera.CFrame.UpVector
+    right = Vector3.new(right.X, 0, right.Z)
+    up = Vector3.new(up.X, 0, up.Z)
+    if right.Magnitude < 1e-4 then
+        right = getCameraRightVector()
+    else
+        right = right.Unit
+    end
+    if up.Magnitude < 1e-4 then
+        up = getCameraUpVector()
+    else
+        up = up.Unit
+    end
+    return right, up
+end
+
+local function getCameraFocus(): Vector3
+    local center = getCameraCenter()
+    return center + Vector3.new(cameraPosition.X, 0, cameraPosition.Y)
+end
+
 local function applyZoomDelta(delta: number, anchorScreen: Vector2?): boolean
     if delta == 0 then
         return false
@@ -186,22 +235,25 @@ local function applyZoomDelta(delta: number, anchorScreen: Vector2?): boolean
     local oldDistance = cameraDistance
     local newDistance = clampCameraDistance(oldDistance + delta)
     if newDistance == oldDistance then
+        zoomVelocity = 0
         return false
     end
 
     if anchorScreen then
-        local center = getCameraCenter()
-        local planeY = center.Y
+        local focus = getCameraFocus()
+        local planeY = focus.Y
         local ray = camera:ViewportPointToRay(anchorScreen.X, anchorScreen.Y)
         local direction = ray.Direction
         if math.abs(direction.Y) > 1e-4 then
             local t0 = (planeY - ray.Origin.Y) / direction.Y
             local anchorWorld = ray.Origin + direction * t0
 
-            local cameraPosY = center.Y + newDistance
-            local t1 = (planeY - cameraPosY) / direction.Y
-            local newCameraPos = anchorWorld - direction * t1
-            cameraPosition = Vector2.new(newCameraPos.X - center.X, newCameraPos.Z - center.Z)
+            local forward = getCameraForwardVector()
+            local newCameraPos = focus - forward * newDistance
+            local t1 = (planeY - newCameraPos.Y) / direction.Y
+            local newAnchorWorld = newCameraPos + direction * t1
+            local delta = anchorWorld - newAnchorWorld
+            cameraPosition += Vector2.new(delta.X, delta.Z)
         end
     end
 
@@ -211,8 +263,14 @@ local function applyZoomDelta(delta: number, anchorScreen: Vector2?): boolean
 end
 
 local function updatePan(dt: number)
-    local keyboardInput = Vector2.new(cameraMoveVector.X, cameraMoveVector.Z)
-    local targetVelocity = keyboardInput * CAMERA_PAN_SPEED
+    local targetVelocity = Vector2.new(0, 0)
+    if cameraMoveRelativeToCamera then
+        local right, up = getPanAxes()
+        local worldMove = right * cameraMoveVector.X + up * cameraMoveVector.Z
+        targetVelocity = Vector2.new(worldMove.X, worldMove.Z) * CAMERA_PAN_SPEED
+    else
+        targetVelocity = Vector2.new(cameraMoveVector.X, cameraMoveVector.Z) * CAMERA_PAN_SPEED
+    end
 
     if isMousePanning then
         local currentMouse = UserInputService:GetMouseLocation()
@@ -220,8 +278,7 @@ local function updatePan(dt: number)
             local delta = currentMouse - mousePanLastPosition
             local studsPerPixel = cameraDistance / CAMERA_MOUSE_PAN_DISTANCE_SCALE
             if delta.Magnitude > CAMERA_MOUSE_PAN_DEADZONE then
-                local right = getCameraRightVector()
-                local up = getCameraUpVector()
+                local right, up = getPanAxes()
                 local worldDelta = (right * delta.X + up * delta.Y) * studsPerPixel / math.max(dt, 1 / 240)
                 targetVelocity += Vector2.new(worldDelta.X, worldDelta.Z)
             end
@@ -234,7 +291,20 @@ local function updatePan(dt: number)
     local blend = 1 - math.exp(-rate * dt)
     cameraVelocity = cameraVelocity:Lerp(targetVelocity, blend)
     if cameraVelocity.Magnitude > 0.001 then
-        cameraPosition = cameraPosition + cameraVelocity * dt
+        local nextPosition = cameraPosition + cameraVelocity * dt
+        if cameraMin and cameraMax then
+            local clampedX = math.clamp(nextPosition.X, cameraMin.X, cameraMax.X)
+            local clampedY = math.clamp(nextPosition.Y, cameraMin.Y, cameraMax.Y)
+            if clampedX ~= nextPosition.X then
+                cameraVelocity = Vector2.new(0, cameraVelocity.Y)
+            end
+            if clampedY ~= nextPosition.Y then
+                cameraVelocity = Vector2.new(cameraVelocity.X, 0)
+            end
+            cameraPosition = Vector2.new(clampedX, clampedY)
+        else
+            cameraPosition = nextPosition
+        end
         updateCameraPosition()
     end
 end
@@ -286,6 +356,7 @@ end
 
 local function updateRotation(dt: number)
     local targetVelocity = keyboardRotateInput * CAMERA_ROTATE_KEYBOARD_SPEED
+    local targetTiltVelocity = 0
 
     if isMouseRotating then
         local currentMouse = UserInputService:GetMouseLocation()
@@ -294,6 +365,10 @@ local function updateRotation(dt: number)
             if math.abs(delta.X) > CAMERA_ROTATE_DEADZONE then
                 local mouseVelocity = delta.X * CAMERA_ROTATE_MOUSE_SENSITIVITY / math.max(dt, 1 / 240)
                 targetVelocity += mouseVelocity
+            end
+            if math.abs(delta.Y) > CAMERA_TILT_DEADZONE then
+                local mouseTiltVelocity = -delta.Y * CAMERA_TILT_MOUSE_SENSITIVITY / math.max(dt, 1 / 240)
+                targetTiltVelocity += mouseTiltVelocity
             end
         end
         mouseRotateLastPosition = currentMouse
@@ -310,6 +385,18 @@ local function updateRotation(dt: number)
     elseif not hasInput then
         rotateVelocity = 0
     end
+
+    local hasTiltInput = math.abs(targetTiltVelocity) > CAMERA_TILT_DEADZONE
+    local tiltRate = if hasTiltInput then CAMERA_TILT_ACCELERATION else CAMERA_TILT_DAMPING
+    local tiltBlend = 1 - math.exp(-tiltRate * dt)
+    tiltVelocity += (targetTiltVelocity - tiltVelocity) * tiltBlend
+
+    if math.abs(tiltVelocity) > CAMERA_TILT_DEADZONE then
+        cameraTilt = clampCameraTilt(cameraTilt + tiltVelocity * dt)
+        updateCameraPosition()
+    elseif not hasTiltInput then
+        tiltVelocity = 0
+    end
 end
 
 function FormexCamera.GetCameraMode(): CameraMode
@@ -321,6 +408,7 @@ function FormexCamera.GetTopDownState(): TopDownState
         Position = Vector2.new(cameraPosition.X, cameraPosition.Y),
         Distance = cameraDistance,
         Yaw = cameraYaw,
+        Tilt = cameraTilt,
     } :: TopDownState
 end
 
@@ -328,8 +416,10 @@ function FormexCamera.ApplyTopDownState(state: TopDownState)
     cameraPosition = Vector2.new(state.Position.X, state.Position.Y)
     cameraDistance = clampCameraDistance(state.Distance)
     cameraYaw = state.Yaw
+    cameraTilt = clampCameraTilt(state.Tilt)
     zoomVelocity = 0
     rotateVelocity = 0
+    tiltVelocity = 0
     updateCameraPosition()
 end
 
@@ -446,6 +536,7 @@ local function cameraMoveFunction(player: Player, moveVector: Vector3, relativeT
     end
 
     cameraMoveVector = moveVector
+    cameraMoveRelativeToCamera = relativeToCamera
 end
 Controls.moveFunction = cameraMoveFunction
 
@@ -616,17 +707,16 @@ end)
 local function onRenderStep(dt: number)
     if cameraMode ~= FormexCamera.CameraMode.TopDown then return end
 
-    updatePan(dt)
     updateZoom(dt)
+    updatePan(dt)
     updateRotation(dt)
 
     if not isCameraDirty then return end
 
-    local position = Vector3.new(cameraPosition.X, cameraDistance, cameraPosition.Y)
-    if cameraCenter then
-        position = cameraCenter + position
-    end
-    camera.CFrame = CFrame.lookAt(position, position + Vector3.new(0, -1, 0), getCameraUpVector())
+    local focus = getCameraFocus()
+    local forward = getCameraForwardVector()
+    local cameraPositionWorld = focus - forward * cameraDistance
+    camera.CFrame = CFrame.lookAt(cameraPositionWorld, focus, getCameraUpVector())
     isCameraDirty = false
 end
 RunService:BindToRenderStep("FormexCameraUpdate", Enum.RenderPriority.Camera.Value + 1, onRenderStep)
