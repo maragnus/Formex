@@ -98,11 +98,17 @@ export type ObjectData = {
 	Position: Vector3,
 	Rotation: Vector3,
 	WallId: number?, -- if mounted to a wall
-	IsPortal: boolean, -- e.g. doorway into adjacent room
 	Design: {[number]: number}, -- [part index]: material index
+	DesignColors: {[number]: Color3},
+	IsPortal: boolean, -- calculated from Prefab.ObjectMount=Door, indicates a doorway into adjacent room
 	Prefab: ObjectPrefab,
+	PrefabName: string?,
+	Properties: {[string]: any}?,
 	Part: Model?,
-	Subtract: Model?
+	Subtract: Model?,
+	ObjectModel: Model?,
+	SubtractModel: Model?,
+	DesignParts: {[number]: {BasePart}}, -- [part index]: {parts}
 }
 
 export type MaterialInfo = {
@@ -120,6 +126,7 @@ export type ObjectPrefab = {
 	ObjectMount: ObjectMount,
 	Size: Vector3,
 	Categories: {string},
+	DefaultDesign: {[number]: number}, -- [part index]: material index
 	Attributes: {[string]: any}?, -- Model:GetAttributes()
 	Model: Model?,
 }
@@ -180,6 +187,7 @@ Formex.Serialization = {} :: {
 }
 
 Formex.GridSize = 2 -- studs
+Formex.ObjectGridSize = 1 -- studs
 Formex.LayoutGridSize = 4 -- studs
 Formex.MaxSaveSlots = 3
 Formex.MaxUndoQueueSize = 32

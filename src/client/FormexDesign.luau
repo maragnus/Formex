@@ -84,6 +84,7 @@ type InputInfo = {
 	PlotInfo: FormexClient.PlotInfo,
 	Ray: Ray?,
 	HitPosition: Vector3?,
+	HitNormal: Vector3?,
 	SnapPoint: Vector2int16?,
 	LayoutTile: Vector2int16?,
 	LevelIndex: number,
@@ -135,11 +136,14 @@ export type WallBuildSettings = FormexDesignContext.WallBuildSettings
 export type WallSelectedSettings = FormexDesignContext.WallSelectedSettings
 export type FloorPaintSettings = FormexDesignContext.FloorPaintSettings
 export type FloorSelectedSettings = FormexDesignContext.FloorSelectedSettings
+export type ObjectPaintSettings = FormexDesignContext.ObjectPaintSettings
+export type ObjectSelectedSettings = FormexDesignContext.ObjectSelectedSettings
 export type DesignState = FormexDesignContext.DesignState
 export type DesignStateUpdate = FormexDesignContext.DesignStateUpdate
 
 type WallStateUpdate = FormexDesignContext.WallStateUpdate
 type FloorStateUpdate = FormexDesignContext.FloorStateUpdate
+type ObjectStateUpdate = FormexDesignContext.ObjectStateUpdate
 
 local wallPaintSettings: WallPaintSettings = {
 	Height = nil,
@@ -189,6 +193,32 @@ local floorSelectedSettings: FloorSelectedSettings = {
 	FoundationColor = Color3.new(1, 1, 1),
 	HasSelection = false,
 } :: FloorSelectedSettings
+
+local objectPaintSettings: ObjectPaintSettings = {
+	Design = {},
+	DesignColors = {},
+} :: ObjectPaintSettings
+
+local objectSelectedSettings: ObjectSelectedSettings = {
+	PrefabName = nil,
+	Design = {},
+	DesignColors = {},
+	HasSelection = false,
+} :: ObjectSelectedSettings
+
+local objectPrefabName: string? = nil
+
+do
+	local prefabs = Formex.Objects.GetPrefabs()
+	if #prefabs > 0 then
+		objectPrefabName = prefabs[1].PrefabName
+		objectPaintSettings.Design = {}
+		objectPaintSettings.DesignColors = {}
+		for index, materialId in ipairs(prefabs[1].DefaultDesign or {}) do
+			objectPaintSettings.Design[index] = materialId
+		end
+	end
+end
 
 local designModeViewSettings: {DesignMode: ViewSettings}? = nil
 local designModeBySelectionType: {[SelectionType]: DesignMode}? = nil
@@ -423,6 +453,19 @@ function FormexDesign.GetDesignState(): DesignState
 		Mode = floorMode,
 		Selected = cloneFloorSelectedSettings(floorSelectedSettings),
 		Paint = getFloorPaintSettings(),
+	},
+	Object = {
+		PrefabName = objectPrefabName,
+		Selected = {
+			PrefabName = objectSelectedSettings.PrefabName,
+			Design = table.clone(objectSelectedSettings.Design),
+			DesignColors = table.clone(objectSelectedSettings.DesignColors),
+			HasSelection = objectSelectedSettings.HasSelection,
+		},
+		Paint = {
+			Design = table.clone(objectPaintSettings.Design),
+			DesignColors = table.clone(objectPaintSettings.DesignColors),
+		},
 	},
 	} :: DesignState
 end
@@ -1279,6 +1322,7 @@ function FormexDesign.ClearSelection()
 	selectionPart = nil
 	wallSelectedSettings.HasSelection = false
 	floorSelectedSettings.HasSelection = false
+	objectSelectedSettings.HasSelection = false
 	if Walls then
 		Walls.ClearSelection()
 	end
@@ -1366,7 +1410,7 @@ local function isPointInOwnedSegments(plotInfo: FormexClient.PlotInfo, point: Ve
 	return false
 end
 
-local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Instance?)
+local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Vector3?, Instance?)
 	local camera = Workspace.CurrentCamera
 	if not camera then
 		return nil, nil, nil
@@ -1416,10 +1460,10 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Ins
 
 	local result = Workspace:Raycast(ray.Origin, ray.Direction * 2048, params)
 	if not result then
-		return ray, nil, nil
+		return ray, nil, nil, nil
 	end
 
-	return ray, result.Position, result.Instance
+	return ray, result.Position, result.Normal, result.Instance
 end
 
 local function getInputInfo(forceGridCollision: boolean?): InputInfo | nil
@@ -1432,7 +1476,7 @@ local function getInputInfo(forceGridCollision: boolean?): InputInfo | nil
 		return nil
 	end
 
-	local ray, hitPosition, target = getPointerHit(forceGridCollision)
+	local ray, hitPosition, hitNormal, target = getPointerHit(forceGridCollision)
 	local snapPoint = hitPosition and getSnappedPoint(plotInfo.PlotPart, hitPosition) or nil
 	local layoutTile = hitPosition and getLayoutTile(plotInfo.PlotPart, hitPosition) or nil
 
@@ -1440,6 +1484,7 @@ local function getInputInfo(forceGridCollision: boolean?): InputInfo | nil
 		PlotInfo = plotInfo,
 		Ray = ray,
 		HitPosition = hitPosition,
+		HitNormal = hitNormal,
 		SnapPoint = snapPoint,
 		LayoutTile = layoutTile,
 		LevelIndex = 1, --getLevel(),
@@ -1725,8 +1770,29 @@ local function updateSelectionSettingsFromSelection()
 		return
 	end
 
+	if selectionType == FormexDesign.SelectionType.Object then
+		wallSelectedSettings.HasSelection = false
+		floorSelectedSettings.HasSelection = false
+		local objectData = Objects and Objects.GetSelectedObjectData and Objects.GetSelectedObjectData() or nil
+		if not objectData then
+			objectSelectedSettings.HasSelection = false
+			return
+		end
+		objectSelectedSettings = {
+			PrefabName = objectData.PrefabName,
+			Design = table.clone(objectData.Design or {}),
+			DesignColors = table.clone(objectData.DesignColors or {}),
+			HasSelection = true,
+		} :: ObjectSelectedSettings
+		if objectData.PrefabName then
+			objectPrefabName = objectData.PrefabName
+		end
+		return
+	end
+
 	wallSelectedSettings.HasSelection = false
 	floorSelectedSettings.HasSelection = false
+	objectSelectedSettings.HasSelection = false
 end
 
 local function updateSelectionHandles(plotInfo: any)
@@ -1744,6 +1810,13 @@ local function updateSelectionHandles(plotInfo: any)
 	if selectionType == FormexDesign.SelectionType.Floor then
 		if Floors then
 			Floors.UpdateHandles(plotInfo)
+		end
+		return
+	end
+
+	if selectionType == FormexDesign.SelectionType.Object then
+		if Objects then
+			Objects.UpdateHandles(plotInfo)
 		end
 	end
 end
@@ -1777,6 +1850,15 @@ local function syncPaintFromSelection(silent: boolean?)
 
 	if selectionType == FormexDesign.SelectionType.Floor and floorSelectedSettings.HasSelection then
 		updateFloorPaintSettingsSilently(floorSelectedSettings)
+		if not silent then
+			notifyDesignModeChange()
+		end
+		return
+	end
+
+	if selectionType == FormexDesign.SelectionType.Object and objectSelectedSettings.HasSelection then
+		objectPaintSettings.Design = table.clone(objectSelectedSettings.Design)
+		objectPaintSettings.DesignColors = table.clone(objectSelectedSettings.DesignColors)
 		if not silent then
 			notifyDesignModeChange()
 		end
@@ -2058,6 +2140,73 @@ local function applyFloorStateUpdate(update: FloorStateUpdate?)
 	end
 end
 
+local function applyObjectStateUpdate(update: ObjectStateUpdate?)
+	if not update then
+		return
+	end
+
+	local applyToSelection = designSubMode == FormexDesign.DesignSubMode.Normal
+		and selectionType == FormexDesign.SelectionType.Object
+		and objectSelectedSettings.HasSelection
+
+	local changed = false
+
+	if update.PrefabName ~= nil and update.PrefabName ~= objectPrefabName then
+		objectPrefabName = update.PrefabName
+		changed = true
+
+		local prefab = objectPrefabName and Formex.Objects.GetPrefab(objectPrefabName) or nil
+		if prefab then
+			objectPaintSettings.Design = {}
+			objectPaintSettings.DesignColors = {}
+			for index, materialId in ipairs(prefab.DefaultDesign or {}) do
+				objectPaintSettings.Design[index] = materialId
+			end
+		end
+	end
+
+	local function applyDesignToTarget(targetDesign: {[number]: number}, targetColors: {[number]: Color3})
+		if update.Design then
+			table.clear(targetDesign)
+			for index, materialId in pairs(update.Design) do
+				targetDesign[index] = materialId
+			end
+			changed = true
+		end
+		if update.DesignColors then
+			table.clear(targetColors)
+			for index, color in pairs(update.DesignColors) do
+				targetColors[index] = color
+			end
+			changed = true
+		end
+		if update.DesignIndex ~= nil then
+			local index = update.DesignIndex
+			if update.Material ~= nil then
+				targetDesign[index] = update.Material
+				changed = true
+			end
+			if update.Color ~= nil then
+				targetColors[index] = update.Color
+				changed = true
+			end
+		end
+	end
+
+	if applyToSelection then
+		applyDesignToTarget(objectSelectedSettings.Design, objectSelectedSettings.DesignColors)
+		if changed and Objects and Objects.ApplySelectedDesign then
+			Objects.ApplySelectedDesign(objectSelectedSettings.Design, objectSelectedSettings.DesignColors)
+		end
+	else
+		applyDesignToTarget(objectPaintSettings.Design, objectPaintSettings.DesignColors)
+	end
+
+	if changed then
+		notifyDesignModeChange()
+	end
+end
+
 function FormexDesign.UpdateDesignState(update: DesignStateUpdate)
 	if not update then
 		return
@@ -2094,6 +2243,10 @@ function FormexDesign.UpdateDesignState(update: DesignStateUpdate)
 
 	if update.Floor ~= nil then
 		applyFloorStateUpdate(update.Floor)
+	end
+
+	if update.Object ~= nil then
+		applyObjectStateUpdate(update.Object)
 	end
 
 	endDesignStateBatch()
@@ -2144,8 +2297,19 @@ local function handlePaintDropperClick(input: InputInfo): boolean
 		end
 		return true
 	elseif designMode == FormexDesign.DesignMode.Object then
-		if designSubMode == FormexDesign.DesignSubMode.Dropper and altDropperForced then
-			altDropperUsed = true
+		if Objects then
+			if designSubMode == FormexDesign.DesignSubMode.Paint then
+				Objects.ApplyPaintToTarget(input.Target)
+			elseif designSubMode == FormexDesign.DesignSubMode.Dropper then
+				local copied = Objects.CopyPaintFromTarget(input.Target)
+				if copied then
+					if altDropperForced then
+						altDropperUsed = true
+					else
+						FormexDesign.SetDesignSubMode(FormexDesign.DesignSubMode.Paint)
+					end
+				end
+			end
 		end
 		return true
 	end
@@ -2509,6 +2673,23 @@ FormexDesignContext.Init({
 	end,
 	GetWallPaintSettings = function()
 		return cloneWallPaintSettings(wallPaintSettings)
+	end,
+	GetObjectPaintSettings = function()
+		return {
+			Design = table.clone(objectPaintSettings.Design),
+			DesignColors = table.clone(objectPaintSettings.DesignColors),
+		} :: ObjectPaintSettings
+	end,
+	GetObjectPrefabName = function()
+		return objectPrefabName
+	end,
+	GetObjectSelectedSettings = function()
+		return {
+			PrefabName = objectSelectedSettings.PrefabName,
+			Design = table.clone(objectSelectedSettings.Design),
+			DesignColors = table.clone(objectSelectedSettings.DesignColors),
+			HasSelection = objectSelectedSettings.HasSelection,
+		} :: ObjectSelectedSettings
 	end,
 	UpdateDesignState = FormexDesign.UpdateDesignState,
 	NotifyDesignModeChange = notifyDesignModeChange,

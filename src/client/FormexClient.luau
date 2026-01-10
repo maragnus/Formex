@@ -8,6 +8,7 @@ Formex.Plot = require(FormexFolder:WaitForChild("FormexPlot"))
 Formex.Util = require(FormexFolder:WaitForChild("FormexUtil"))
 Formex.Floors = require(FormexFolder:WaitForChild("FormexFloors"))
 Formex.Walls = require(FormexFolder:WaitForChild("FormexWalls"))
+Formex.Objects = require(FormexFolder:WaitForChild("FormexObjects"))
 require(FormexFolder:WaitForChild("FormexData"))
 
 local FormexFunctions: RemoteFunction = FormexFolder:WaitForChild("FormexFunctions")
@@ -267,8 +268,22 @@ local function refreshObjectData(objectData: Formex.ObjectData, model: Model, le
     objectData.Position = model:GetAttribute("Position") or objectData.Position or Vector3.new(0, 0, 0)
     objectData.Rotation = model:GetAttribute("Rotation") or objectData.Rotation or Vector3.new(0, 0, 0)
     objectData.WallId = model:GetAttribute("WallId")
+    objectData.PrefabName = model:GetAttribute("PrefabName") or objectData.PrefabName
+    if objectData.PrefabName and objectData.PrefabName ~= "" then
+        objectData.Prefab = Formex.Objects.GetPrefab(objectData.PrefabName)
+    end
+    local encodedDesign = model:GetAttribute("Design")
+    if encodedDesign then
+        local design, colors = Formex.Objects.DecodeDesign(encodedDesign)
+        objectData.Design = design
+        objectData.DesignColors = colors
+    elseif not objectData.Design then
+        objectData.Design = {}
+        objectData.DesignColors = {}
+    end
     objectData.Part = model
     objectData.Design = objectData.Design or {}
+    objectData.DesignColors = objectData.DesignColors or {}
     objectData.Properties = objectData.Properties or {}
     refreshObjectParts(objectData, model)
 end

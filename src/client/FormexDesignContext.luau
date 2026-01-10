@@ -80,10 +80,22 @@ export type FloorSelectedSettings = {
 	HasSelection: boolean,
 }
 
+export type ObjectPaintSettings = {
+	Design: {[number]: number},
+	DesignColors: {[number]: Color3},
+}
+
+export type ObjectSelectedSettings = {
+	PrefabName: string?,
+	Design: {[number]: number},
+	DesignColors: {[number]: Color3},
+	HasSelection: boolean,
+}
+
 export type WallStateUpdate = {
-	Height: number? | false?,
-	FrontSplitHeight: number? | false?,
-	BackSplitHeight: number? | false?,
+	Height: number | false | nil, -- TODO What does false and nil mean?
+	FrontSplitHeight: number | false | nil,
+	BackSplitHeight: number | false | nil,
 	FrontTopMaterial: number?,
 	FrontBottomMaterial: number?,
 	BackTopMaterial: number?,
@@ -92,7 +104,7 @@ export type WallStateUpdate = {
 	FrontBottomColor: Color3?,
 	BackTopColor: Color3?,
 	BackBottomColor: Color3?,
-	SplitHeight: number? | false?,
+	SplitHeight: number | false | nil,
 	TopMaterial: number?,
 	BottomMaterial: number?,
 	TopColor: Color3?,
@@ -128,6 +140,20 @@ export type DesignState = {
 		Selected: FloorSelectedSettings,
 		Paint: FloorPaintSettings,
 	},
+	Object: {
+		PrefabName: string?,
+		Selected: ObjectSelectedSettings,
+		Paint: ObjectPaintSettings,
+	},
+}
+
+export type ObjectStateUpdate = {
+	PrefabName: string?,
+	DesignIndex: number?,
+	Material: number?,
+	Color: Color3?,
+	Design: {[number]: number}?,
+	DesignColors: {[number]: Color3}?,
 }
 
 export type DesignStateUpdate = {
@@ -138,6 +164,7 @@ export type DesignStateUpdate = {
 	CanRedo: boolean?,
 	Wall: WallStateUpdate?,
 	Floor: FloorStateUpdate?,
+	Object: ObjectStateUpdate?,
 }
 
 export type WallModeEnum = {
@@ -274,6 +301,9 @@ export type Context = {
 	GetFoundationMaterialId: () -> number,
 	GetFoundationColor: () -> Color3,
 	GetWallPaintSettings: () -> WallPaintSettings,
+	GetObjectPaintSettings: () -> ObjectPaintSettings,
+	GetObjectPrefabName: () -> string?,
+	GetObjectSelectedSettings: () -> ObjectSelectedSettings,
 	UpdateDesignState: (DesignStateUpdate) -> (),
 	NotifyDesignModeChange: () -> (),
 	GetTipMessage: () -> string?,

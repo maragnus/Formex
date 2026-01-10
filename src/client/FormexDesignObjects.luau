@@ -1,24 +1,963 @@
 --!strict
 --[[
 FormexDesignObjects
-Placeholder for object design interactions (selection/build/paint).
+Handles object design interactions (placement, handles, paint/dropper).
 Exports:
 - Init(): ()
+- GetSelectedObjectData(): Formex.ObjectData?
+- ApplySelectedDesign(design, colors): boolean
+- ApplyPaintToTarget(target): boolean
+- CopyPaintFromTarget(target): boolean
 - HandleUpdate(input): ()
 - HandlePrimaryClick(input): ()
 - HandlePrimaryRelease(input): ()
 - CancelAction(): ()
 ]]
+local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
+
 local Objects = {}
 
-function Objects.Init() end
+type ObjectHandleType = "Move" | "Rotate" | "Delete"
 
-function Objects.HandleUpdate(_input: any) end
+local FormexClient: any
+local Formex: any
+local Handles: any
+local OverlayFolder: Folder
+local Enums: any
+local Constants: any
 
-function Objects.HandlePrimaryClick(_input: any) end
+local getActionType: () -> string
+local setActionType: (string) -> ()
+local getDesignMode: () -> string
+local getSelectionType: () -> string
+local getSelectionPart: () -> Instance?
+local getSelectionSnapshot: () -> any?
+local getCurrentLevel: () -> number
+local getLastInputInfo: () -> any?
+local getObjectPaintSettings: () -> Context.ObjectPaintSettings
+local getObjectPrefabName: () -> string?
+local updateDesignState: (any) -> ()
+local notifyDesignModeChange: () -> ()
+local clearSelection: () -> ()
+local select: (Instance) -> boolean
+local selectPlotModelByIdAsync: (any, string, number, number, number?) -> ()
 
-function Objects.HandlePrimaryRelease(_input: any) end
+local ghostModel: Model? = nil
+local ghostHighlight: Highlight? = nil
+local ghostPrefabName: string? = nil
+local ghostValid = false
+local ghostData: Formex.ObjectData? = nil
 
-function Objects.CancelAction() end
+local handleMove: BasePart? = nil
+local handleRotate: BasePart? = nil
+local handleDelete: BasePart? = nil
+local moveOriginal: Formex.ObjectData? = nil
+local movePreview: Formex.ObjectData? = nil
+local previewHighlight: Highlight? = nil
+local previewValid = true
+
+local lastHandleObjectId: number? = nil
+
+local function setGhostHighlight(valid: boolean)
+	ghostValid = valid
+	if ghostHighlight then
+		ghostHighlight.OutlineColor = valid and Constants.GhostValidColor or Constants.GhostInvalidColor
+		ghostHighlight.FillColor = ghostHighlight.OutlineColor
+	end
+end
+
+local function setPreviewHighlight(valid: boolean)
+	previewValid = valid
+	if previewHighlight then
+		previewHighlight.OutlineColor = valid and Constants.GhostValidColor or Constants.GhostInvalidColor
+	end
+end
+
+local function applyGhostAppearance(model: Model)
+	for _, child in ipairs(model:GetDescendants()) do
+		if child:IsA("BasePart") then
+			child.CanCollide = false
+			child.CanTouch = false
+			child.CanQuery = false
+			child.CastShadow = false
+			child.Transparency = 0.5
+		end
+	end
+end
+
+local function ensureGhost(prefab: Formex.ObjectPrefab)
+	if ghostPrefabName ~= prefab.PrefabName then
+		if ghostModel then
+			ghostModel:Destroy()
+		end
+		if ghostHighlight then
+			ghostHighlight:Destroy()
+		end
+		ghostModel = nil
+		ghostHighlight = nil
+		ghostData = nil
+	end
+
+	if ghostModel then
+		return
+	end
+
+	ghostPrefabName = prefab.PrefabName
+
+	local prefabModel = prefab.Model
+	if prefab.PrefabName and not prefabModel then
+		local resolved = Formex.Objects.GetPrefab(prefab.PrefabName)
+		prefabModel = resolved and resolved.Model or nil
+	end
+	if not prefabModel then
+		return
+	end
+
+	local sourceModel = prefabModel
+	if prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window then
+		local childModel = prefabModel:FindFirstChild("Model")
+		if childModel and childModel:IsA("Model") then
+			sourceModel = childModel
+		end
+	end
+
+	ghostModel = sourceModel:Clone()
+	ghostModel.Name = "ObjectGhost"
+	ghostModel.Parent = OverlayFolder
+	applyGhostAppearance(ghostModel)
+
+	ghostHighlight = Instance.new("Highlight")
+	ghostHighlight.FillTransparency = 1
+	ghostHighlight.OutlineTransparency = 0
+	ghostHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	ghostHighlight.Adornee = ghostModel
+	ghostHighlight.Parent = ghostModel
+	setGhostHighlight(true)
+end
+
+local function clearGhost()
+	if ghostModel then
+		ghostModel:Destroy()
+		ghostModel = nil
+	end
+	if ghostHighlight then
+		ghostHighlight:Destroy()
+		ghostHighlight = nil
+	end
+	ghostPrefabName = nil
+	ghostData = nil
+	ghostValid = false
+end
+
+local function getObjectModelFromTarget(target: Instance?): Model?
+	if not target then
+		return nil
+	end
+	local model = target:IsA("Model") and target or target:FindFirstAncestorOfClass("Model")
+	while model and model.Parent do
+		if model.Parent:IsA("Folder") and model.Parent.Name == "Objects" then
+			return model
+		end
+		if not model.Parent:IsA("Model") then
+			break
+		end
+		model = model.Parent
+	end
+	return nil
+end
+
+local function getObjectDesignIndexFromTarget(target: Instance?): number?
+	if not target then
+		return nil
+	end
+	if target:IsA("BasePart") then
+		return tonumber(target.Name)
+	end
+	return nil
+end
+
+local function getWallModelFromTarget(target: Instance?): Model?
+	if not target then
+		return nil
+	end
+	if target:IsA("Model") and target.Parent and target.Parent:IsA("Folder") and target.Parent.Name == "Walls" then
+		return target
+	end
+	local model = target:FindFirstAncestorOfClass("Model")
+	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Walls" then
+		return model
+	end
+	return nil
+end
+
+local function getWallDataFromModel(model: Model): Formex.WallData?
+	local level = tonumber(model.Parent.Parent.Name) or getCurrentLevel()
+	local wallId = tonumber(model.Name) or 0
+	local startValue = model:GetAttribute("Start") or Vector2.new(0, 0)
+	local endValue = model:GetAttribute("End") or Vector2.new(0, 0)
+	local height = model:GetAttribute("WallHeight") or Formex.LevelHeight
+	return {
+		WallId = wallId,
+		Level = level,
+		Start = Vector2int16.new(math.round(startValue.X), math.round(startValue.Y)),
+		End = Vector2int16.new(math.round(endValue.X), math.round(endValue.Y)),
+		Height = height,
+		Part = model,
+	} :: Formex.WallData
+end
+
+local function getFloorModelFromTarget(target: Instance?): Model?
+	if not target then
+		return nil
+	end
+	local model = target:IsA("Model") and target or target:FindFirstAncestorOfClass("Model")
+	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then
+		return model
+	end
+	return nil
+end
+
+local function snapToGrid(value: number): number
+	local grid = Formex.ObjectGridSize
+	if grid <= 0 then
+		return value
+	end
+	return math.round(value / grid) * grid
+end
+
+local function snapVector(position: Vector3): Vector3
+	return Vector3.new(
+		snapToGrid(position.X),
+		snapToGrid(position.Y),
+		snapToGrid(position.Z)
+	)
+end
+
+local function resolvePrefab(): Formex.ObjectPrefab?
+	local prefabName = getObjectPrefabName()
+	if prefabName then
+		local prefab = Formex.Objects.GetPrefab(prefabName)
+		if prefab then
+			return prefab
+		end
+	end
+
+	local prefabs = Formex.Objects.GetPrefabs()
+	if #prefabs > 0 then
+		return prefabs[1]
+	end
+	return nil
+end
+
+local function applyDesignToGhost(prefab: Formex.ObjectPrefab)
+	if not ghostModel then
+		return
+	end
+	local paintSettings = getObjectPaintSettings()
+	ghostData = {
+		ObjectId = 0,
+		Level = getCurrentLevel(),
+		Position = Vector3.new(0, 0, 0),
+		Rotation = Vector3.new(0, 0, 0),
+		WallId = nil,
+		Design = table.clone(paintSettings.Design),
+		DesignColors = table.clone(paintSettings.DesignColors),
+		IsPortal = false,
+		Prefab = prefab,
+		PrefabName = prefab.PrefabName,
+		Part = ghostModel,
+		DesignParts = Formex.Objects.BuildDesignParts(ghostModel),
+	} :: Formex.ObjectData
+	Formex.Objects.EnsureDesignDefaults(ghostData, prefab)
+	Formex.Objects.ApplyDesign(ghostData, ghostModel)
+end
+
+local function getWallPlacement(input: any, prefab: Formex.ObjectPrefab, wallData: Formex.WallData, rotationOverride: Vector3?): (Formex.ObjectData, boolean)
+	local plotPart = input.PlotInfo.PlotPart
+	local hitPosition = input.HitPosition
+	if not plotPart or not hitPosition then
+		return {} :: Formex.ObjectData, false
+	end
+
+	local localHit = plotPart.CFrame:PointToObjectSpace(hitPosition)
+	local startPoint = wallData.Start
+	local endPoint = wallData.End
+	local dir2 = Vector2.new(endPoint.X - startPoint.X, endPoint.Y - startPoint.Y)
+	local length = dir2.Magnitude
+	if length <= Constants.Epsilon then
+		return {} :: Formex.ObjectData, false
+	end
+	local dirUnit = dir2 / length
+	local offset = Vector2.new(localHit.X - startPoint.X, localHit.Z - startPoint.Y)
+	local distance = offset:Dot(dirUnit)
+	local side = offset:Dot(Vector2.new(-dirUnit.Y, dirUnit.X))
+	local levelOffset = Formex.Plot.GetLevelOffset(wallData.Level or 1)
+	local localY = localHit.Y - levelOffset
+	local position = snapVector(Vector3.new(distance, localY, 0))
+	local rotation = rotationOverride or Vector3.new(0, side >= 0 and 0 or 180, 0)
+	local size = prefab.Size or Vector3.new(1, 1, 1)
+	local wallHeight = wallData.Height or Formex.LevelHeight
+	local minX = size.X / 2
+	local maxX = length - (size.X / 2)
+	local minY = size.Y / 2
+	local maxY = wallHeight - (size.Y / 2)
+	local inside = position.X >= minX - Constants.Epsilon and position.X <= maxX + Constants.Epsilon
+		and position.Y >= minY - Constants.Epsilon and position.Y <= maxY + Constants.Epsilon
+		and size.Z <= Formex.WallThickness + Constants.Epsilon
+	local valid = inside
+
+	return {
+		ObjectId = 0,
+		Level = wallData.Level or getCurrentLevel(),
+		Position = position,
+		Rotation = rotation,
+		WallId = wallData.WallId,
+		PrefabName = prefab.PrefabName,
+		Prefab = prefab,
+	} :: Formex.ObjectData, valid
+end
+
+local function getSurfacePlacement(input: any, prefab: Formex.ObjectPrefab, rotationOverride: Vector3?): (Formex.ObjectData, boolean)
+	local plotPart = input.PlotInfo.PlotPart
+	local hitPosition = input.HitPosition
+	if not plotPart or not hitPosition then
+		return {} :: Formex.ObjectData, false
+	end
+	local localHit = plotPart.CFrame:PointToObjectSpace(hitPosition)
+	local size = prefab.Size or Vector3.new(1, 1, 1)
+	local normal = input.HitNormal or Vector3.new(0, 1, 0)
+	if prefab.ObjectMount == Formex.MountType.Floor then
+		normal = Vector3.new(0, 1, 0)
+	elseif prefab.ObjectMount == Formex.MountType.Ceiling then
+		normal = Vector3.new(0, -1, 0)
+	end
+	local yOffset = normal.Y >= 0 and (size.Y / 2) or -(size.Y / 2)
+	local position = snapVector(Vector3.new(localHit.X, localHit.Y + yOffset, localHit.Z))
+	local rotation = rotationOverride or Vector3.new(0, 0, 0)
+	local valid = Formex.Plot.IsPointInUnlockedSegments(Vector2.new(position.X, position.Z), input.PlotInfo.SegmentsUnlocked)
+	return {
+		ObjectId = 0,
+		Level = getCurrentLevel(),
+		Position = position,
+		Rotation = rotation,
+		WallId = nil,
+		PrefabName = prefab.PrefabName,
+		Prefab = prefab,
+	} :: Formex.ObjectData, valid
+end
+
+local function getPlacement(input: any, prefab: Formex.ObjectPrefab, rotationOverride: Vector3?, wallOverride: Formex.WallData?): (Formex.ObjectData, boolean)
+	local objectMount = prefab.ObjectMount
+	if objectMount == Formex.MountType.Wall or objectMount == Formex.MountType.Door or objectMount == Formex.MountType.Window then
+		local wallData = wallOverride
+		if not wallData then
+			local wallModel = getWallModelFromTarget(input.Target)
+			if wallModel then
+				wallData = getWallDataFromModel(wallModel)
+			end
+		end
+		if not wallData then
+			return {} :: Formex.ObjectData, false
+		end
+		return getWallPlacement(input, prefab, wallData, rotationOverride)
+	end
+
+	if objectMount == Formex.MountType.Floor or objectMount == Formex.MountType.Ceiling then
+		local floorModel = getFloorModelFromTarget(input.Target)
+		if not floorModel then
+			return {} :: Formex.ObjectData, false
+		end
+	end
+
+	return getSurfacePlacement(input, prefab, rotationOverride)
+end
+
+local function getSelectedObjectModel(): Model?
+	local selectionPart = getSelectionPart()
+	if not selectionPart then
+		return nil
+	end
+	return getObjectModelFromTarget(selectionPart)
+end
+
+local function getObjectDataFromModel(model: Model): Formex.ObjectData
+	local level = tonumber(model.Parent.Parent.Name) or getCurrentLevel()
+	local objectId = tonumber(model.Name) or 0
+	local position = model:GetAttribute("Position") or Vector3.new(0, 0, 0)
+	local rotation = model:GetAttribute("Rotation") or Vector3.new(0, 0, 0)
+	local wallId = model:GetAttribute("WallId")
+	local prefabName = model:GetAttribute("PrefabName")
+	local design, colors = Formex.Objects.DecodeDesign(model:GetAttribute("Design"))
+	local prefab = prefabName and Formex.Objects.GetPrefab(prefabName) or nil
+	return {
+		ObjectId = objectId,
+		Level = level,
+		Position = position,
+		Rotation = rotation,
+		WallId = wallId,
+		PrefabName = prefabName,
+		Prefab = prefab,
+		Design = design,
+		DesignColors = colors,
+		IsPortal = model:GetAttribute("IsPortal") == true,
+		Part = model,
+		DesignParts = {},
+	} :: Formex.ObjectData
+end
+
+function Objects.GetSelectedObjectData(): Formex.ObjectData?
+	local model = getSelectedObjectModel()
+	if not model then
+		return nil
+	end
+	return getObjectDataFromModel(model)
+end
+
+local function ensurePreviewHighlight(model: Model)
+	if previewHighlight and previewHighlight.Parent then
+		return
+	end
+	previewHighlight = Instance.new("Highlight")
+	previewHighlight.FillTransparency = 1
+	previewHighlight.OutlineTransparency = 0
+	previewHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	previewHighlight.Adornee = model
+	previewHighlight.Parent = model
+	setPreviewHighlight(true)
+end
+
+local function clearPreviewHighlight()
+	if previewHighlight then
+		previewHighlight:Destroy()
+		previewHighlight = nil
+	end
+	previewValid = true
+end
+
+local function clearHandles()
+	Handles.ClearHandleHover()
+	Handles.Clear()
+	handleMove = nil
+	handleRotate = nil
+	handleDelete = nil
+	lastHandleObjectId = nil
+end
+
+local function setHandlesVisible(visible: boolean)
+	for _, handle in ipairs({ handleMove, handleRotate, handleDelete }) do
+		Handles.SetHandleVisible(handle, visible)
+	end
+end
+
+local function updateHandlePositions(plotInfo: any, objectData: Formex.ObjectData, prefab: Formex.ObjectPrefab)
+	local model = objectData.Part
+	if not model then
+		return
+	end
+	local center = model:GetPivot().Position
+	local size = prefab.Size or Vector3.new(4, 4, 4)
+	local offset = math.max(size.X, size.Z) / 2 + Constants.HandleOffset
+	local yOffset = (size.Y / 2) + Constants.HandleOffset
+
+	if handleMove then
+		handleMove.Position = center
+	end
+	if handleRotate then
+		handleRotate.Position = center + Vector3.new(offset, yOffset, 0)
+	end
+	if handleDelete then
+		handleDelete.Position = center - Vector3.new(0, yOffset, 0)
+	end
+end
+
+local function onHandleClick(handleType: ObjectHandleType)
+	local input = getLastInputInfo()
+	local selectedData = Objects.GetSelectedObjectData()
+	if not input or not selectedData or not selectedData.Part then
+		return
+	end
+
+	local prefab = selectedData.Prefab
+	if not prefab and selectedData.PrefabName then
+		prefab = Formex.Objects.GetPrefab(selectedData.PrefabName)
+	end
+	if not prefab then
+		return
+	end
+
+	if handleType == "Delete" then
+		FormexClient.BuildObject({
+			ObjectId = selectedData.ObjectId,
+			Level = selectedData.Level,
+			Position = selectedData.Position,
+			Rotation = selectedData.Rotation,
+			WallId = selectedData.WallId,
+			PrefabName = selectedData.PrefabName,
+			Design = selectedData.Design,
+			DesignColors = selectedData.DesignColors,
+		}, Formex.BuildAction.Delete, getSelectionSnapshot())
+		clearSelection()
+		return
+	end
+
+	if handleType == "Rotate" and (prefab.ObjectMount == Formex.MountType.Wall
+		or prefab.ObjectMount == Formex.MountType.Door
+		or prefab.ObjectMount == Formex.MountType.Window) then
+		local nextRotation = Vector3.new(0, (selectedData.Rotation.Y + 180) % 360, 0)
+		selectedData.Rotation = nextRotation
+		FormexClient.BuildObject({
+			ObjectId = selectedData.ObjectId,
+			Level = selectedData.Level,
+			Position = selectedData.Position,
+			Rotation = nextRotation,
+			WallId = selectedData.WallId,
+			PrefabName = selectedData.PrefabName,
+			Design = selectedData.Design,
+			DesignColors = selectedData.DesignColors,
+		}, Formex.BuildAction.Edit, getSelectionSnapshot())
+		return
+	end
+
+	moveOriginal = selectedData
+	movePreview = table.clone(selectedData)
+	setActionType(handleType == "Rotate" and Enums.ActionType.Rotate or Enums.ActionType.Move)
+	setHandlesVisible(false)
+	ensurePreviewHighlight(selectedData.Part)
+end
+
+local function updateObjectHandles(plotInfo: any)
+	if getSelectionType() ~= Enums.SelectionType.Object then
+		clearHandles()
+		clearPreviewHighlight()
+		return
+	end
+
+	local objectData = Objects.GetSelectedObjectData()
+	if not objectData or not plotInfo or not plotInfo.PlotPart then
+		clearHandles()
+		clearPreviewHighlight()
+		return
+	end
+
+	local prefab = objectData.Prefab
+	if not prefab and objectData.PrefabName then
+		prefab = Formex.Objects.GetPrefab(objectData.PrefabName)
+	end
+	if not prefab then
+		clearHandles()
+		return
+	end
+
+	if objectData.ObjectId ~= lastHandleObjectId then
+		clearHandles()
+		handleMove = Handles.CreateHandle("ObjectMove", Constants.HandleMoveColor, Formex.Icons.MoveItem, onHandleClick, "Move")
+		handleRotate = Handles.CreateHandle("ObjectRotate", Constants.HandleFlipColor, Formex.Icons.RotateItem, onHandleClick, "Rotate")
+		handleDelete = Handles.CreateHandle("ObjectDelete", Constants.HandleDeleteColor, Formex.Icons.DeleteItem, onHandleClick, "Delete")
+		lastHandleObjectId = objectData.ObjectId
+	end
+
+	updateHandlePositions(plotInfo, objectData, prefab)
+	setHandlesVisible(true)
+end
+
+function Objects.ApplySelectedDesign(design: {[number]: number}, colors: {[number]: Color3}): boolean
+	local selectedData = Objects.GetSelectedObjectData()
+	if not selectedData then
+		return false
+	end
+	selectedData.Design = table.clone(design)
+	selectedData.DesignColors = table.clone(colors)
+	FormexClient.BuildObject({
+		ObjectId = selectedData.ObjectId,
+		Level = selectedData.Level,
+		Position = selectedData.Position,
+		Rotation = selectedData.Rotation,
+		WallId = selectedData.WallId,
+		PrefabName = selectedData.PrefabName,
+		Design = selectedData.Design,
+		DesignColors = selectedData.DesignColors,
+	}, Formex.BuildAction.Edit, getSelectionSnapshot())
+	return true
+end
+
+function Objects.ApplyPaintToTarget(target: Instance): boolean
+	local model = getObjectModelFromTarget(target)
+	if not model then
+		return false
+	end
+	local designIndex = getObjectDesignIndexFromTarget(target)
+	if not designIndex then
+		return false
+	end
+	local objectData = getObjectDataFromModel(model)
+	local paintSettings = getObjectPaintSettings()
+	local materialId = paintSettings.Design[designIndex]
+	local color = paintSettings.DesignColors[designIndex]
+	if not materialId and not color then
+		return false
+	end
+	local updatedDesign = table.clone(objectData.Design)
+	local updatedColors = table.clone(objectData.DesignColors)
+	if materialId then
+		updatedDesign[designIndex] = materialId
+	end
+	if color then
+		updatedColors[designIndex] = color
+	end
+	FormexClient.BuildObject({
+		ObjectId = objectData.ObjectId,
+		Level = objectData.Level,
+		Position = objectData.Position,
+		Rotation = objectData.Rotation,
+		WallId = objectData.WallId,
+		PrefabName = objectData.PrefabName,
+		Design = updatedDesign,
+		DesignColors = updatedColors,
+	}, Formex.BuildAction.Edit, getSelectionSnapshot())
+	return true
+end
+
+function Objects.CopyPaintFromTarget(target: Instance): boolean
+	local model = getObjectModelFromTarget(target)
+	if not model then
+		return false
+	end
+	local designIndex = getObjectDesignIndexFromTarget(target)
+	if not designIndex then
+		return false
+	end
+	local objectData = getObjectDataFromModel(model)
+	local materialId = objectData.Design[designIndex]
+	local color = objectData.DesignColors[designIndex]
+	if not materialId and not color then
+		return false
+	end
+	updateDesignState({
+		Object = {
+			DesignIndex = designIndex,
+			Material = materialId,
+			Color = color,
+		},
+	})
+	return true
+end
+
+local function updateGhostPlacement(input: any)
+	local prefab = resolvePrefab()
+	if not prefab then
+		clearGhost()
+		return
+	end
+	ensureGhost(prefab)
+	if not ghostModel then
+		return
+	end
+	applyDesignToGhost(prefab)
+
+	local data, valid = getPlacement(input, prefab, nil, nil)
+	setGhostHighlight(valid)
+	if valid then
+		local cframe = Formex.Objects.GetWorldCFrame(input.PlotInfo.PlotPart, data.Position, data.Rotation)
+		if prefab.ObjectMount == Formex.MountType.Wall
+			or prefab.ObjectMount == Formex.MountType.Door
+			or prefab.ObjectMount == Formex.MountType.Window then
+			local wallModel = getWallModelFromTarget(input.Target)
+			local wallData = wallModel and getWallDataFromModel(wallModel) or nil
+			if wallData then
+				cframe = Formex.Objects.GetWallCFrame(input.PlotInfo.PlotPart, wallData, data.Position, data.Rotation)
+			end
+		end
+		ghostModel:PivotTo(cframe)
+	end
+	ghostValid = valid
+end
+
+local function finalizePlacement(input: any)
+	if not ghostValid then
+		return
+	end
+	local prefab = resolvePrefab()
+	if not prefab then
+		return
+	end
+	local data, valid = getPlacement(input, prefab, nil, nil)
+	if not valid then
+		setGhostHighlight(false)
+		return
+	end
+
+	local paintSettings = getObjectPaintSettings()
+	local design = table.clone(paintSettings.Design)
+	local colors = table.clone(paintSettings.DesignColors)
+	local objectEntry: Formex.ObjectData = {
+		ObjectId = 0,
+		Level = data.Level,
+		Position = data.Position,
+		Rotation = data.Rotation,
+		WallId = data.WallId,
+		PrefabName = prefab.PrefabName,
+		Design = design,
+		DesignColors = colors,
+	}
+	Formex.Objects.EnsureDesignDefaults(objectEntry, prefab)
+
+	local result = FormexClient.BuildObject(objectEntry, Formex.BuildAction.Add, getSelectionSnapshot())
+	clearGhost()
+	setActionType(Enums.ActionType.Select)
+	if result and result.ObjectId then
+		selectPlotModelByIdAsync(input.PlotInfo, Enums.SelectionType.Object, data.Level, result.ObjectId)
+	end
+	notifyDesignModeChange()
+end
+
+local function updateMovePreview(input: any)
+	if not moveOriginal or not moveOriginal.Part then
+		return
+	end
+	if not input or not input.PlotInfo or not input.PlotInfo.PlotPart then
+		return
+	end
+	local prefab = moveOriginal.Prefab
+	if not prefab and moveOriginal.PrefabName then
+		prefab = Formex.Objects.GetPrefab(moveOriginal.PrefabName)
+	end
+	if not prefab then
+		return
+	end
+
+	local wallData = nil
+	if prefab.ObjectMount == Formex.MountType.Wall
+		or prefab.ObjectMount == Formex.MountType.Door
+		or prefab.ObjectMount == Formex.MountType.Window then
+		if moveOriginal.WallId then
+			local plotData = input.PlotInfo.PlotData
+			local levelData = plotData.Levels and plotData.Levels[moveOriginal.Level]
+			if levelData then
+				wallData = levelData.Walls[moveOriginal.WallId]
+			end
+		end
+	end
+
+	local data, valid = getPlacement(input, prefab, moveOriginal.Rotation, wallData)
+	setPreviewHighlight(valid)
+	if not data.Position or not data.Rotation then
+		return
+	end
+
+	movePreview = table.clone(moveOriginal)
+	movePreview.Position = data.Position
+	movePreview.Rotation = data.Rotation
+	movePreview.WallId = data.WallId
+
+	local targetCFrame = Formex.Objects.GetWorldCFrame(input.PlotInfo.PlotPart, data.Position, data.Rotation)
+	if wallData then
+		targetCFrame = Formex.Objects.GetWallCFrame(input.PlotInfo.PlotPart, wallData, data.Position, data.Rotation)
+	end
+	moveOriginal.Part:PivotTo(targetCFrame)
+end
+
+local function updateRotatePreview(input: any)
+	if not moveOriginal or not moveOriginal.Part then
+		return
+	end
+	if not input or not input.PlotInfo or not input.PlotInfo.PlotPart or not input.HitPosition then
+		return
+	end
+	local plotPart = input.PlotInfo.PlotPart
+	local localHit = plotPart.CFrame:PointToObjectSpace(input.HitPosition)
+	local objectLocal = plotPart.CFrame:PointToObjectSpace(moveOriginal.Part:GetPivot().Position)
+	local delta = Vector2.new(localHit.X - objectLocal.X, localHit.Z - objectLocal.Z)
+	if delta.Magnitude <= Constants.Epsilon then
+		return
+	end
+
+	local angle = math.deg(math.atan2(delta.X, delta.Y))
+	local newRotation = Vector3.new(0, angle, 0)
+	movePreview = table.clone(moveOriginal)
+	movePreview.Rotation = newRotation
+	setPreviewHighlight(true)
+
+	local cframe = Formex.Objects.GetWorldCFrame(plotPart, moveOriginal.Position, newRotation)
+	moveOriginal.Part:PivotTo(cframe)
+end
+
+local function finalizeMove(input: any)
+	if not moveOriginal or not movePreview then
+		return
+	end
+	local plotPart = input and input.PlotInfo and input.PlotInfo.PlotPart
+	if not previewValid then
+		if moveOriginal.Part then
+			if plotPart then
+				local prefab = moveOriginal.Prefab or (moveOriginal.PrefabName and Formex.Objects.GetPrefab(moveOriginal.PrefabName))
+				if prefab and (prefab.ObjectMount == Formex.MountType.Wall
+					or prefab.ObjectMount == Formex.MountType.Door
+					or prefab.ObjectMount == Formex.MountType.Window) then
+					local plotData = input.PlotInfo.PlotData
+					local wallData = plotData.Levels and plotData.Levels[moveOriginal.Level]
+						and plotData.Levels[moveOriginal.Level].Walls[moveOriginal.WallId]
+					if wallData then
+						moveOriginal.Part:PivotTo(Formex.Objects.GetWallCFrame(plotPart, wallData, moveOriginal.Position, moveOriginal.Rotation))
+					end
+				else
+					moveOriginal.Part:PivotTo(Formex.Objects.GetWorldCFrame(plotPart, moveOriginal.Position, moveOriginal.Rotation))
+				end
+			end
+		end
+		moveOriginal = nil
+		movePreview = nil
+		clearPreviewHighlight()
+		setActionType(Enums.ActionType.Select)
+		notifyDesignModeChange()
+		return
+	end
+
+	FormexClient.BuildObject({
+		ObjectId = moveOriginal.ObjectId,
+		Level = moveOriginal.Level,
+		Position = movePreview.Position,
+		Rotation = movePreview.Rotation,
+		WallId = movePreview.WallId,
+		PrefabName = moveOriginal.PrefabName,
+		Design = moveOriginal.Design,
+		DesignColors = moveOriginal.DesignColors,
+	}, Formex.BuildAction.Edit, getSelectionSnapshot())
+
+	moveOriginal = nil
+	movePreview = nil
+	clearPreviewHighlight()
+	setActionType(Enums.ActionType.Select)
+	notifyDesignModeChange()
+end
+
+function Objects.Init()
+	local ctx = Context.Get()
+	FormexClient = ctx.FormexClient
+	Formex = ctx.Formex
+	Handles = ctx.Handles
+	OverlayFolder = ctx.OverlayFolder
+	Enums = ctx.Enums
+	Constants = ctx.Constants
+
+	getActionType = ctx.GetActionType
+	setActionType = ctx.SetActionType
+	getDesignMode = ctx.GetDesignMode
+	getSelectionType = ctx.GetSelectionType
+	getSelectionPart = ctx.GetSelectionPart
+	getSelectionSnapshot = ctx.GetSelectionSnapshot
+	getCurrentLevel = ctx.GetCurrentLevel
+	getLastInputInfo = ctx.GetLastInputInfo
+	getObjectPaintSettings = ctx.GetObjectPaintSettings
+	getObjectPrefabName = ctx.GetObjectPrefabName
+	updateDesignState = ctx.UpdateDesignState
+	notifyDesignModeChange = ctx.NotifyDesignModeChange
+	clearSelection = ctx.ClearSelection
+	select = ctx.Select
+	selectPlotModelByIdAsync = ctx.SelectPlotModelByIdAsync
+end
+
+function Objects.UpdateHandles(plotInfo: any)
+	updateObjectHandles(plotInfo)
+end
+
+function Objects.ClearSelection()
+	clearHandles()
+	clearPreviewHighlight()
+end
+
+function Objects.CancelAction()
+	clearGhost()
+	clearPreviewHighlight()
+	if moveOriginal and moveOriginal.Part then
+		local input = getLastInputInfo()
+		if input and input.PlotInfo and input.PlotInfo.PlotPart then
+			local plotPart = input.PlotInfo.PlotPart
+			local prefab = moveOriginal.Prefab or (moveOriginal.PrefabName and Formex.Objects.GetPrefab(moveOriginal.PrefabName))
+			if prefab and (prefab.ObjectMount == Formex.MountType.Wall
+				or prefab.ObjectMount == Formex.MountType.Door
+				or prefab.ObjectMount == Formex.MountType.Window) then
+				local plotData = input.PlotInfo.PlotData
+				local wallData = plotData.Levels and plotData.Levels[moveOriginal.Level]
+					and plotData.Levels[moveOriginal.Level].Walls[moveOriginal.WallId]
+				if wallData then
+					moveOriginal.Part:PivotTo(Formex.Objects.GetWallCFrame(plotPart, wallData, moveOriginal.Position, moveOriginal.Rotation))
+				end
+			else
+				moveOriginal.Part:PivotTo(Formex.Objects.GetWorldCFrame(plotPart, moveOriginal.Position, moveOriginal.Rotation))
+			end
+		end
+	end
+	moveOriginal = nil
+	movePreview = nil
+	setActionType(Enums.ActionType.Select)
+end
+
+function Objects.HandleUpdate(input: any)
+	if getDesignMode() ~= Enums.DesignMode.Object then
+		return
+	end
+	local actionType = getActionType()
+	if actionType == Enums.ActionType.Select then
+		updateObjectHandles(input.PlotInfo)
+		Handles.CheckHover(input.Ray)
+		return
+	end
+
+	if actionType == Enums.ActionType.Start then
+		updateGhostPlacement(input)
+		return
+	end
+
+	if actionType == Enums.ActionType.Move then
+		updateMovePreview(input)
+		return
+	end
+
+	if actionType == Enums.ActionType.Rotate then
+		updateRotatePreview(input)
+		return
+	end
+end
+
+function Objects.HandlePrimaryRelease(input: any)
+	local actionType = getActionType()
+	if actionType == Enums.ActionType.Move or actionType == Enums.ActionType.Rotate then
+		finalizeMove(input)
+	end
+end
+
+function Objects.HandlePrimaryClick(input: any)
+	local actionType = getActionType()
+	if actionType == Enums.ActionType.Select then
+		local currentSelection = getSelectionPart()
+		local hadSelection = getSelectionType() ~= Enums.SelectionType.None or currentSelection ~= nil
+		if hadSelection and input.Target and currentSelection then
+			if input.Target == currentSelection
+				or input.Target:IsDescendantOf(currentSelection)
+				or currentSelection:IsDescendantOf(input.Target) then
+				return
+			end
+		end
+
+		local selected = input.Target and select(input.Target) or false
+		if selected then
+			return
+		end
+
+		if hadSelection then
+			clearSelection()
+			return
+		end
+
+		setActionType(Enums.ActionType.Start)
+		clearGhost()
+		notifyDesignModeChange()
+		return
+	end
+
+	if actionType == Enums.ActionType.Start then
+		finalizePlacement(input)
+	end
+end
 
 return Objects

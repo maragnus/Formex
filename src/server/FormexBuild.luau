@@ -290,6 +290,7 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 	local updatedWalls = {} :: {Formex.WallData}
 	local returnWalls = {} :: {Formex.WallData}
 	local removedParts = {} :: {BasePart}
+	local removedWallIds = {} :: {[number]: {[number]: boolean}}
 	local didChange = false
 
 	if action == Formex.BuildAction.Add then
@@ -410,6 +411,8 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 				if existing.Part then
 					table.insert(removedParts, existing.Part)
 				end
+				removedWallIds[levelIndex] = removedWallIds[levelIndex] or {}
+				removedWallIds[levelIndex][existing.WallId] = true
 				levelData.Walls[entry.WallId] = nil
 				didChange = true
 			else
@@ -509,6 +512,8 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 					if existing.Part then
 						existing.Part:Destroy()
 					end
+					removedWallIds[levelIndex] = removedWallIds[levelIndex] or {}
+					removedWallIds[levelIndex][existing.WallId] = true
 					levelData.Walls[entry.WallId] = nil
 					didChange = true
 				end
@@ -530,10 +535,30 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 		end
 	end
 
+	for levelIndex, wallIds in pairs(removedWallIds) do
+		local levelData = plotData.Levels[levelIndex]
+		if levelData and levelData.Objects then
+			for objectId, object in pairs(levelData.Objects) do
+				if object.WallId and wallIds[object.WallId] then
+					local prefab = object.Prefab or (object.PrefabName and Formex.Objects.GetPrefab(object.PrefabName))
+					if prefab and (prefab.ObjectMount == Formex.MountType.Wall
+						or prefab.ObjectMount == Formex.MountType.Door
+						or prefab.ObjectMount == Formex.MountType.Window) then
+						if object.Part then
+							object.Part:Destroy()
+						end
+						levelData.Objects[objectId] = nil
+					end
+				end
+			end
+		end
+	end
+
 	local plotPart = FormexSystem.Plots[plotData.PlotId]
 	if plotPart then
 		for _, levelIndex in ipairs(levelsTouched) do
 			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Wall)
+			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Object)
 		end
 	end
 
@@ -748,12 +773,184 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 end
 
 function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?)
-    local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
-    if permission ~= Formex.Permission.Manager then error("Access denied") end
-    
-    -- TODO
-    
-    FormexSystem.QueueSave(plotData.PlotId)
+	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
+	if not plotData then error("No current plot") end
+	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
+		error("Access denied")
+	end
+	if not objectData then
+		error("Invalid object data")
+	end
+
+	plotData.Levels = plotData.Levels or {}
+	local levelIndex = objectData.Level or 1
+	local snapshot = createSnapshot(plotData.Levels, levelIndex)
+	local levelData = FormexSystem.EnsureLevelData(plotData, levelIndex)
+
+	local function resolvePrefab(entry: Formex.ObjectData): Formex.ObjectPrefab
+		local prefabName = entry.PrefabName
+		if entry.Prefab and entry.Prefab.PrefabName then
+			prefabName = entry.Prefab.PrefabName
+		end
+		local prefab = prefabName and Formex.Objects.GetPrefab(prefabName)
+		if not prefab then
+			error("Invalid object prefab")
+		end
+		return prefab
+	end
+
+	local function ensureDesign(entry: Formex.ObjectData, prefab: Formex.ObjectPrefab)
+		entry.Design = entry.Design or {}
+		entry.DesignColors = entry.DesignColors or {}
+		Formex.Objects.EnsureDesignDefaults(entry, prefab)
+	end
+
+	local function normalizeObject(entry: Formex.ObjectData, prefab: Formex.ObjectPrefab, existing: Formex.ObjectData?): Formex.ObjectData
+		local position = entry.Position or (existing and existing.Position) or Vector3.new(0, 0, 0)
+		local rotation = entry.Rotation or (existing and existing.Rotation) or Vector3.new(0, 0, 0)
+		local wallId = entry.WallId
+		if wallId == 0 then
+			wallId = nil
+		end
+
+		local resolved = {
+			ObjectId = existing and existing.ObjectId or entry.ObjectId,
+			Level = levelIndex,
+			Position = position,
+			Rotation = rotation,
+			WallId = wallId,
+			Prefab = prefab,
+			PrefabName = prefab.PrefabName,
+			Design = entry.Design or (existing and existing.Design) or {},
+			DesignColors = entry.DesignColors or (existing and existing.DesignColors) or {},
+			IsPortal = prefab.ObjectMount == Formex.MountType.Door,
+			Part = existing and existing.Part or nil,
+		} :: Formex.ObjectData
+
+		ensureDesign(resolved, prefab)
+		return resolved
+	end
+
+	local function isWallMount(mount: Formex.ObjectMount): boolean
+		return mount == Formex.MountType.Wall or mount == Formex.MountType.Door or mount == Formex.MountType.Window
+	end
+
+	local function isObjectValid(entry: Formex.ObjectData, prefab: Formex.ObjectPrefab): boolean
+		if not entry.Position or not entry.Rotation then
+			return false
+		end
+		local size = prefab.Size or Vector3.new(1, 1, 1)
+		local plot = plotData
+
+		if isWallMount(prefab.ObjectMount) then
+			if not entry.WallId then
+				return false
+			end
+			local wallData = levelData.Walls[entry.WallId]
+			if not wallData then
+				return false
+			end
+			local dir, _, _, length = Formex.Objects.GetWallBasis(wallData)
+			if length <= Formex.EPSILON then
+				return false
+			end
+			if size.Z > Formex.WallThickness + Formex.EPSILON then
+				return false
+			end
+			local wallHeight = wallData.Height or Formex.LevelHeight
+			local minX = size.X / 2
+			local maxX = length - (size.X / 2)
+			local minY = size.Y / 2
+			local maxY = wallHeight - (size.Y / 2)
+			if entry.Position.X < minX - Formex.EPSILON or entry.Position.X > maxX + Formex.EPSILON then
+				return false
+			end
+			if entry.Position.Y < minY - Formex.EPSILON or entry.Position.Y > maxY + Formex.EPSILON then
+				return false
+			end
+			if math.abs(entry.Position.Z) > (Formex.WallThickness - size.Z) / 2 + Formex.EPSILON then
+				return false
+			end
+			if dir.Magnitude <= Formex.EPSILON then
+				return false
+			end
+			return true
+		end
+
+		local position2 = Vector2.new(entry.Position.X, entry.Position.Z)
+		if not Formex.Plot.IsPointInUnlockedSegments(position2, plot.SegmentsUnlocked) then
+			return false
+		end
+		return true
+	end
+
+	local didChange = false
+	local updatedObject: Formex.ObjectData? = nil
+
+	if action == Formex.BuildAction.Add then
+		local prefab = resolvePrefab(objectData)
+		local newId = takeNextId(plotData)
+		objectData.ObjectId = newId
+		objectData.Level = levelIndex
+		local resolved = normalizeObject(objectData, prefab, nil)
+		if not isObjectValid(resolved, prefab) then
+			plotData.Levels = snapshot
+			error("Invalid object placement")
+		end
+		levelData.Objects[newId] = resolved
+		didChange = true
+		updatedObject = resolved
+	elseif action == Formex.BuildAction.Edit then
+		local objectId = tonumber(objectData.ObjectId) or objectData.ObjectId
+		local existing = objectId and levelData.Objects[objectId]
+		if not existing then
+			plotData.Levels = snapshot
+			error("Object not found")
+		end
+		local prefab = resolvePrefab(objectData)
+		local resolved = normalizeObject(objectData, prefab, existing)
+		if not isObjectValid(resolved, prefab) then
+			plotData.Levels = snapshot
+			error("Invalid object placement")
+		end
+		levelData.Objects[existing.ObjectId] = resolved
+		didChange = true
+		updatedObject = resolved
+	elseif action == Formex.BuildAction.Delete then
+		local objectId = tonumber(objectData.ObjectId) or objectData.ObjectId
+		local existing = objectId and levelData.Objects[objectId]
+		if existing then
+			if existing.Part then
+				existing.Part:Destroy()
+			end
+			levelData.Objects[existing.ObjectId] = nil
+			didChange = true
+		end
+	else
+		error("Invalid object action")
+	end
+
+	if not didChange then
+		return nil
+	end
+
+	local plotPart = FormexSystem.Plots[plotData.PlotId]
+	if plotPart then
+		FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Object)
+		if updatedObject and updatedObject.Prefab and isWallMount(updatedObject.Prefab.ObjectMount) then
+			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Wall)
+		end
+	end
+
+	pushUndo(plotData.PlotId, player.UserId, snapshot, selection)
+	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
+	FormexSystem.QueueSave(plotData.PlotId)
+
+	if action == Formex.BuildAction.Delete then
+		return nil
+	end
+
+	return updatedObject
 end
 
 function FormexBuild.CanUndo(player: Player): boolean

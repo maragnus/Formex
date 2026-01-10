@@ -159,6 +159,71 @@ local function createIconButton(parent: Instance, name: string, iconId: number, 
     }
 end
 
+local function createPaletteButton(parent: Instance, prefab: Formex.ObjectPrefab, onSelect: (string) -> ())
+    local button = Instance.new("ImageButton", parent)
+    button.Name = "Prefab_" .. prefab.PrefabName
+    button.AutoButtonColor = false
+    button.BackgroundColor3 = COLORS.Section
+    button.BackgroundTransparency = 0
+    button.BorderSizePixel = 0
+    button.Size = UDim2.new(0, 78, 0, 86)
+
+    local corner = Instance.new("UICorner", button)
+    corner.CornerRadius = UDim.new(0, 10)
+
+    local stroke = Instance.new("UIStroke", button)
+    stroke.Color = COLORS.SectionBorder
+    stroke.Thickness = 1.4
+
+    local layout = Instance.new("UIListLayout", button)
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.VerticalAlignment = Enum.VerticalAlignment.Center
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 4)
+
+    local icon = Instance.new("ImageLabel", button)
+    icon.Name = "Icon"
+    icon.BackgroundTransparency = 1
+    icon.Size = UDim2.new(0, 42, 0, 42)
+    icon.ImageContent = Content.fromAssetId(prefab.IconAssetId or 0)
+    icon.ImageColor3 = COLORS.Icon
+    icon.ScaleType = Enum.ScaleType.Fit
+
+    local label = Instance.new("TextLabel", button)
+    label.Name = "Label"
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -8, 0, 24)
+    label.Font = Enum.Font.GothamSemibold
+    label.Text = prefab.Name
+    label.TextSize = 12
+    label.TextColor3 = COLORS.Text
+    label.TextWrapped = true
+
+    button.Activated:Connect(function()
+        onSelect(prefab.PrefabName)
+    end)
+
+    return {
+        Button = button,
+        Stroke = stroke,
+        Icon = icon,
+        Label = label,
+    }
+end
+
+local function setPaletteButtonActive(buttonInfo, active: boolean)
+    if active then
+        buttonInfo.Button.BackgroundColor3 = COLORS.AccentSoft
+        buttonInfo.Stroke.Color = COLORS.AccentBorder
+        buttonInfo.Icon.ImageColor3 = COLORS.Accent
+    else
+        buttonInfo.Button.BackgroundColor3 = COLORS.Section
+        buttonInfo.Stroke.Color = COLORS.SectionBorder
+        buttonInfo.Icon.ImageColor3 = COLORS.Icon
+    end
+end
+
 local function setIconButtonActive(buttonInfo, active: boolean)
     if active then
         buttonInfo.Button.BackgroundColor3 = COLORS.AccentSoft
@@ -281,6 +346,104 @@ local function updateSideSplitRange()
 	end
 	wallPaintSplitValue = clamped
 	ui.WallSideSplitSlider.SetValue(clamped)
+end
+
+local function clearObjectPalette()
+    if not ui.ObjectPaletteButtons then
+        return
+    end
+    for _, buttonInfo in pairs(ui.ObjectPaletteButtons) do
+        if buttonInfo.Button then
+            buttonInfo.Button:Destroy()
+        end
+    end
+    ui.ObjectPaletteButtons = {}
+end
+
+local function buildObjectPalette(prefabs: {Formex.ObjectPrefab})
+    clearObjectPalette()
+    if not ui.ObjectPaletteFrame then
+        return
+    end
+    for _, prefab in ipairs(prefabs) do
+        if prefab.PrefabName and prefab.PrefabName ~= "" then
+            local buttonInfo = createPaletteButton(ui.ObjectPaletteFrame, prefab, function(prefabName)
+                FormexDesign.UpdateDesignState({ Object = { PrefabName = prefabName } })
+            end)
+            ui.ObjectPaletteButtons[prefab.PrefabName] = buttonInfo
+        end
+    end
+end
+
+local function clearObjectDesignRows()
+    if not ui.ObjectDesignRows then
+        return
+    end
+    for _, rowInfo in pairs(ui.ObjectDesignRows) do
+        if rowInfo.Row then
+            rowInfo.Row:Destroy()
+        end
+    end
+    ui.ObjectDesignRows = {}
+end
+
+local function buildObjectDesignRows(prefab: Formex.ObjectPrefab?, design: {[number]: number}, colors: {[number]: Color3})
+    if not ui.ObjectDesignList then
+        return
+    end
+
+    clearObjectDesignRows()
+    if not prefab then
+        return
+    end
+
+    local indices = {}
+    local seen = {}
+    for index in pairs(design) do
+        if not seen[index] then
+            seen[index] = true
+            table.insert(indices, index)
+        end
+    end
+    for index, _ in ipairs(prefab.DefaultDesign or {}) do
+        if not seen[index] then
+            seen[index] = true
+            table.insert(indices, index)
+        end
+    end
+    table.sort(indices)
+
+    for _, index in ipairs(indices) do
+        local materialId = design[index] or (prefab.DefaultDesign and prefab.DefaultDesign[index]) or Formex.DefaultWallMaterial
+        local colorValue = colors[index] or Color3.new(1, 1, 1)
+        local row = createMaterialColorRow({
+            Parent = ui.ObjectDesignList,
+            Name = "ObjectDesign_" .. tostring(index),
+            MaterialLabel = "Design " .. tostring(index),
+            PartType = Formex.PartType.Object,
+            MaterialValue = materialId,
+            ColorValue = colorValue,
+            OnMaterialChanged = function(newMaterial)
+                local resolved = newMaterial or materialId or Formex.DefaultWallMaterial
+                FormexDesign.UpdateDesignState({
+                    Object = {
+                        DesignIndex = index,
+                        Material = resolved,
+                    },
+                })
+            end,
+            OnColorChanged = function(newColor)
+                local resolved = newColor or colorValue or Color3.new(1, 1, 1)
+                FormexDesign.UpdateDesignState({
+                    Object = {
+                        DesignIndex = index,
+                        Color = resolved,
+                    },
+                })
+            end,
+        })
+        ui.ObjectDesignRows[index] = row
+    end
 end
 
 local function setCollapsed(collapsed: boolean)
@@ -1054,11 +1217,54 @@ local function buildSidebar()
     objectHint.Size = UDim2.new(1, 0, 0, 0)
     objectHint.AutomaticSize = Enum.AutomaticSize.Y
     objectHint.Font = Enum.Font.Gotham
-    objectHint.Text = "Objects: TBD"
+    objectHint.Text = "Select a prefab and click to place objects."
     objectHint.TextSize = 14
     objectHint.TextColor3 = COLORS.Muted
     objectHint.TextWrapped = true
     objectHint.TextXAlignment = Enum.TextXAlignment.Left
+
+    local objectPaletteLabel = Instance.new("TextLabel", objectContent)
+    objectPaletteLabel.Name = "ObjectPaletteLabel"
+    objectPaletteLabel.BackgroundTransparency = 1
+    objectPaletteLabel.Size = UDim2.new(1, 0, 0, 18)
+    objectPaletteLabel.Font = Enum.Font.GothamSemibold
+    objectPaletteLabel.Text = "Palette"
+    objectPaletteLabel.TextColor3 = COLORS.Text
+    objectPaletteLabel.TextSize = 14
+    objectPaletteLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local objectPaletteFrame = Instance.new("Frame", objectContent)
+    objectPaletteFrame.Name = "ObjectPalette"
+    objectPaletteFrame.BackgroundTransparency = 1
+    objectPaletteFrame.Size = UDim2.new(1, 0, 0, 0)
+    objectPaletteFrame.AutomaticSize = Enum.AutomaticSize.Y
+
+    local objectPaletteLayout = Instance.new("UIGridLayout", objectPaletteFrame)
+    objectPaletteLayout.CellSize = UDim2.new(0, 78, 0, 86)
+    objectPaletteLayout.CellPadding = UDim2.new(0, 8, 0, 8)
+    objectPaletteLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    objectPaletteLayout.FillDirectionMaxCells = 3
+
+    local objectDesignLabel = Instance.new("TextLabel", objectContent)
+    objectDesignLabel.Name = "ObjectDesignLabel"
+    objectDesignLabel.BackgroundTransparency = 1
+    objectDesignLabel.Size = UDim2.new(1, 0, 0, 18)
+    objectDesignLabel.Font = Enum.Font.GothamSemibold
+    objectDesignLabel.Text = "Design"
+    objectDesignLabel.TextColor3 = COLORS.Text
+    objectDesignLabel.TextSize = 14
+    objectDesignLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local objectDesignList = Instance.new("Frame", objectContent)
+    objectDesignList.Name = "ObjectDesignList"
+    objectDesignList.BackgroundTransparency = 1
+    objectDesignList.Size = UDim2.new(1, 0, 0, 0)
+    objectDesignList.AutomaticSize = Enum.AutomaticSize.Y
+
+    local objectDesignLayout = Instance.new("UIListLayout", objectDesignList)
+    objectDesignLayout.FillDirection = Enum.FillDirection.Vertical
+    objectDesignLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    objectDesignLayout.Padding = UDim.new(0, 8)
 
     ui.Container = sidebar
     ui.HeaderLayout = headerLayout
@@ -1126,6 +1332,11 @@ local function buildSidebar()
 	ui.FoundationSelect = foundationRow.Material
 	ui.FoundationColorSelect = foundationRow.Color
     ui.ObjectContent = objectContent
+    ui.ObjectHint = objectHint
+    ui.ObjectPaletteFrame = objectPaletteFrame
+    ui.ObjectPaletteButtons = {}
+    ui.ObjectDesignList = objectDesignList
+    ui.ObjectDesignRows = {}
 
     setCollapsed(sidebarCollapsed)
     setDesignExpanded(designExpanded)
@@ -1300,6 +1511,37 @@ local function refreshUI()
     end
     suppressFloorInputs = false
 
+    local objectState = designState.Object
+    local objectPrefabs = Formex.Objects.GetPrefabs()
+    local selectedPrefabName = objectState and objectState.PrefabName or nil
+    local objectSelected = objectState and objectState.Selected or nil
+    local objectPaint = objectState and objectState.Paint or nil
+    local hasObjectSelection = selectionType == FormexDesign.SelectionType.Object
+        and objectSelected ~= nil and objectSelected.HasSelection
+
+    if ui.ObjectPaletteButtons and (#objectPrefabs ~= 0 or next(ui.ObjectPaletteButtons) ~= nil) then
+        if next(ui.ObjectPaletteButtons) == nil or #objectPrefabs ~= (ui.ObjectPaletteCount or 0) then
+            buildObjectPalette(objectPrefabs)
+            ui.ObjectPaletteCount = #objectPrefabs
+        end
+        for prefabName, buttonInfo in pairs(ui.ObjectPaletteButtons) do
+            setPaletteButtonActive(buttonInfo, prefabName == selectedPrefabName)
+        end
+    end
+
+    local designSource = objectPaint
+    if hasObjectSelection and designSubMode == FormexDesign.DesignSubMode.Normal then
+        designSource = objectSelected
+    end
+    local designPrefabName = (hasObjectSelection and objectSelected and objectSelected.PrefabName)
+        or selectedPrefabName
+    local designPrefab = designPrefabName and Formex.Objects.GetPrefab(designPrefabName) or nil
+    if designSource and designPrefab then
+        buildObjectDesignRows(designPrefab, designSource.Design or {}, designSource.DesignColors or {})
+    else
+        clearObjectDesignRows()
+    end
+
     ui.WallContent.Visible = false
     if ui.WallSideContent then
         ui.WallSideContent.Visible = false
@@ -1325,6 +1567,9 @@ local function refreshUI()
     elseif designMode == FormexDesign.DesignMode.Object then
         ui.DesignContentTitle.Text = "Objects"
         ui.ObjectContent.Visible = true
+        if ui.ObjectHint then
+            ui.ObjectHint.Visible = not hasObjectSelection
+        end
     elseif designMode == FormexDesign.DesignMode.Expand then
         ui.DesignContentTitle.Text = "Plot Expansion"
         ui.DesignContentHint.Text = "Select a segment to unlock."

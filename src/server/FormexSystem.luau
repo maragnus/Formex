@@ -434,16 +434,19 @@ local function renderWalls(data: RenderState)
         else
             Formex.Walls.Edit(wallData, data.PlotPart)
         end
+		if wallData.Part then
+			Formex.Objects.CarveWallObjects(data.PlotData, wallData)
+		end
     end
 end
 
 local function renderFurniture(data: RenderState)
-    local parent = data.RenderFurniture
+    local parent = data.ObjectFolder
     for objectId, objectData in data.LevelData.Objects do
         if not objectData.Part then
-            Formex.CreateObject(parent, objectData)
+            Formex.CreateObject(parent, objectData, data.PlotPart, data.PlotData)
         else
-            Formex.EditObject(objectData)
+            Formex.EditObject(objectData, data.PlotPart, data.PlotData)
         end
     end
 end
