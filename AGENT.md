@@ -72,6 +72,9 @@ A **Plot** has a permissions list of other players that can interact with it. Th
 - Clients never infer wall/floor/object data from Part properties; always read `model:GetAttribute(name) or default`.
 - Floors trigger client mesh updates on attribute changes (`Formex.Floors.RenderClientMeshes` for geometry, `Formex.Floors.ApplyClientMaterials` for appearance).
 - `FormexClient` emits `FormexEvents` (`PlotPartChanged`) so selection/UI can refresh immediately.
+- Client selection/lookup by id must use `PlotData` references (`Levels[*].Walls/Floors/Objects`) and not traverse the Workspace hierarchy as a fallback.
+- When applying client-side predictions, update model attributes via the shared builders (`Formex.Walls.Edit`, `Formex.Floors.Edit`) so `PlotData` stays in sync.
+- If a client-side predicted model is created, assign the server-returned id, then replace it once the authoritative model appears (keep this reconciliation logic centralized, e.g. in `FormexDesignContext`).
 
 ## Coding Standards
 

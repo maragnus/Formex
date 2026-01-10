@@ -128,6 +128,6 @@ Formex.Furniture = {
 		Size = Vector3.new(4, 6, 4),
 		Categories = { "Seating", "Indoors" },
 	},
-} :: {Formex.ObjectInfo}
+} :: {Formex.ObjectPrefab}
 
 return Formex

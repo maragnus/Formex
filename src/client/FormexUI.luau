@@ -1,5 +1,5 @@
 --!strict
-local DEBUG = true
+local DEBUG = false
 
 local BlurController = require(script.Parent:WaitForChild("BlurController"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

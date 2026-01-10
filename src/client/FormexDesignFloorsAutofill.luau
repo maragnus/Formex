@@ -46,7 +46,7 @@ local Formex = Context.Formex
 
 local Autofill = {}
 
-local DEBUG = true
+local DEBUG = false
 local DEBUG_OUTPUT: {[string]: any}? = nil
 
 type BlockerKind = "Wall" | "Floor"
@@ -98,6 +98,7 @@ local notifyDesignModeChange: () -> ()
 local clearSelection: () -> ()
 local clearGhost: () -> ()
 local select: (Instance) -> boolean
+local selectPlotModelByIdAsync: (any, string, number, number, number?) -> ()
 
 local cachedPolygon: {Vector2int16}? = nil
 local cachedValid = false
@@ -222,6 +223,7 @@ function Autofill.Init()
 	clearSelection = ctx.ClearSelection
 	clearGhost = ctx.ClearGhost
 	select = ctx.Select
+	selectPlotModelByIdAsync = ctx.SelectPlotModelByIdAsync
 end
 
 local function getPointKey(point: Vector2int16): string
@@ -274,28 +276,11 @@ local function getFloorModelFromTarget(target: Instance?): Model?
 end
 
 local function selectFloorAfterBuild(plotInfo: any, levelIndex: number, floorId: number?)
-	if not plotInfo or not plotInfo.PlotPart or not floorId then
+	if not plotInfo or not floorId then
 		return
 	end
 
-	local plotPart = plotInfo.PlotPart
-	task.spawn(function()
-		local deadline = time() + 2
-		while time() < deadline do
-			local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
-			if levelPart then
-				local floorsFolder = levelPart:FindFirstChild("Floors")
-				if floorsFolder then
-					local floorModel = floorsFolder:FindFirstChild(tostring(floorId))
-					if floorModel and floorModel:IsA("Model") then
-						select(floorModel)
-						return
-					end
-				end
-			end
-			task.wait(0.05)
-		end
-	end)
+	selectPlotModelByIdAsync(plotInfo, Enums.SelectionType.Floor, levelIndex, floorId)
 end
 
 local function getLevelData(plotInfo: any, levelIndex: number): Formex.LevelData?

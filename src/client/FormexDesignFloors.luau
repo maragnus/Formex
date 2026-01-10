@@ -90,6 +90,8 @@ local updateDesignState: (any) -> ()
 local select: (Instance) -> boolean
 local clearSelection: () -> ()
 local getSelectionInfoFromInstance: (Instance?) -> (string?, number?, number?)
+local getPlotModelFromPlotData: (any, string, number, number) -> Model?
+local selectPlotModelByIdAsync: (any, string, number, number, number?) -> ()
 local notifyDesignModeChange: () -> ()
 local cancelAction: () -> ()
 
@@ -143,6 +145,8 @@ function Floors.Init()
 	select = ctx.Select
 	clearSelection = ctx.ClearSelection
 	getSelectionInfoFromInstance = ctx.GetSelectionInfoFromInstance
+	getPlotModelFromPlotData = ctx.GetPlotModelFromPlotData
+	selectPlotModelByIdAsync = ctx.SelectPlotModelByIdAsync
 	notifyDesignModeChange = ctx.NotifyDesignModeChange
 	cancelAction = ctx.CancelAction
 
@@ -376,24 +380,11 @@ local function getFloorModelFromSelection(): Model?
 	end
 
 	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.PlotPart then
+	if not plotInfo then
 		return nil
 	end
 
-	local levelPart = plotInfo.PlotPart:FindFirstChild(tostring(level))
-	if not levelPart then
-		return nil
-	end
-	local floorsFolder = levelPart:FindFirstChild("Floors")
-	if not floorsFolder then
-		return nil
-	end
-
-	local floorModel = floorsFolder:FindFirstChild(tostring(floorId))
-	if floorModel and floorModel:IsA("Model") then
-		return floorModel
-	end
-	return nil
+	return getPlotModelFromPlotData(plotInfo, Enums.SelectionType.Floor, level, floorId)
 end
 
 local function getFloorDataFromModel(model: Model): Formex.FloorData
@@ -670,42 +661,43 @@ local function getMidpointOffset(points: {Vector2int16}, index: number, handleOf
 	return Vector2int16.new(offsetX, offsetY)
 end
 
-local function collectSharedFloors(plotPart: BasePart, levelIndex: number, originPoint: Vector2int16, originKey: string, ignoreFloorId: number): {SharedFloorPoint}
+local function collectSharedFloors(plotInfo: any, levelIndex: number, originPoint: Vector2int16, originKey: string, ignoreFloorId: number): {SharedFloorPoint}
 	local shared = {}
-	local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
-	if not levelPart then
+	local plotData = plotInfo and plotInfo.PlotData
+	if not plotData or not plotData.Levels then
 		return shared
 	end
 
-	local floorsFolder = levelPart:FindFirstChild("Floors")
-	if not floorsFolder then
+	local levelData = plotData.Levels[levelIndex]
+	if not levelData or not levelData.Floors then
 		return shared
 	end
 
-	for _, child in ipairs(floorsFolder:GetChildren()) do
-		if child:IsA("Model") then
-			local floorId = tonumber(child.Name)
-			if floorId and floorId ~= ignoreFloorId then
-				local floorData = getFloorDataFromModel(child)
-				for index, point in ipairs(floorData.Points) do
-						if pointsEqual(point, originPoint) then
-							table.insert(shared, {
-								FloorId = floorId,
-								LevelIndex = levelIndex,
-								Points = floorData.Points,
-								PointIndex = index,
-								OriginKey = originKey,
-								RaiseHeight = floorData.RaiseHeight,
-								FloorMaterial = floorData.FloorMaterial,
-								CeilingMaterial = floorData.CeilingMaterial,
-								FoundationMaterial = floorData.FoundationMaterial or Formex.DefaultFoundationMaterial,
-								FloorColor = floorData.FloorColor or Color3.new(1, 1, 1),
-								CeilingColor = floorData.CeilingColor or Color3.new(1, 1, 1),
-								FoundationColor = floorData.FoundationColor or Color3.new(1, 1, 1),
-							})
-						end
-					end
+	for floorId, floorData in pairs(levelData.Floors) do
+		if floorId ~= ignoreFloorId and floorData.Points then
+			for index, point in ipairs(floorData.Points) do
+				if pointsEqual(point, originPoint) then
+					local floorMaterial = floorData.FloorMaterial or Formex.DefaultFloorMaterial
+					local ceilingMaterial = floorData.CeilingMaterial or floorMaterial
+					local floorColor = floorData.FloorColor or Color3.new(1, 1, 1)
+					local ceilingColor = floorData.CeilingColor or floorColor
+					local foundationColor = floorData.FoundationColor or floorColor
+					table.insert(shared, {
+						FloorId = floorId,
+						LevelIndex = levelIndex,
+						Points = table.clone(floorData.Points),
+						PointIndex = index,
+						OriginKey = originKey,
+						RaiseHeight = floorData.RaiseHeight or 0,
+						FloorMaterial = floorMaterial,
+						CeilingMaterial = ceilingMaterial,
+						FoundationMaterial = floorData.FoundationMaterial or Formex.DefaultFoundationMaterial,
+						FloorColor = floorColor,
+						CeilingColor = ceilingColor,
+						FoundationColor = foundationColor,
+					})
 				end
+			end
 		end
 	end
 
@@ -865,27 +857,8 @@ local function createFloorFromTile(tile: Vector2int16, floorData: Formex.FloorDa
 	local plotInfo = FormexClient.CurrentPlot
 	local data = floorData or buildFloorDataFromTile(tile)
 	local result = FormexClient.BuildFloor(data, Formex.BuildAction.Add, getSelectionSnapshot())
-	if plotInfo and plotInfo.PlotPart and result and result.FloorId then
-		local plotPart = plotInfo.PlotPart
-		local levelIndex = data.LevelIndex
-		local floorId = result.FloorId
-		task.spawn(function()
-			local deadline = time() + 2
-			while time() < deadline do
-				local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
-				if levelPart then
-					local floorsFolder = levelPart:FindFirstChild("Floors")
-					if floorsFolder then
-						local floorModel = floorsFolder:FindFirstChild(tostring(floorId))
-						if floorModel and floorModel:IsA("Model") then
-							select(floorModel)
-							return
-						end
-					end
-				end
-				task.wait(0.05)
-			end
-		end)
+	if plotInfo and result and result.FloorId then
+		selectPlotModelByIdAsync(plotInfo, Enums.SelectionType.Floor, data.LevelIndex, result.FloorId)
 	end
 end
 
@@ -982,8 +955,8 @@ local function onFloorHandleClicked(info: any)
 		local nextIndex = info.NextIndex or ((handleIndex % #points) + 1)
 		local originKey = getPointKey(points[handleIndex])
 		local originKey2 = getPointKey(points[nextIndex])
-		local sharedStart = collectSharedFloors(plotInfo.PlotPart, floorData.LevelIndex, points[handleIndex], originKey, floorData.FloorId)
-		local sharedEnd = collectSharedFloors(plotInfo.PlotPart, floorData.LevelIndex, points[nextIndex], originKey2, floorData.FloorId)
+		local sharedStart = collectSharedFloors(plotInfo, floorData.LevelIndex, points[handleIndex], originKey, floorData.FloorId)
+		local sharedEnd = collectSharedFloors(plotInfo, floorData.LevelIndex, points[nextIndex], originKey2, floorData.FloorId)
 		for _, shared in ipairs(sharedStart) do
 			table.insert(moveSharedPoints, shared)
 		end
@@ -1007,7 +980,7 @@ local function onFloorHandleClicked(info: any)
 		}
 	else
 		local originKey = getPointKey(points[handleIndex])
-		moveSharedPoints = collectSharedFloors(plotInfo.PlotPart, floorData.LevelIndex, points[handleIndex], originKey, floorData.FloorId)
+		moveSharedPoints = collectSharedFloors(plotInfo, floorData.LevelIndex, points[handleIndex], originKey, floorData.FloorId)
 		activeHandle = {
 			Kind = "Point",
 			Index = handleIndex,

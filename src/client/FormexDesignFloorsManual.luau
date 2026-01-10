@@ -42,6 +42,7 @@ local updateGhostValidity: (boolean) -> ()
 local clearGhost: () -> ()
 local clearSelection: () -> ()
 local select: (Instance) -> boolean
+local selectPlotModelByIdAsync: (any, string, number, number, number?) -> ()
 local notifyDesignModeChange: () -> ()
 
 local ghostPoints = {} :: {BasePart}
@@ -80,6 +81,7 @@ function Manual.Init()
 	clearGhost = ctx.ClearGhost
 	clearSelection = ctx.ClearSelection
 	select = ctx.Select
+	selectPlotModelByIdAsync = ctx.SelectPlotModelByIdAsync
 	notifyDesignModeChange = ctx.NotifyDesignModeChange
 end
 
@@ -263,28 +265,11 @@ local function getFloorModelFromTarget(target: Instance?): Model?
 end
 
 local function selectFloorAfterBuild(plotInfo: any, levelIndex: number, floorId: number?)
-	if not plotInfo or not plotInfo.PlotPart or not floorId then
+	if not plotInfo or not floorId then
 		return
 	end
 
-	local plotPart = plotInfo.PlotPart
-	task.spawn(function()
-		local deadline = time() + 2
-		while time() < deadline do
-			local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
-			if levelPart then
-				local floorsFolder = levelPart:FindFirstChild("Floors")
-				if floorsFolder then
-					local floorModel = floorsFolder:FindFirstChild(tostring(floorId))
-					if floorModel and floorModel:IsA("Model") then
-						select(floorModel)
-						return
-					end
-				end
-			end
-			task.wait(0.05)
-		end
-	end)
+	selectPlotModelByIdAsync(plotInfo, Enums.SelectionType.Floor, levelIndex, floorId)
 end
 
 local function isOverlappingExistingFloor(plotInfo: any, previewPoints: {Vector2int16}): boolean

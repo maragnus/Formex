@@ -248,6 +248,8 @@ export type Context = {
 	GetSelectionPart: () -> Instance?,
 	GetSelectionSnapshot: () -> any?,
 	GetLastInputInfo: () -> any?,
+	GetPlotModelFromPlotData: (any, SelectionType, number, number) -> Model?,
+	SelectPlotModelByIdAsync: (any, SelectionType, number, number, number?) -> (),
 	GetSnappedPoint: (BasePart, Vector3) -> Vector2int16,
 	SnapWallEndPoint: (Vector2 | Vector2int16, Vector2) -> Vector2int16,
 	ToSnappedVector2int16: (Vector2) -> Vector2int16,

@@ -81,6 +81,7 @@ local notifyDesignModeChange: () -> ()
 local clearSelection: () -> ()
 local select: (Instance) -> boolean
 local getSelectionInfoFromInstance: (Instance?) -> (string?, number?, number?)
+local selectPlotModelByIdAsync: (any, string, number, number, number?) -> ()
 local deleteAfterDelay: (Instance, number) -> ()
 local cancelAction: () -> ()
 local getWallPaintSettings: () -> any
@@ -148,6 +149,7 @@ function Walls.Init()
 	clearSelection = ctx.ClearSelection
 	select = ctx.Select
 	getSelectionInfoFromInstance = ctx.GetSelectionInfoFromInstance
+	selectPlotModelByIdAsync = ctx.SelectPlotModelByIdAsync
 	deleteAfterDelay = ctx.DeleteAfterDelay
 	cancelAction = ctx.CancelAction
 	getWallPaintSettings = ctx.GetWallPaintSettings
@@ -201,31 +203,40 @@ local function getWallEndpoints(wallModel: Model): (Vector2int16, Vector2int16)
 	return startPoint, endPoint
 end
 
-local function getLevelWallInfos(plotPart: BasePart, level: number): {WallInfo}
+local function getLevelWallInfos(plotInfo: any, level: number): {WallInfo}
 	local results = {}
-	local levelPart = plotPart:FindFirstChild(tostring(level))
-	if not levelPart then
+	local plotData = plotInfo and plotInfo.PlotData
+	if not plotData or not plotData.Levels then
 		return results
 	end
 
-	local wallsFolder = levelPart:FindFirstChild("Walls")
-	if not wallsFolder then
+	local levelData = plotData.Levels[level]
+	if not levelData or not levelData.Walls then
 		return results
 	end
 
-	for _, child in ipairs(wallsFolder:GetChildren()) do
-		if child:IsA("Model") then
-			local wallId = tonumber(child.Name)
-			local frontPart = getWallFrontPart(child)
-			if wallId and frontPart then
-				local startPoint, endPoint = getWallEndpoints(child)
-				table.insert(results, {
-					WallId = wallId,
-					Level = level,
-					Start = startPoint,
-					End = endPoint,
-					Part = child,
-				})
+	for _, wallData in pairs(levelData.Walls) do
+		local model = wallData.Part
+		if model and model:IsA("Model") then
+			local frontPart = getWallFrontPart(model)
+			if frontPart then
+				local startPoint = wallData.Start
+				local endPoint = wallData.End
+				if not startPoint or not endPoint then
+					startPoint, endPoint = getWallEndpoints(model)
+				end
+				if startPoint and endPoint then
+					local wallId = wallData.WallId or tonumber(model.Name)
+					if wallId then
+						table.insert(results, {
+							WallId = wallId,
+							Level = level,
+							Start = startPoint,
+							End = endPoint,
+							Part = model,
+						})
+					end
+				end
 			end
 		end
 	end
@@ -785,7 +796,7 @@ local function splitWallAtPoint(plotInfo: any, wall: WallInfo, splitPoint: Vecto
 end
 
 local function splitWallsAtPoints(plotInfo: any, level: number, points: {Vector2int16}, ignoreIds: {[number]: boolean})
-	local walls = getLevelWallInfos(plotInfo.PlotPart, level)
+	local walls = getLevelWallInfos(plotInfo, level)
 	local splitWalls: {[number]: boolean} = {}
 	for _, point in ipairs(points) do
 		for _, wall in ipairs(walls) do
@@ -893,38 +904,7 @@ local function onWallFlip()
 end
 
 local function selectWallByIdAsync(plotInfo: any, levelIndex: number, wallId: number)
-	task.spawn(function()
-		local deadline = time() + 2
-		while time() < deadline do
-			local plotData = plotInfo and plotInfo.PlotData
-			if plotData and plotData.Levels then
-				local levelData = plotData.Levels[levelIndex]
-				if levelData and levelData.Walls then
-					local wallData = levelData.Walls[wallId]
-					local wallPart = wallData and wallData.Part
-					if wallPart and wallPart:IsA("Model") then
-						select(wallPart)
-						return
-					end
-				end
-			end
-			local plotPart = plotInfo and plotInfo.PlotPart
-			if plotPart then
-				local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
-				if levelPart then
-					local wallsFolder = levelPart:FindFirstChild("Walls")
-					if wallsFolder then
-						local wallModel = wallsFolder:FindFirstChild(tostring(wallId))
-						if wallModel and wallModel:IsA("Model") then
-							select(wallModel)
-							return
-						end
-					end
-				end
-			end
-			task.wait(0.05)
-		end
-	end)
+	selectPlotModelByIdAsync(plotInfo, Enums.SelectionType.Wall, levelIndex, wallId)
 end
 
 local function onWallDivide()
@@ -1027,7 +1007,7 @@ local function onWallMove(handleType: WallHandleType)
 	setWallHandlesVisible(false)
 	clearGhost()
 
-	local walls = getLevelWallInfos(input.PlotInfo.PlotPart, selectedWall.Level)
+	local walls = getLevelWallInfos(input.PlotInfo, selectedWall.Level)
 	local connectedAtStart = getConnectedWallsAtPoint(walls, selectedWall.Start, selectedWall.WallId)
 	local connectedAtEnd = getConnectedWallsAtPoint(walls, selectedWall.End, selectedWall.WallId)
 
@@ -1156,7 +1136,7 @@ local function updateWallHandles(plotInfo: any)
 	Handles.SetHandleVisible(wallHandleEnd, showPointHandles)
 	Handles.SetHandleVisible(wallHandleCenter, showPartHandle)
 
-	local walls = getLevelWallInfos(plotInfo.PlotPart, level)
+	local walls = getLevelWallInfos(plotInfo, level)
 	local connectedAtStart = getConnectedWallsAtPoint(walls, startPoint, wallId)
 	local connectedAtEnd = getConnectedWallsAtPoint(walls, endPoint, wallId)
 	Handles.SetHandleVisible(wallHandleStartSolo, showPointHandles and #connectedAtStart > 0)

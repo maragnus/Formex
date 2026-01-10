@@ -14,6 +14,7 @@ export type Permission = "Guest" | "Banned" | "VIP" | "Manager" | "Owner"
 export type PartType = "Wall" | "Floor" | "Ceiling" | "Object" | nil
 export type BuildAction = "Add" | "Delete" | "Edit"
 export type CollisionGroup = "Grid" | "Wall" | "Object"
+export type ObjectMount = "Surface" | "Ceiling" | "Floor" | "Wall" | "Door" | "Window"
 
 -- Client shared represenation
 export type PlotSaveInfo = {
@@ -98,11 +99,10 @@ export type ObjectData = {
 	Rotation: Vector3,
 	WallId: number?, -- if mounted to a wall
 	IsPortal: boolean, -- e.g. doorway into adjacent room
-	Design: {[number]: string},
-	Properties: {[string]: any},
+	Design: {[number]: number}, -- [part index]: material index
+	Prefab: ObjectPrefab,
 	Part: Model?,
-	ObjectModel: Model?,
-	SubtractModel: Model?
+	Subtract: Model?
 }
 
 export type MaterialInfo = {
@@ -113,13 +113,15 @@ export type MaterialInfo = {
 	Categories: {PartType}?
 }
 
-export type ObjectInfo = {
-	Name: string,
+export type ObjectPrefab = {
+	Name: string, -- Display Name
 	IconAssetId: number,
-	PrefabName: string,
+	PrefabName: string, -- ReplicatedStorage / FormexPrefabs: Folder / PrefabName: Model
+	ObjectMount: ObjectMount,
 	Size: Vector3,
 	Categories: {string},
-	Properties: {[string]: any}?,
+	Attributes: {[string]: any}?, -- Model:GetAttributes()
+	Model: Model?,
 }
 
 export type RoomData = {
@@ -223,6 +225,15 @@ Formex.CollisionGroup = {
 	Structure = "FormexStructure",
 } :: {CollisionGroup: string}
 
+Formex.MountType = table.freeze({
+	Surface = "Surface", -- placeable on any surface, floor or table
+	Ceiling = "Ceiling", -- must be placed on ceiling
+	Floor = "Floor", -- must be placed on floor
+	Wall = "Wall", -- must be placed on wall
+	Door = "Door", -- must be placed in wall opening on floor
+	Window = "Window", -- must be placed in wall opening at any height
+}) :: {ObjectMount: ObjectMount}
+
 Formex.MaxPlotSize = {
 	Width = 3, -- segments
 	Height = 3, -- segments
@@ -258,7 +269,7 @@ Formex.Icons = {} :: {[string]: number}
 Formex.Materials = {} :: {number: MaterialInfo}
 Formex.Walls = {} :: {}
 Formex.Floors = {} :: {}
-Formex.Furniture = {} :: {ObjectInfo}
+Formex.Furniture = {} :: {ObjectPrefab}
 
 -- Network function names
 Formex.Function = table.freeze({

@@ -669,41 +669,82 @@ local function resolveUndoRedoMode(selection: Formex.SelectionSnapshot?): Design
 	return nil
 end
 
-local function findSelectionModel(plotPart: BasePart, selection: Formex.SelectionSnapshot?): Instance?
+local function getPlotModelFromPlotData(plotInfo: FormexClient.PlotInfo?, selectionKind: SelectionType, levelIndex: number, partId: number): Model?
+	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Levels then
+		return nil
+	end
+
+	local levelData = plotInfo.PlotData.Levels[levelIndex]
+	if not levelData then
+		return nil
+	end
+
+	if selectionKind == FormexDesign.SelectionType.Wall then
+		local wallData = levelData.Walls and levelData.Walls[partId]
+		local model = wallData and wallData.Part
+		if model and model:IsA("Model") then
+			return model
+		end
+	elseif selectionKind == FormexDesign.SelectionType.Floor then
+		local floorData = levelData.Floors and levelData.Floors[partId]
+		local model = floorData and floorData.Model
+		if model and model:IsA("Model") then
+			return model
+		end
+	elseif selectionKind == FormexDesign.SelectionType.Object then
+		local objectData = levelData.Objects and levelData.Objects[partId]
+		local model = objectData and objectData.Part
+		if model and model:IsA("Model") then
+			return model
+		end
+	end
+
+	return nil
+end
+
+local function selectPlotModelByIdAsync(
+	plotInfo: FormexClient.PlotInfo?,
+	selectionKind: SelectionType,
+	levelIndex: number,
+	partId: number,
+	timeoutSeconds: number?
+)
+	if not plotInfo or not selectionKind then
+		return
+	end
+
+	local model = getPlotModelFromPlotData(plotInfo, selectionKind, levelIndex, partId)
+	if model then
+		FormexDesign.Select(model)
+		return
+	end
+
+	task.spawn(function()
+		local deadline = time() + (timeoutSeconds or 2)
+		while time() < deadline do
+			local found = getPlotModelFromPlotData(plotInfo, selectionKind, levelIndex, partId)
+			if found then
+				FormexDesign.Select(found)
+				return
+			end
+			task.wait(0.05)
+		end
+	end)
+end
+
+local function findSelectionModel(plotInfo: FormexClient.PlotInfo, selection: Formex.SelectionSnapshot?): Instance?
 	if not selection or selection.SelectionType == FormexDesign.SelectionType.None then
 		return nil
 	end
 
 	local levelIndex = selection.LevelIndex
 	local partId = selection.PartId
-	if not levelIndex or partId == nil then
+	local selectionKind = selection.SelectionType
+	if not levelIndex or partId == nil or not selectionKind then
 		return nil
 	end
 
-	local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
-	if not levelPart then
-		return nil
-	end
-
-	local folderName = selection.SelectionType == FormexDesign.SelectionType.Wall and "Walls"
-		or selection.SelectionType == FormexDesign.SelectionType.Floor and "Floors"
-		or selection.SelectionType == FormexDesign.SelectionType.Object and "Objects"
-		or nil
-	if not folderName then
-		return nil
-	end
-
-	local folder = levelPart:FindFirstChild(folderName)
-	if not folder then
-		return nil
-	end
-
-	local model = folder:FindFirstChild(tostring(partId))
-	if model and model:IsA("Model") then
-		return model
-	end
-
-	return nil
+	return getPlotModelFromPlotData(plotInfo, selectionKind :: SelectionType, levelIndex, partId)
 end
 
 local function applyUndoRedoSelection(selection: Formex.SelectionSnapshot?)
@@ -728,7 +769,7 @@ local function applyUndoRedoSelection(selection: Formex.SelectionSnapshot?)
 	end
 
 	local function trySelect(): boolean
-		local model = findSelectionModel(plotInfo.PlotPart, selection)
+		local model = findSelectionModel(plotInfo, selection)
 		if model then
 			FormexDesign.Select(model)
 			return true
@@ -1524,22 +1565,7 @@ local function buildFloorGhostData(levelIndex: number, tile: Vector2int16): Form
 end
 
 local function getWallPart(plotInfo: FormexClient.PlotInfo, wallId: number, level: number): Model?
-	if not plotInfo.PlotPart then
-		return nil
-	end
-	local levelPart = plotInfo.PlotPart:FindFirstChild(tostring(level))
-	if not levelPart then
-		return nil
-	end
-	local wallsFolder = levelPart:FindFirstChild("Walls")
-	if not wallsFolder then
-		return nil
-	end
-	local wallModel = wallsFolder:FindFirstChild(tostring(wallId))
-	if wallModel and wallModel:IsA("Model") then
-		return wallModel
-	end
-	return nil
+	return getPlotModelFromPlotData(plotInfo, FormexDesign.SelectionType.Wall, level, wallId)
 end
 
 local function ensureWallGhost(plotPart: BasePart, startPoint: Vector2, endPoint: Vector2)
@@ -2430,6 +2456,8 @@ FormexDesignContext.Init({
 	GetLastInputInfo = function()
 		return inputInfo
 	end,
+	GetPlotModelFromPlotData = getPlotModelFromPlotData,
+	SelectPlotModelByIdAsync = selectPlotModelByIdAsync,
 	GetSnappedPoint = getSnappedPoint,
 	SnapWallEndPoint = snapWallEndPoint,
 	ToSnappedVector2int16 = toSnappedVector2int16,
