@@ -75,6 +75,8 @@ A **Plot** has a permissions list of other players that can interact with it. Th
 
 ## Coding Standards
 
+The first line of every .luau module must be: --!strict
+
 Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Content.fromAssetId` and avoid unnecessary wrapper functions.
 - `ImageLabel`:
 `imageLabel.ImageContent = Content.fromAssetId(assetId: number)`
