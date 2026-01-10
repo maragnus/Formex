@@ -274,18 +274,11 @@ local function resolveSideColors(entryTop: Color3?, entryBottom: Color3?, existi
 	return bottom, top
 end
 
-function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?)
-	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
-	if not plotData then error("No current plot") end
-	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
-		error("Access denied")
-	end
-	if not wallData then error("Invalid wall data") end
-
+local function applyWallChanges(plotData: Formex.PlotData, wallData: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction, snapshot: Formex.LevelArray?): any
 	plotData.Levels = plotData.Levels or {}
 	local wallList, isBatch = normalizeWallList(wallData)
 	local levelsTouched = collectWallLevels(wallList)
-	local snapshot = createSnapshotForLevels(plotData.Levels, levelsTouched)
+	local resolvedSnapshot = snapshot or createSnapshotForLevels(plotData.Levels, levelsTouched)
 
 	local updatedWalls = {} :: {Formex.WallData}
 	local returnWalls = {} :: {Formex.WallData}
@@ -383,7 +376,7 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 
 		for _, wall in ipairs(updatedWalls) do
 			if not Formex.IsWallValid(plotData, wall) then
-				plotData.Levels = snapshot
+				plotData.Levels = resolvedSnapshot
 				error("Invalid wall placement")
 			end
 		end
@@ -393,17 +386,17 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 			local levelIndex = entry.Level or 1
 			local levelData = plotData.Levels[levelIndex]
 			if not levelData then
-				plotData.Levels = snapshot
+				plotData.Levels = resolvedSnapshot
 				error("Wall not found")
 			end
 
 			local existing = levelData.Walls[entry.WallId]
 			if not existing then
-				plotData.Levels = snapshot
+				plotData.Levels = resolvedSnapshot
 				error("Wall not found")
 			end
 			if not entry.Start or not entry.End then
-				plotData.Levels = snapshot
+				plotData.Levels = resolvedSnapshot
 				error("Invalid wall data")
 			end
 
@@ -498,7 +491,7 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 
 		for _, wall in ipairs(updatedWalls) do
 			if not Formex.IsWallValid(plotData, wall) then
-				plotData.Levels = snapshot
+				plotData.Levels = resolvedSnapshot
 				error("Invalid wall placement")
 			end
 		end
@@ -523,18 +516,6 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 		error("Invalid wall action")
 	end
 
-	if not didChange then
-		return nil
-	end
-
-	if action ~= Formex.BuildAction.Delete then
-		for _, part in ipairs(removedParts) do
-			if part and part.Parent then
-				part:Destroy()
-			end
-		end
-	end
-
 	for levelIndex, wallIds in pairs(removedWallIds) do
 		local levelData = plotData.Levels[levelIndex]
 		if levelData and levelData.Objects then
@@ -554,15 +535,50 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 		end
 	end
 
+	return {
+		DidChange = didChange,
+		IsBatch = isBatch,
+		ReturnList = returnWalls,
+		ReturnSingle = returnWalls[1],
+		LevelsTouched = levelsTouched,
+		RemovedParts = removedParts,
+		RemovedWallIds = removedWallIds,
+		RenderWallsLevels = levelsTouched,
+		RenderObjectsLevels = levelsTouched,
+		Snapshot = resolvedSnapshot,
+	}
+end
+
+function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?)
+	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
+	if not plotData then error("No current plot") end
+	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
+		error("Access denied")
+	end
+	if not wallData then error("Invalid wall data") end
+
+	local result = applyWallChanges(plotData, wallData, action, nil)
+	if not result.DidChange then
+		return nil
+	end
+
+	if action ~= Formex.BuildAction.Delete then
+		for _, part in ipairs(result.RemovedParts) do
+			if part and part.Parent then
+				part:Destroy()
+			end
+		end
+	end
+
 	local plotPart = FormexSystem.Plots[plotData.PlotId]
 	if plotPart then
-		for _, levelIndex in ipairs(levelsTouched) do
+		for _, levelIndex in ipairs(result.RenderWallsLevels) do
 			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Wall)
 			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Object)
 		end
 	end
 
-	pushUndo(plotData.PlotId, player.UserId, snapshot, selection)
+	pushUndo(plotData.PlotId, player.UserId, result.Snapshot, selection)
 	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
 	FormexSystem.QueueSave(plotData.PlotId)
 
@@ -570,24 +586,17 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 		return nil
 	end
 
-	if isBatch then
-		return returnWalls
+	if result.IsBatch then
+		return result.ReturnList
 	end
-	return returnWalls[1]
+	return result.ReturnSingle
 end
 
-function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?)
-	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
-	if not plotData then error("No current plot") end
-	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
-		error("Access denied")
-	end
-	if not floorData then error("Invalid floor data") end
-
+local function applyFloorChanges(plotData: Formex.PlotData, floorData: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction, snapshot: Formex.LevelArray?): any
 	plotData.Levels = plotData.Levels or {}
 	local floorList, isBatch = normalizeFloorList(floorData)
 	local levelsTouched = collectFloorLevels(floorList)
-	local snapshot = createSnapshotForLevels(plotData.Levels, levelsTouched)
+	local resolvedSnapshot = snapshot or createSnapshotForLevels(plotData.Levels, levelsTouched)
 
 	local updatedFloors = {} :: {Formex.FloorData}
 	local returnFloors = {} :: {Formex.FloorData}
@@ -645,7 +654,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 
 		for _, floor in ipairs(updatedFloors) do
 			if not Formex.Floors.IsValid(plotData, floor) then
-				plotData.Levels = snapshot
+				plotData.Levels = resolvedSnapshot
 				error("Invalid floor placement")
 			end
 		end
@@ -655,13 +664,13 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 			local levelIndex = entry.LevelIndex or 1
 			local levelData = plotData.Levels[levelIndex]
 			if not levelData then
-				plotData.Levels = snapshot
+				plotData.Levels = resolvedSnapshot
 				error("Floor not found")
 			end
 
 			local existing = levelData.Floors[entry.FloorId]
 			if not existing then
-				plotData.Levels = snapshot
+				plotData.Levels = resolvedSnapshot
 				error("Floor not found")
 			end
 
@@ -716,7 +725,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 		didChange = didChange or #updatedFloors > 0
 		for _, floor in ipairs(updatedFloors) do
 			if not Formex.Floors.IsValid(plotData, floor) then
-				plotData.Levels = snapshot
+				plotData.Levels = resolvedSnapshot
 				error("Invalid floor placement")
 			end
 		end
@@ -739,12 +748,33 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 		error("Invalid floor action")
 	end
 
-	if not didChange then
+	return {
+		DidChange = didChange,
+		IsBatch = isBatch,
+		ReturnList = returnFloors,
+		ReturnSingle = returnFloors[1],
+		LevelsTouched = levelsTouched,
+		RemovedModels = removedModels,
+		RenderFloorsLevels = levelsTouched,
+		Snapshot = resolvedSnapshot,
+	}
+end
+
+function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?)
+	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
+	if not plotData then error("No current plot") end
+	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
+		error("Access denied")
+	end
+	if not floorData then error("Invalid floor data") end
+
+	local result = applyFloorChanges(plotData, floorData, action, nil)
+	if not result.DidChange then
 		return nil
 	end
 
 	if action ~= Formex.BuildAction.Delete then
-		for _, model in ipairs(removedModels) do
+		for _, model in ipairs(result.RemovedModels) do
 			if model and model.Parent then
 				model:Destroy()
 			end
@@ -753,12 +783,12 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 
 	local plotPart = FormexSystem.Plots[plotData.PlotId]
 	if plotPart then
-		for _, levelIndex in ipairs(levelsTouched) do
+		for _, levelIndex in ipairs(result.RenderFloorsLevels) do
 			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Floor)
 		end
 	end
 
-	pushUndo(plotData.PlotId, player.UserId, snapshot, selection)
+	pushUndo(plotData.PlotId, player.UserId, result.Snapshot, selection)
 	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
 	FormexSystem.QueueSave(plotData.PlotId)
 
@@ -766,25 +796,16 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 		return nil
 	end
 
-	if isBatch then
-		return returnFloors
+	if result.IsBatch then
+		return result.ReturnList
 	end
-	return returnFloors[1]
+	return result.ReturnSingle
 end
 
-function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?)
-	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
-	if not plotData then error("No current plot") end
-	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
-		error("Access denied")
-	end
-	if not objectData then
-		error("Invalid object data")
-	end
-
+local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.ObjectData, action: Formex.BuildAction, snapshot: Formex.LevelArray?): any
 	plotData.Levels = plotData.Levels or {}
 	local levelIndex = objectData.Level or 1
-	local snapshot = createSnapshot(plotData.Levels, levelIndex)
+	local resolvedSnapshot = snapshot or createSnapshot(plotData.Levels, levelIndex)
 	local levelData = FormexSystem.EnsureLevelData(plotData, levelIndex)
 
 	local function resolvePrefab(entry: Formex.ObjectData): Formex.ObjectPrefab
@@ -894,7 +915,7 @@ function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, 
 		objectData.Level = levelIndex
 		local resolved = normalizeObject(objectData, prefab, nil)
 		if not isObjectValid(resolved, prefab) then
-			plotData.Levels = snapshot
+			plotData.Levels = resolvedSnapshot
 			error("Invalid object placement")
 		end
 		levelData.Objects[newId] = resolved
@@ -904,13 +925,13 @@ function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, 
 		local objectId = tonumber(objectData.ObjectId) or objectData.ObjectId
 		local existing = objectId and levelData.Objects[objectId]
 		if not existing then
-			plotData.Levels = snapshot
+			plotData.Levels = resolvedSnapshot
 			error("Object not found")
 		end
 		local prefab = resolvePrefab(objectData)
 		local resolved = normalizeObject(objectData, prefab, existing)
 		if not isObjectValid(resolved, prefab) then
-			plotData.Levels = snapshot
+			plotData.Levels = resolvedSnapshot
 			error("Invalid object placement")
 		end
 		levelData.Objects[existing.ObjectId] = resolved
@@ -930,19 +951,42 @@ function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, 
 		error("Invalid object action")
 	end
 
-	if not didChange then
+	return {
+		DidChange = didChange,
+		ReturnSingle = updatedObject,
+		LevelsTouched = { levelIndex },
+		RenderObjectsLevels = { levelIndex },
+		RenderWallsLevels = (updatedObject and updatedObject.Prefab and isWallMount(updatedObject.Prefab.ObjectMount)) and { levelIndex } or {},
+		Snapshot = resolvedSnapshot,
+	}
+end
+
+function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?)
+	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
+	if not plotData then error("No current plot") end
+	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
+		error("Access denied")
+	end
+	if not objectData then
+		error("Invalid object data")
+	end
+
+	local result = applyObjectChanges(plotData, objectData, action, nil)
+	if not result.DidChange then
 		return nil
 	end
 
 	local plotPart = FormexSystem.Plots[plotData.PlotId]
 	if plotPart then
-		FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Object)
-		if updatedObject and updatedObject.Prefab and isWallMount(updatedObject.Prefab.ObjectMount) then
+		for _, levelIndex in ipairs(result.RenderObjectsLevels) do
+			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Object)
+		end
+		for _, levelIndex in ipairs(result.RenderWallsLevels) do
 			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Wall)
 		end
 	end
 
-	pushUndo(plotData.PlotId, player.UserId, snapshot, selection)
+	pushUndo(plotData.PlotId, player.UserId, result.Snapshot, selection)
 	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
 	FormexSystem.QueueSave(plotData.PlotId)
 
@@ -950,7 +994,150 @@ function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, 
 		return nil
 	end
 
-	return updatedObject
+	return result.ReturnSingle
+end
+
+local function mergeLevelSet(target: {[number]: boolean}, levels: {number}?)
+	if not levels then
+		return
+	end
+	for _, levelIndex in ipairs(levels) do
+		target[levelIndex] = true
+	end
+end
+
+local function toSortedLevelList(levelSet: {[number]: boolean}): {number}
+	local levels = {}
+	for levelIndex in pairs(levelSet) do
+		table.insert(levels, levelIndex)
+	end
+	table.sort(levels)
+	return levels
+end
+
+function FormexBuild.BuildTransaction(player: Player, changes: {Formex.BuildChange}, selection: Formex.SelectionSnapshot?)
+	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
+	if not plotData then error("No current plot") end
+	if permission ~= Formex.Permission.Manager and permission ~= Formex.Permission.Owner then
+		error("Access denied")
+	end
+	if not changes or #changes == 0 then
+		error("Invalid build transaction")
+	end
+
+	plotData.Levels = plotData.Levels or {}
+
+	local levelsTouchedSet = {} :: {[number]: boolean}
+	for _, change in ipairs(changes) do
+		local partType = change.PartType
+		if partType == Formex.PartType.Wall then
+			local wallList = normalizeWallList(change.Data :: any)
+			local levels = collectWallLevels(wallList)
+			mergeLevelSet(levelsTouchedSet, levels)
+		elseif partType == Formex.PartType.Floor then
+			local floorList = normalizeFloorList(change.Data :: any)
+			local levels = collectFloorLevels(floorList)
+			mergeLevelSet(levelsTouchedSet, levels)
+		elseif partType == Formex.PartType.Object then
+			local objectLevel = (change.Data :: any).Level or 1
+			levelsTouchedSet[objectLevel] = true
+		else
+			error("Invalid build change type")
+		end
+	end
+
+	local levelsTouched = toSortedLevelList(levelsTouchedSet)
+	local snapshot = createSnapshotForLevels(plotData.Levels, levelsTouched)
+
+	local removedParts = {} :: {BasePart}
+	local removedModels = {} :: {Model}
+	local renderWalls = {} :: {[number]: boolean}
+	local renderFloors = {} :: {[number]: boolean}
+	local renderObjects = {} :: {[number]: boolean}
+	local results = {}
+	local didChange = false
+
+	for _, change in ipairs(changes) do
+		local partType = change.PartType
+		local action = change.Action
+		local data = change.Data
+		if partType == Formex.PartType.Wall then
+			local result = applyWallChanges(plotData, data :: any, action, snapshot)
+			didChange = didChange or result.DidChange
+			if action ~= Formex.BuildAction.Delete then
+				for _, part in ipairs(result.RemovedParts) do
+					table.insert(removedParts, part)
+				end
+			end
+			mergeLevelSet(renderWalls, result.RenderWallsLevels)
+			mergeLevelSet(renderObjects, result.RenderObjectsLevels)
+			table.insert(results, {
+				PartType = partType,
+				Action = action,
+				Result = result.IsBatch and result.ReturnList or result.ReturnSingle,
+			})
+		elseif partType == Formex.PartType.Floor then
+			local result = applyFloorChanges(plotData, data :: any, action, snapshot)
+			didChange = didChange or result.DidChange
+			if action ~= Formex.BuildAction.Delete then
+				for _, model in ipairs(result.RemovedModels) do
+					table.insert(removedModels, model)
+				end
+			end
+			mergeLevelSet(renderFloors, result.RenderFloorsLevels)
+			table.insert(results, {
+				PartType = partType,
+				Action = action,
+				Result = result.IsBatch and result.ReturnList or result.ReturnSingle,
+			})
+		elseif partType == Formex.PartType.Object then
+			local result = applyObjectChanges(plotData, data :: any, action, snapshot)
+			didChange = didChange or result.DidChange
+			mergeLevelSet(renderObjects, result.RenderObjectsLevels)
+			mergeLevelSet(renderWalls, result.RenderWallsLevels)
+			table.insert(results, {
+				PartType = partType,
+				Action = action,
+				Result = result.ReturnSingle,
+			})
+		else
+			error("Invalid build change type")
+		end
+	end
+
+	if not didChange then
+		return nil
+	end
+
+	for _, part in ipairs(removedParts) do
+		if part and part.Parent then
+			part:Destroy()
+		end
+	end
+	for _, model in ipairs(removedModels) do
+		if model and model.Parent then
+			model:Destroy()
+		end
+	end
+
+	local plotPart = FormexSystem.Plots[plotData.PlotId]
+	if plotPart then
+		for _, levelIndex in ipairs(toSortedLevelList(renderWalls)) do
+			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Wall)
+		end
+		for _, levelIndex in ipairs(toSortedLevelList(renderFloors)) do
+			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Floor)
+		end
+		for _, levelIndex in ipairs(toSortedLevelList(renderObjects)) do
+			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Object)
+		end
+	end
+
+	pushUndo(plotData.PlotId, player.UserId, snapshot, selection)
+	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
+	FormexSystem.QueueSave(plotData.PlotId)
+
+	return results
 end
 
 function FormexBuild.CanUndo(player: Player): boolean

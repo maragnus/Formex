@@ -111,6 +111,18 @@ export type ObjectData = {
 	DesignParts: {[number]: {BasePart}}, -- [part index]: {parts}
 }
 
+export type BuildChange = {
+	PartType: PartType,
+	Action: BuildAction,
+	Data: WallData | {WallData} | FloorData | {FloorData} | ObjectData,
+}
+
+export type BuildChangeResult = {
+	PartType: PartType,
+	Action: BuildAction,
+	Result: any?,
+}
+
 export type MaterialInfo = {
 	Name: string,
 	Material: Enum.Material?,
@@ -293,6 +305,7 @@ Formex.Function = table.freeze({
 	BuildWall = "BuildWall",
 	BuildFloor = "BuildFloor",
 	BuildObject = "BuildObject",
+	BuildTransaction = "BuildTransaction",
 	CanUndo = "CanUndo",
 	CanRedo = "CanRedo",
 	Undo = "Undo",

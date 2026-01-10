@@ -966,6 +966,10 @@ function FormexClient.BuildObject(wall: Formex.ObjectData, action: Formex.BuildA
     return FormexFunctions:InvokeServer(Formex.Function.BuildObject, wall, action, selection)
 end
 
+function FormexClient.BuildTransaction(changes: {Formex.BuildChange}, selection: Formex.SelectionSnapshot?): {Formex.BuildChangeResult}?
+    return FormexFunctions:InvokeServer(Formex.Function.BuildTransaction, changes, selection)
+end
+
 function FormexClient.CanUndo(): boolean
     return FormexFunctions:InvokeServer(Formex.Function.CanUndo)
 end

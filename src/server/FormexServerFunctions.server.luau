@@ -49,6 +49,9 @@ local remoteFunctions = {
     [Formex.Function.BuildObject] = function(player, objectData, action, selection)
         return FormexBuild.BuildObject(player, objectData, action, selection)
     end,
+    [Formex.Function.BuildTransaction] = function(player, changes, selection)
+        return FormexBuild.BuildTransaction(player, changes, selection)
+    end,
     [Formex.Function.CanUndo] = function(player)
         return FormexBuild.CanUndo(player)
     end,
