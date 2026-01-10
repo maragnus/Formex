@@ -130,6 +130,7 @@ function FormexSystem.UnassignPlotToPlayer(player: Player)
     plotData.SaveId = 0
     plotData.Name = "Unclaimed Plot"
     plotData.LastPlayed = 0
+    plotData.NextId = 1
     plotData.Levels = {}
     plotData.LevelsUnlocked = 0
     plotData.SegmentsUnlocked = 0
@@ -161,6 +162,7 @@ function FormexSystem.AssignPlotToPlayer(player: Player, plotId: number)
     plotData.SaveId = 0
     plotData.Name = plotName
     plotData.LastPlayed = 0
+    plotData.NextId = 1
     plotData.Levels = {}
     plotData.LevelsUnlocked = 1
     plotData.SegmentsUnlocked = 0
@@ -203,12 +205,33 @@ function FormexSystem.RegisterPlot(plotPart: Part)
         SaveId = 0,
         Name = "Unclaimed Plot",
         LastPlayed = 0,
+        NextId = 1,
         Levels = {},
         LevelsUnlocked = 0,
         SegmentsUnlocked = 0,
         Permissions = {},
     }
     FormexSystem.UpdatePlotAttributes(plotId)
+end
+
+local function fixNumbericDictionary(data: {[string]: any} | nil): {[number]: any}
+    if not data then return {} end
+    local fixedData: {[number]: any} = {}
+    for key, value in data do
+        local keyNumber = tonumber(key)
+        if keyNumber then
+            fixedData[keyNumber] = value
+        end
+    end
+    return fixedData
+end
+
+local function ensurePlotNextId(plotData: Formex.PlotData)
+    local maxId = Formex.Serialization.GetMaxPartId(plotData.Levels)
+    local desired = math.max(maxId + 1, 1)
+    if not plotData.NextId or plotData.NextId < desired then
+        plotData.NextId = desired
+    end
 end
 
 local saveQueue = {} :: {[number]: number}
@@ -234,6 +257,8 @@ function FormexSystem.SavePlot(plotId: number)
     end
     plotData.SegmentsUnlocked = segmentsMask
 
+    ensurePlotNextId(plotData)
+
     -- Ensure owner is in permissions
     plotData.Permissions[userId] = Formex.Permission.Owner
 
@@ -257,6 +282,7 @@ function FormexSystem.SavePlot(plotId: number)
             SaveId = plotData.SaveId,
             Name = plotData.Name,
             LastPlayed = plotData.LastPlayed,
+            NextId = plotData.NextId,
             LevelsUnlocked = plotData.LevelsUnlocked or 1,
             SegmentsUnlocked = plotData.SegmentsUnlocked or 0,
             Permissions = plotData.Permissions,
@@ -282,18 +308,6 @@ function FormexSystem.SavePlot(plotId: number)
     return true
 end
 
-local function fixNumbericDictionary(data: {[string]: any} | nil): {[number]: any}
-    if not data then return {} end
-    local fixedData: {[number]: any} = {}
-    for key, value in data do
-        local keyNumber = tonumber(key)
-        if keyNumber then
-            fixedData[keyNumber] = value
-        end
-    end
-    return fixedData
-end
-
 function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
     if not FormexSystem.PlotData[plotId] then error("Invalid plotId") end
     if not saveId or saveId == 0 then error("Invalid save selected") end
@@ -316,6 +330,7 @@ function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
     plotData.SaveId = saveData.SaveId or saveId
     plotData.Name = saveData.Name or (Players:GetNameFromUserIdAsync(userId) .. "'s Plot")
     plotData.LastPlayed = os.time()
+    plotData.NextId = saveData.NextId or plotData.NextId or 1
     plotData.Levels = saveData.Levels or {}
     plotData.LevelsUnlocked = math.max(saveData.LevelsUnlocked or 1, 1)
     local segmentsUnlocked = saveData.SegmentsUnlocked
@@ -331,6 +346,8 @@ function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
         warn("No level data found for plot", plotId, "save", saveId)
         plotData.Levels = plotData.Levels or {}
     end
+
+    ensurePlotNextId(plotData)
 
     FormexSystem.UpdatePlotAttributes(plotId)
 

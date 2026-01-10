@@ -1499,34 +1499,12 @@ local function buildWallData(startPoint: Vector2int16, endPoint: Vector2int16): 
 	}
 end
 
-local function getNextId(entries: {[number]: any}): number
-	local maxId = 0
-	for id in entries do
-		if id > maxId then
-			maxId = id
-		end
-	end
-	return maxId + 1
-end
-
-local function getNextFloorId(levelIndex: number): number
-	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Levels then
-		return 1
-	end
-	local levelData = plotInfo.PlotData.Levels[levelIndex]
-	if not levelData or not levelData.Floors then
-		return 1
-	end
-	return getNextId(levelData.Floors)
-end
-
 local function buildFloorGhostData(levelIndex: number, tile: Vector2int16): Formex.FloorData
 	local tileSize = Formex.LayoutGridSize
 	local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
 	local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
 	return {
-		FloorId = getNextFloorId(levelIndex),
+		FloorId = 0,
 		LevelIndex = levelIndex,
 		Points = {
 			Vector2int16.new(x0, z0),
@@ -1619,7 +1597,7 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 		ghostFloorData = buildFloorGhostData(levelIndex, tile)
 	else
 		ghostFloorData.LevelIndex = levelIndex
-		ghostFloorData.FloorId = getNextFloorId(levelIndex)
+		ghostFloorData.FloorId = 0
 		ghostFloorData.RaiseHeight = floorRaiseHeight
 		ghostFloorData.FloorMaterial = floorMaterialId
 		ghostFloorData.CeilingMaterial = ceilingMaterialId

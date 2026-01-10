@@ -22,14 +22,13 @@ PhysicsService:CollisionGroupSetCollidable(Formex.CollisionGroup.Object, "Defaul
 
 local FormexBuild = {}
 
-local function getNextId(entries: {[number]: any}): number
-	local maxId = 0
-	for id in entries do
-		if id > maxId then
-			maxId = id
-		end
+local function takeNextId(plotData: Formex.PlotData): number
+	local nextId = plotData.NextId
+	if not nextId or nextId < 1 then
+		nextId = 1
 	end
-	return maxId + 1
+	plotData.NextId = nextId + 1
+	return nextId
 end
 
 type HistoryTransaction = {
@@ -340,7 +339,7 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 				frontBottomColor
 			)
 
-			local newId = getNextId(levelData.Walls)
+			local newId = takeNextId(plotData)
 			local newWall = {
 				WallId = newId,
 				Level = levelIndex,
@@ -578,7 +577,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 
 			local levelIndex = entry.LevelIndex or 1
 			local levelData = FormexSystem.EnsureLevelData(plotData, levelIndex)
-			local newId = getNextId(levelData.Floors)
+			local newId = takeNextId(plotData)
 
 			local floorMaterial = normalizeMaterialId(entry.FloorMaterial) or Formex.DefaultFloorMaterial
 			local ceilingMaterial = normalizeMaterialId(entry.CeilingMaterial) or floorMaterial

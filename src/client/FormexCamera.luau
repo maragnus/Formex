@@ -359,7 +359,7 @@ local function updatePan(dt: number)
 			if delta.Magnitude > CAMERA_MOUSE_PAN_DEADZONE then
 				local scaleX, scaleY = getPanPixelScale()
 				local right, up = getPanAxes()
-				local worldDelta = (right * (delta.X * scaleX) + up * (delta.Y * scaleY)) / math.max(dt, 1 / 240)
+				local worldDelta = (-right * (delta.X * scaleX) + up * (delta.Y * scaleY)) / math.max(dt, 1 / 240)
 				targetVelocity += Vector2.new(worldDelta.X, worldDelta.Z)
 			end
 		end
@@ -728,13 +728,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
 		return
 	end
 
-	if input.KeyCode == Enum.KeyCode.Q then
+	if input.KeyCode == Enum.KeyCode.E then
 		keyboardRotateLeftHeld = true
 		updateKeyboardRotateInput()
 		return
 	end
 
-	if input.KeyCode == Enum.KeyCode.E then
+	if input.KeyCode == Enum.KeyCode.Q then
 		keyboardRotateRightHeld = true
 		updateKeyboardRotateInput()
 	end
@@ -774,13 +774,13 @@ UserInputService.InputEnded:Connect(function(input, gameProcessedEvent)
 		return
 	end
 
-	if input.KeyCode == Enum.KeyCode.Q then
+	if input.KeyCode == Enum.KeyCode.E then
 		keyboardRotateLeftHeld = false
 		updateKeyboardRotateInput()
 		return
 	end
 
-	if input.KeyCode == Enum.KeyCode.E then
+	if input.KeyCode == Enum.KeyCode.Q then
 		keyboardRotateRightHeld = false
 		updateKeyboardRotateInput()
 	end

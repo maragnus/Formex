@@ -32,8 +32,10 @@ export type PlotData = {
 	SaveId: number,
 	Name: string,
 	LastPlayed: number,
+	NextId: number,
 	FoundationMaterial: number,
 	Levels: LevelArray,
+	Rooms: {[number]: RoomData},
 	LevelsUnlocked: number,
 	SegmentsUnlocked: number,
 	Permissions: {[number]: Permission},
@@ -90,11 +92,12 @@ export type FloorData = {
 }
 
 export type ObjectData = {
-	ObjectId: string,
+	ObjectId: number,
 	Level: number,
 	Position: Vector3,
 	Rotation: Vector3,
-	WallId: number?, -- If mounted to a wall
+	WallId: number?, -- if mounted to a wall
+	IsPortal: boolean, -- e.g. doorway into adjacent room
 	Design: {[number]: string},
 	Properties: {[string]: any},
 	Part: Model?,
@@ -117,6 +120,26 @@ export type ObjectInfo = {
 	Size: Vector3,
 	Categories: {string},
 	Properties: {[string]: any}?,
+}
+
+export type RoomData = {
+	RoomId: number,
+	LevelIndex: number,
+	Points: {Vector2int16},
+	Wall: {[number]: WallData}, -- [WallId]: WallData
+	Floor: {[number]: FloorData}, -- [FloorId]: FloorData
+	Object: {[number]: ObjectData}, -- [ObjectId]: ObjectData
+	NeighboringRooms: {[number]: RoomConnection}, -- [RoomId]: RoomData
+	Area: number,
+	IsExterior: boolean,
+	IsCovered: boolean,
+}
+
+export type RoomConnection = {
+	Room1: RoomData,
+	Room2: RoomData,
+	IsConnected: boolean,
+	Portals: {[number]: ObjectData}
 }
 
 export type SelectionSnapshot = {
@@ -151,6 +174,7 @@ Formex.Math = {} :: {
 Formex.Serialization = {} :: {
 	SerializeLevelData: (levels: LevelArray) -> string,
 	DeserializeLevelData: (dataString: string) -> LevelArray,
+	GetMaxPartId: (levels: LevelArray?) -> number,
 }
 
 Formex.GridSize = 2 -- studs

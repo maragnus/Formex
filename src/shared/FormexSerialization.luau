@@ -47,6 +47,41 @@ local function readColor(reader): Color3
 	return Color3.fromRGB(r, g, b)
 end
 
+function FormexSerialization.GetMaxPartId(levels: Formex.LevelArray?): number
+	if not levels then
+		return 0
+	end
+
+	local maxId = 0
+	for _, levelData in levels do
+		if levelData then
+			for id in levelData.Walls do
+				if id > maxId then
+					maxId = id
+				end
+			end
+
+			for id in levelData.Floors do
+				if id > maxId then
+					maxId = id
+				end
+			end
+
+			for id, objectData in levelData.Objects do
+				local numericId = tonumber(id)
+				if not numericId and objectData then
+					numericId = tonumber(objectData.ObjectId)
+				end
+				if numericId and numericId > maxId then
+					maxId = numericId
+				end
+			end
+		end
+	end
+
+	return maxId
+end
+
 function FormexSerialization.SerializeLevelData(levels: Formex.LevelArray): string
 	local writer = Buffer.new(INITIAL_BUFFER_SIZE)
 	writer:WriteU16(DATA_VERSION)
