@@ -5,6 +5,8 @@
 -- When a user selects a prefab in the workspace, they can use these buttons to manage it
 -- It also helps with positioning the thumbnail camera to create a consistent look for prefab icons
 
+local Utils = require(script:FindFirstChild("Utils"))
+
 local Toolbar = plugin:CreateToolbar("Formex")
 local Selection = game:GetService("Selection")
 
@@ -39,22 +41,7 @@ local recallPrefabButton = Toolbar:CreateButton(
 -- Displays a box to select existing prefabs and clones the prefab from ServerStorage/FormexPrefabs into the workspace to edit it
 
 local function displayMessageBox(title, message)
-    local messageBox = plugin:CreateDockWidgetPluginGuiAsync("FormexAlertBox",
-        DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 200, 150, 150, 100))
-    messageBox.Title = title
-
-    local textLabel = Instance.new("TextLabel", messageBox)
-    textLabel.Size = UDim2.new(1, 0, 1, 0)
-    textLabel.Text = message
-
-    local closeButton = Instance.new("TextButton", messageBox)
-    closeButton.Size = UDim2.new(0, 100, 0, 30)
-    closeButton.Position = UDim2.new(0.5, -50, 1, -40)
-    closeButton.Text = "Close"
-    closeButton.MouseButton1Click:Connect(function()
-        messageBox.Enabled = false
-        messageBox:Destroy()
-    end)
+    Utils.DisplayMessageBox(plugin, title, message)
 end
 
 local function preparePrefab(parts: {Instance})
@@ -70,6 +57,7 @@ createPrefabButton.Click:Connect(function()
         return
     end
 
-	print("prefab!")
+	-- TODO: Implement preparePrefab function
+    displayMessageBox("Formex Create Prefab", "Prepare Prefab functionality is not yet implemented.")
 end)
 
