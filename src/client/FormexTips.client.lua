@@ -390,8 +390,10 @@ local function getTipData(designState)
         end
         lines = {
             "- Selects objects only in this mode.",
-            "- Object tools are limited right now.",
-            "- Use Select mode for walls and floors.",
+            "- Click an object to select it.",
+            "- Click empty space to clear selection.",
+            "- Click empty space again to place the current prefab.",
+            "- Use the prefab catalog in the sidebar to swap items.",
         }
     elseif mode == FormexDesign.DesignMode.Expand then
         title = "Expand Plot"

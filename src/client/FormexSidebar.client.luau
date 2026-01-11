@@ -4,6 +4,7 @@ local Formex = FormexClient.Formex
 local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
 local FormexPrompts = require(script.Parent:WaitForChild("FormexPrompts"))
 local FormexDesign = require(script.Parent:WaitForChild("FormexDesign"))
+local FormexPrefabCatalog = require(script.Parent:WaitForChild("FormexPrefabCatalog"))
 
 local screenGui: ScreenGui = FormexUI.ScreenGui
 
@@ -1223,27 +1224,89 @@ local function buildSidebar()
     objectHint.TextWrapped = true
     objectHint.TextXAlignment = Enum.TextXAlignment.Left
 
-    local objectPaletteLabel = Instance.new("TextLabel", objectContent)
-    objectPaletteLabel.Name = "ObjectPaletteLabel"
-    objectPaletteLabel.BackgroundTransparency = 1
-    objectPaletteLabel.Size = UDim2.new(1, 0, 0, 18)
-    objectPaletteLabel.Font = Enum.Font.GothamSemibold
-    objectPaletteLabel.Text = "Palette"
-    objectPaletteLabel.TextColor3 = COLORS.Text
-    objectPaletteLabel.TextSize = 14
-    objectPaletteLabel.TextXAlignment = Enum.TextXAlignment.Left
+    local objectPrefabLabel = Instance.new("TextLabel", objectContent)
+    objectPrefabLabel.Name = "ObjectPrefabLabel"
+    objectPrefabLabel.BackgroundTransparency = 1
+    objectPrefabLabel.Size = UDim2.new(1, 0, 0, 18)
+    objectPrefabLabel.Font = Enum.Font.GothamSemibold
+    objectPrefabLabel.Text = "Selected Prefab"
+    objectPrefabLabel.TextColor3 = COLORS.Text
+    objectPrefabLabel.TextSize = 14
+    objectPrefabLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-    local objectPaletteFrame = Instance.new("Frame", objectContent)
-    objectPaletteFrame.Name = "ObjectPalette"
-    objectPaletteFrame.BackgroundTransparency = 1
-    objectPaletteFrame.Size = UDim2.new(1, 0, 0, 0)
-    objectPaletteFrame.AutomaticSize = Enum.AutomaticSize.Y
+    local objectPrefabButton = Instance.new("ImageButton", objectContent)
+    objectPrefabButton.Name = "ObjectPrefabButton"
+    objectPrefabButton.AutoButtonColor = false
+    objectPrefabButton.BackgroundColor3 = COLORS.Section
+    objectPrefabButton.BackgroundTransparency = 0
+    objectPrefabButton.BorderSizePixel = 0
+    objectPrefabButton.Size = UDim2.new(1, 0, 0, 190)
 
-    local objectPaletteLayout = Instance.new("UIGridLayout", objectPaletteFrame)
-    objectPaletteLayout.CellSize = UDim2.new(0, 78, 0, 86)
-    objectPaletteLayout.CellPadding = UDim2.new(0, 8, 0, 8)
-    objectPaletteLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    objectPaletteLayout.FillDirectionMaxCells = 3
+    local prefabCorner = Instance.new("UICorner", objectPrefabButton)
+    prefabCorner.CornerRadius = UDim.new(0, 12)
+
+    local prefabStroke = Instance.new("UIStroke", objectPrefabButton)
+    prefabStroke.Color = COLORS.SectionBorder
+    prefabStroke.Thickness = 1.4
+
+    local prefabPadding = Instance.new("UIPadding", objectPrefabButton)
+    prefabPadding.PaddingTop = UDim.new(0, 10)
+    prefabPadding.PaddingBottom = UDim.new(0, 10)
+    prefabPadding.PaddingLeft = UDim.new(0, 10)
+    prefabPadding.PaddingRight = UDim.new(0, 10)
+
+    local prefabLayout = Instance.new("UIListLayout", objectPrefabButton)
+    prefabLayout.FillDirection = Enum.FillDirection.Vertical
+    prefabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    prefabLayout.Padding = UDim.new(0, 8)
+
+    local prefabPreview = FormexPrefabCatalog.CreatePreview(objectPrefabButton, UDim2.new(1, 0, 0, 120))
+    prefabPreview.Root.LayoutOrder = 1
+
+    local prefabName = Instance.new("TextLabel", objectPrefabButton)
+    prefabName.Name = "PrefabName"
+    prefabName.BackgroundTransparency = 1
+    prefabName.Size = UDim2.new(1, 0, 0, 20)
+    prefabName.Font = Enum.Font.GothamSemibold
+    prefabName.Text = "None"
+    prefabName.TextSize = 15
+    prefabName.TextColor3 = COLORS.Text
+    prefabName.TextXAlignment = Enum.TextXAlignment.Left
+    prefabName.LayoutOrder = 2
+
+    local prefabHintRow = Instance.new("Frame", objectPrefabButton)
+    prefabHintRow.Name = "PrefabHintRow"
+    prefabHintRow.BackgroundTransparency = 1
+    prefabHintRow.Size = UDim2.new(1, 0, 0, 18)
+    prefabHintRow.LayoutOrder = 3
+
+    local prefabHintLayout = Instance.new("UIListLayout", prefabHintRow)
+    prefabHintLayout.FillDirection = Enum.FillDirection.Horizontal
+    prefabHintLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    prefabHintLayout.Padding = UDim.new(0, 6)
+    prefabHintLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+    local prefabHint = Instance.new("TextLabel", prefabHintRow)
+    prefabHint.Name = "Hint"
+    prefabHint.BackgroundTransparency = 1
+    prefabHint.Size = UDim2.new(1, -24, 1, 0)
+    prefabHint.Font = Enum.Font.Gotham
+    prefabHint.Text = "Browse catalog"
+    prefabHint.TextSize = 12
+    prefabHint.TextColor3 = COLORS.Muted
+    prefabHint.TextXAlignment = Enum.TextXAlignment.Left
+    FormexUI.FlexItem(prefabHint, Enum.UIFlexMode.Grow)
+
+    local prefabHintIcon = Instance.new("ImageLabel", prefabHintRow)
+    prefabHintIcon.Name = "HintIcon"
+    prefabHintIcon.BackgroundTransparency = 1
+    prefabHintIcon.Size = UDim2.new(0, 14, 0, 14)
+    prefabHintIcon.ImageContent = Content.fromAssetId(Formex.Icons.ChevronDown or 0)
+    prefabHintIcon.ImageColor3 = COLORS.Muted
+
+    objectPrefabButton.Activated:Connect(function()
+        FormexPrefabCatalog.Toggle()
+    end)
 
     local objectDesignLabel = Instance.new("TextLabel", objectContent)
     objectDesignLabel.Name = "ObjectDesignLabel"
@@ -1328,13 +1391,14 @@ local function buildSidebar()
 	ui.FloorSelect = floorRow.Material
 	ui.FloorColorSelect = floorRow.Color
 	ui.FloorRaiseSlider = floorRaiseSlider
-	ui.FoundationRow = foundationRow.Row
-	ui.FoundationSelect = foundationRow.Material
-	ui.FoundationColorSelect = foundationRow.Color
+    ui.FoundationRow = foundationRow.Row
+    ui.FoundationSelect = foundationRow.Material
+    ui.FoundationColorSelect = foundationRow.Color
     ui.ObjectContent = objectContent
     ui.ObjectHint = objectHint
-    ui.ObjectPaletteFrame = objectPaletteFrame
-    ui.ObjectPaletteButtons = {}
+    ui.ObjectPrefabPreview = prefabPreview
+    ui.ObjectPrefabName = prefabName
+    ui.ObjectPrefabButton = objectPrefabButton
     ui.ObjectDesignList = objectDesignList
     ui.ObjectDesignRows = {}
 
@@ -1512,22 +1576,11 @@ local function refreshUI()
     suppressFloorInputs = false
 
     local objectState = designState.Object
-    local objectPrefabs = Formex.Objects.GetPrefabs()
     local selectedPrefabName = objectState and objectState.PrefabName or nil
     local objectSelected = objectState and objectState.Selected or nil
     local objectPaint = objectState and objectState.Paint or nil
     local hasObjectSelection = selectionType == FormexDesign.SelectionType.Object
         and objectSelected ~= nil and objectSelected.HasSelection
-
-    if ui.ObjectPaletteButtons and (#objectPrefabs ~= 0 or next(ui.ObjectPaletteButtons) ~= nil) then
-        if next(ui.ObjectPaletteButtons) == nil or #objectPrefabs ~= (ui.ObjectPaletteCount or 0) then
-            buildObjectPalette(objectPrefabs)
-            ui.ObjectPaletteCount = #objectPrefabs
-        end
-        for prefabName, buttonInfo in pairs(ui.ObjectPaletteButtons) do
-            setPaletteButtonActive(buttonInfo, prefabName == selectedPrefabName)
-        end
-    end
 
     local designSource = objectPaint
     if hasObjectSelection and designSubMode == FormexDesign.DesignSubMode.Normal then
@@ -1536,6 +1589,13 @@ local function refreshUI()
     local designPrefabName = (hasObjectSelection and objectSelected and objectSelected.PrefabName)
         or selectedPrefabName
     local designPrefab = designPrefabName and Formex.Objects.GetPrefab(designPrefabName) or nil
+    if ui.ObjectPrefabPreview and ui.ObjectPrefabPreview.SetPrefab then
+        ui.ObjectPrefabPreview:SetPrefab(designPrefab)
+    end
+    if ui.ObjectPrefabName then
+        ui.ObjectPrefabName.Text = designPrefab and designPrefab.Name or "Select a prefab"
+    end
+
     if designSource and designPrefab then
         buildObjectDesignRows(designPrefab, designSource.Design or {}, designSource.DesignColors or {})
     else

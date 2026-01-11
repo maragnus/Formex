@@ -15,6 +15,7 @@ export type PartType = "Wall" | "Floor" | "Ceiling" | "Object" | nil
 export type BuildAction = "Add" | "Delete" | "Edit"
 export type CollisionGroup = "Grid" | "Wall" | "Object"
 export type ObjectMount = "Surface" | "Ceiling" | "Floor" | "Wall" | "Door" | "Window"
+export type ObjectSide = "Front" | "Back"
 
 -- Client shared represenation
 export type PlotSaveInfo = {
@@ -97,6 +98,7 @@ export type ObjectData = {
 	Level: number,
 	Position: Vector3,
 	Rotation: Vector3,
+	Side: ObjectSide,
 	WallId: number?, -- if mounted to a wall
 	Design: {[number]: number}, -- [part index]: material index
 	DesignColors: {[number]: Color3},
@@ -253,6 +255,11 @@ Formex.MountType = table.freeze({
 	Door = "Door", -- must be placed in wall opening on floor
 	Window = "Window", -- must be placed in wall opening at any height
 }) :: {ObjectMount: ObjectMount}
+
+Formex.ObjectSide = table.freeze({
+	Front = "Front",
+	Back = "Back",
+}) :: {ObjectSide: ObjectSide}
 
 Formex.MaxPlotSize = {
 	Width = 3, -- segments

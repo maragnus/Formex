@@ -267,6 +267,7 @@ local function refreshObjectData(objectData: Formex.ObjectData, model: Model, le
     objectData.Level = levelIndex
     objectData.Position = model:GetAttribute("Position") or objectData.Position or Vector3.new(0, 0, 0)
     objectData.Rotation = model:GetAttribute("Rotation") or objectData.Rotation or Vector3.new(0, 0, 0)
+    objectData.Side = model:GetAttribute("Side") or objectData.Side or Formex.ObjectSide.Front
     objectData.WallId = model:GetAttribute("WallId")
     objectData.PrefabName = model:GetAttribute("PrefabName") or objectData.PrefabName
     if objectData.PrefabName and objectData.PrefabName ~= "" then
@@ -496,6 +497,7 @@ local function subscribeObjectModel(plotState: PlotSubscription, levelIndex: num
         Level = levelIndex,
         Position = Vector3.new(0, 0, 0),
         Rotation = Vector3.new(0, 0, 0),
+        Side = Formex.ObjectSide.Front,
         Design = {},
         Properties = {},
     } :: Formex.ObjectData

@@ -1438,22 +1438,38 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Vec
 		params.RespectCanCollide = false
 	else
 		params.FilterType = Enum.RaycastFilterType.Exclude
+		local ignoreList = nil
 
 		if forceGridCollision then
 			params.CollisionGroup = Formex.CollisionGroup.Grid
 		elseif actionType == FormexDesign.ActionType.Select then
-			local filter = { overlayFolder }
+			ignoreList = { overlayFolder }
 			if localPlayer.Character then
-				table.insert(filter, localPlayer.Character)
+				table.insert(ignoreList, localPlayer.Character)
 			end
 			if ghost then
-				table.insert(filter, ghost)
+				table.insert(ignoreList, ghost)
 			end
-			params.FilterDescendantsInstances = filter
 		elseif designMode == FormexDesign.DesignMode.Object then
 			params.CollisionGroup = Formex.CollisionGroup.Object
 		else
 			params.CollisionGroup = Formex.CollisionGroup.Grid
+		end
+
+		if Objects and Objects.GetRaycastIgnoreInstances then
+			local extraIgnore = Objects.GetRaycastIgnoreInstances()
+			if extraIgnore and #extraIgnore > 0 then
+				if not ignoreList then
+					ignoreList = {}
+				end
+				for _, instance in ipairs(extraIgnore) do
+					table.insert(ignoreList, instance)
+				end
+			end
+		end
+
+		if ignoreList then
+			params.FilterDescendantsInstances = ignoreList
 		end
 	end
 

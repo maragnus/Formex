@@ -4,6 +4,10 @@ Formex is a system for Roblox written in Luau that enabled Players to claim a pr
 
 Do not use `pcall`. While developing, errors need to propogate normally to find them.
 
+## Object Placement Reference
+
+- Read `OBJECT_MOUNT_REFERENCE.md` any time you touch ObjectData positions/rotations, ObjectMount rules, prefab orientation, or plugin/placement logic.
+
 ## Requirements
 
 - Luau requires that a `local function` is always defined before it's first usage. Make sure this is always the case when adding a new `local function` by resolving in one of these ways:

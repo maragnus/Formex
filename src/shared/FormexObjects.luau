@@ -5,6 +5,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local Formex = require(script.Parent:FindFirstChild("Formex"))
 Formex.Util = require(script.Parent:FindFirstChild("FormexUtil"))
+Formex.Plot = require(script.Parent:FindFirstChild("FormexPlot"))
 
 Formex.Objects = {}
 
@@ -65,6 +66,40 @@ local function findPrefabModel(prefabName: string): Model?
 		return found
 	end
 	return findPrefabInFolder(resolveWorkspacePrefabFolder(), prefabName)
+end
+
+local function ensureDeterministicPrimaryPart(model: Model?)
+	if not model or model.PrimaryPart then
+		return
+	end
+
+	local namedBase: BasePart? = nil
+	local firstSeat: BasePart? = nil
+	local largestPart: BasePart? = nil
+	local largestVolume = -math.huge
+	local firstPart: BasePart? = nil
+
+	for _, child in ipairs(model:GetDescendants()) do
+		if child:IsA("BasePart") then
+			if not firstPart then
+				firstPart = child
+			end
+			if child.Name == "BasePart" and not namedBase then
+				namedBase = child
+			end
+			if child:IsA("Seat") and not firstSeat then
+				firstSeat = child
+			end
+			local size = child.Size
+			local volume = size.X * size.Y * size.Z
+			if volume > largestVolume then
+				largestVolume = volume
+				largestPart = child
+			end
+		end
+	end
+
+	model.PrimaryPart = namedBase or firstSeat or largestPart or firstPart
 end
 
 local function resolveObjectMount(value: any): Formex.ObjectMount
@@ -249,6 +284,8 @@ local function resolvePrefabModels(prefab: Formex.ObjectPrefab): (Model?, Model?
 	local prefabChild = prefabModel:FindFirstChild("Prefab")
 	local subtractModel = prefabModel:FindFirstChild("Subtract")
 	if prefabChild and prefabChild:IsA("Model") then
+		ensureDeterministicPrimaryPart(prefabChild)
+		ensureDeterministicPrimaryPart(subtractModel and subtractModel:IsA("Model") and subtractModel or nil)
 		if prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window then
 			return prefabChild, subtractModel and subtractModel:IsA("Model") and subtractModel or nil
 		end
@@ -258,25 +295,172 @@ local function resolvePrefabModels(prefab: Formex.ObjectPrefab): (Model?, Model?
 	if prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window then
 		local objectModel = prefabModel:FindFirstChild("Model")
 		if objectModel and objectModel:IsA("Model") then
+			ensureDeterministicPrimaryPart(objectModel)
+			ensureDeterministicPrimaryPart(subtractModel and subtractModel:IsA("Model") and subtractModel or nil)
 			return objectModel, subtractModel and subtractModel:IsA("Model") and subtractModel or nil
 		end
 	end
 
+	ensureDeterministicPrimaryPart(prefabModel)
+	ensureDeterministicPrimaryPart(subtractModel and subtractModel:IsA("Model") and subtractModel or nil)
 	return prefabModel, nil
 end
 
-local function ensurePrimaryPart(model: Model): BasePart?
-	if model.PrimaryPart then
-		return model.PrimaryPart
+function Formex.Objects.ResolvePrefabModels(prefab: Formex.ObjectPrefab): (Model?, Model?)
+	return resolvePrefabModels(prefab)
+end
+
+local function resolveObjectSide(side: Formex.ObjectSide?): Formex.ObjectSide
+	if side == Formex.ObjectSide.Back then
+		return Formex.ObjectSide.Back
 	end
-	for _, child in ipairs(model:GetDescendants()) do
-		if child:IsA("BasePart") then
-			model.PrimaryPart = child
-			return child
+	return Formex.ObjectSide.Front
+end
+
+local function getModelBoundsInfo(model: Model?): (CFrame, Vector3)
+	if not model then
+		return CFrame.new(), Vector3.new(1, 1, 1)
+	end
+	local boundsCFrame, boundsSize = model:GetBoundingBox()
+	local pivot = model:GetPivot()
+	local offset = pivot:ToObjectSpace(boundsCFrame)
+	return offset, boundsSize
+end
+
+local function getPrefabBoundsInfo(prefab: Formex.ObjectPrefab?, objectModel: Model?): (CFrame, Vector3)
+	local fallbackSize = prefab and prefab.Size or Vector3.new(1, 1, 1)
+	if prefab then
+		local template = resolvePrefabModels(prefab)
+		if template then
+			return getModelBoundsInfo(template)
 		end
 	end
-	return nil
+	if objectModel then
+		return getModelBoundsInfo(objectModel)
+	end
+	return CFrame.new(), fallbackSize
 end
+
+local function getFloorSurfaceHeights(floor: Formex.FloorData): (number, number)
+	local levelIndex = floor.LevelIndex or 1
+	local levelTop = Formex.Plot.GetLevelOffset(levelIndex)
+	local raiseHeight = floor.RaiseHeight or 0
+	local maxRaise = Formex.LevelHeight - Formex.InterfloorHeight
+	if maxRaise < 0 then
+		maxRaise = 0
+	end
+	local snappedRaise = math.round(raiseHeight / Formex.GridSize) * Formex.GridSize
+	local clampedRaise = math.clamp(snappedRaise, 0, maxRaise)
+	if clampedRaise > 0 then
+		return levelTop + clampedRaise, levelTop
+	end
+	local thickness = levelIndex == 1 and Formex.FoundationHeight or Formex.InterfloorHeight
+	return levelTop, levelTop - thickness
+end
+
+local function isPointOnEdge(point: Vector2, a: Vector2, b: Vector2): boolean
+	return Formex.Plot.IsPointOnSegment(point, a, b)
+end
+
+local function isPointInsidePolygon(point: Vector2, polygon: {Vector2int16}): boolean
+	local count = #polygon
+	if count < 3 then
+		return false
+	end
+
+	local inside = false
+	local j = count
+	for i = 1, count do
+		local pi = polygon[i]
+		local pj = polygon[j]
+		local a = Vector2.new(pi.X, pi.Y)
+		local b = Vector2.new(pj.X, pj.Y)
+		if isPointOnEdge(point, a, b) then
+			return true
+		end
+		local intersects = (pi.Y > point.Y) ~= (pj.Y > point.Y)
+			and (point.X < (pj.X - pi.X) * (point.Y - pi.Y) / (pj.Y - pi.Y) + pi.X)
+		if intersects then
+			inside = not inside
+		end
+		j = i
+	end
+
+	return inside
+end
+
+local function getRotationOffset(model: Model?): CFrame
+	if not model then
+		return CFrame.new()
+	end
+	local boundsCFrame = model:GetBoundingBox()
+	return boundsCFrame - boundsCFrame.Position
+end
+
+function Formex.Objects.GetPrefabRotationOffset(prefab: Formex.ObjectPrefab?): CFrame
+	if not prefab then
+		return CFrame.new()
+	end
+	local objectModel = resolvePrefabModels(prefab)
+	return getRotationOffset(objectModel)
+end
+
+local function getPrefabRotationInfo(prefab: Formex.ObjectPrefab?, objectModel: Model?): CFrame
+	if prefab then
+		local template = resolvePrefabModels(prefab)
+		if template then
+			return getRotationOffset(template)
+		end
+	end
+	if objectModel then
+		return getRotationOffset(objectModel)
+	end
+	return CFrame.new()
+end
+
+function Formex.Objects.ResolveObjectSide(side: Formex.ObjectSide?): Formex.ObjectSide
+	return resolveObjectSide(side)
+end
+
+function Formex.Objects.GetFloorSurfaceY(floor: Formex.FloorData): number
+	local topY = getFloorSurfaceHeights(floor)
+	return topY
+end
+
+function Formex.Objects.GetCeilingSurfaceY(floor: Formex.FloorData): number
+	local _, bottomY = getFloorSurfaceHeights(floor)
+	return bottomY
+end
+
+function Formex.Objects.GetFloorAtPosition(plotData: Formex.PlotData?, levelIndex: number, position: Vector2): Formex.FloorData?
+	if not plotData or not plotData.Levels then
+		return nil
+	end
+	local levelData = plotData.Levels[levelIndex]
+	if not levelData or not levelData.Floors then
+		return nil
+	end
+
+	local bestFloor = nil
+	local bestHeight = -math.huge
+	for _, floor in pairs(levelData.Floors) do
+		local points = floor.Points
+		if points and isPointInsidePolygon(position, points) then
+			local topY = Formex.Objects.GetFloorSurfaceY(floor)
+			if topY > bestHeight then
+				bestHeight = topY
+				bestFloor = floor
+			end
+		end
+	end
+
+	return bestFloor
+end
+
+function Formex.Objects.GetPrefabBounds(prefab: Formex.ObjectPrefab?, objectModel: Model?): (CFrame, Vector3)
+	return getPrefabBoundsInfo(prefab, objectModel)
+end
+
 
 local function applyObjectPartsSetup(model: Model, collisionGroup: string, isSubtract: boolean)
 	for _, child in ipairs(model:GetDescendants()) do
@@ -444,21 +628,278 @@ function Formex.Objects.GetWallBasis(wall: Formex.WallData): (Vector3, Vector3, 
 	return dir, right, Vector3.new(startPoint.X, 0, startPoint.Y), length
 end
 
-function Formex.Objects.GetWallCFrame(plotPart: BasePart, wall: Formex.WallData, localPosition: Vector3, rotation: Vector3): CFrame
+local function getDefaultFloorSurfaceHeights(levelIndex: number): (number, number)
+	local levelTop = Formex.Plot.GetLevelOffset(levelIndex)
+	local thickness = levelIndex == 1 and Formex.FoundationHeight or Formex.InterfloorHeight
+	return levelTop, levelTop - thickness
+end
+
+local function getWallSideNormal(right: Vector3, side: Formex.ObjectSide): Vector3
+	if side == Formex.ObjectSide.Back then
+		return right
+	end
+	return -right
+end
+
+local function getWallYawFromNormal(normal: Vector3): number
+	return math.atan2(normal.X, normal.Z)
+end
+
+local function getHalfDepthAlongNormal(boundsSize: Vector3, orientation: CFrame, normal: Vector3): number
+	local halfX = boundsSize.X / 2
+	local halfZ = boundsSize.Z / 2
+	local right = orientation.RightVector
+	local back = -orientation.LookVector
+	return math.abs(normal:Dot(right)) * halfX + math.abs(normal:Dot(back)) * halfZ
+end
+
+local function getBoundsPivotCFrame(boundsOffset: CFrame, center: Vector3, yawRadians: number, baseRotation: CFrame): CFrame
+	local yawCFrame = CFrame.Angles(0, yawRadians, 0)
+	return CFrame.new(center) * yawCFrame * baseRotation * boundsOffset:Inverse()
+end
+
+function Formex.Objects.PlaceInWall(
+	plotPart: BasePart,
+	boundsOffset: CFrame,
+	boundsSize: Vector3,
+	baseRotation: CFrame,
+	floorHeight: number,
+	wall: Formex.WallData,
+	side: Formex.ObjectSide,
+	elevation: number,
+	distance: number
+): CFrame
+	local dir, right, startLocal = Formex.Objects.GetWallBasis(wall)
+	local normal = getWallSideNormal(right, side)
+	local centerY = floorHeight + elevation + (boundsSize.Y / 2)
+	local base = Vector3.new(startLocal.X, centerY, startLocal.Z) + dir * distance
+	local center = base + normal * 0
+	local yaw = getWallYawFromNormal(normal)
+	local localPivot = getBoundsPivotCFrame(boundsOffset, center, yaw, baseRotation)
+	return plotPart.CFrame * localPivot
+end
+
+function Formex.Objects.PlaceOnWall(
+	plotPart: BasePart,
+	boundsOffset: CFrame,
+	boundsSize: Vector3,
+	baseRotation: CFrame,
+	floorHeight: number,
+	wall: Formex.WallData,
+	side: Formex.ObjectSide,
+	elevation: number,
+	distance: number
+): CFrame
+	local dir, right, startLocal = Formex.Objects.GetWallBasis(wall)
+	local normal = getWallSideNormal(right, side)
+	local centerY = floorHeight + elevation + (boundsSize.Y / 2)
+	local base = Vector3.new(startLocal.X, centerY, startLocal.Z) + dir * distance
+	local yaw = getWallYawFromNormal(normal)
+	local orientation = CFrame.Angles(0, yaw, 0) * baseRotation
+	local normalOffset = (Formex.WallThickness / 2) + getHalfDepthAlongNormal(boundsSize, orientation, normal)
+	local center = base + normal * normalOffset
+	local localPivot = getBoundsPivotCFrame(boundsOffset, center, yaw, baseRotation)
+	return plotPart.CFrame * localPivot
+end
+
+function Formex.Objects.PlaceOnFloor(
+	plotPart: BasePart,
+	boundsOffset: CFrame,
+	boundsSize: Vector3,
+	baseRotation: CFrame,
+	floorHeight: number,
+	positionX: number,
+	positionZ: number,
+	rotationY: number
+): CFrame
+	local centerY = floorHeight + (boundsSize.Y / 2)
+	local center = Vector3.new(positionX, centerY, positionZ)
+	local localPivot = getBoundsPivotCFrame(boundsOffset, center, math.rad(rotationY), baseRotation)
+	return plotPart.CFrame * localPivot
+end
+
+function Formex.Objects.PlaceOnCeiling(
+	plotPart: BasePart,
+	boundsOffset: CFrame,
+	boundsSize: Vector3,
+	baseRotation: CFrame,
+	ceilingHeight: number,
+	positionX: number,
+	positionZ: number,
+	rotationY: number
+): CFrame
+	local centerY = ceilingHeight - (boundsSize.Y / 2)
+	local center = Vector3.new(positionX, centerY, positionZ)
+	local localPivot = getBoundsPivotCFrame(boundsOffset, center, math.rad(rotationY), baseRotation)
+	return plotPart.CFrame * localPivot
+end
+
+function Formex.Objects.PlaceOnSurface(
+	plotPart: BasePart,
+	boundsOffset: CFrame,
+	_boundsSize: Vector3,
+	baseRotation: CFrame,
+	position: Vector3,
+	rotationY: number
+): CFrame
+	local center = position
+	local localPivot = getBoundsPivotCFrame(boundsOffset, center, math.rad(rotationY), baseRotation)
+	return plotPart.CFrame * localPivot
+end
+
+local function getFloorAndCeilingHeights(
+	plotData: Formex.PlotData?,
+	levelIndex: number,
+	position: Vector2
+): (number, number, Formex.FloorData?)
+	local fallbackTop, fallbackBottom = getDefaultFloorSurfaceHeights(levelIndex)
+	if not plotData then
+		return fallbackTop, fallbackBottom, nil
+	end
+	local floor = Formex.Objects.GetFloorAtPosition(plotData, levelIndex, position)
+	if not floor then
+		return fallbackTop, fallbackBottom, nil
+	end
+	return Formex.Objects.GetFloorSurfaceY(floor), Formex.Objects.GetCeilingSurfaceY(floor), floor
+end
+
+function Formex.Objects.GetWallCFrame(
+	plotPart: BasePart,
+	wall: Formex.WallData,
+	localPosition: Vector3,
+	rotation: Vector3,
+	rotationOffset: CFrame?
+): CFrame
 	local dir, right, startLocal, _ = Formex.Objects.GetWallBasis(wall)
 	local levelOffset = Formex.Plot.GetLevelOffset(wall.Level or 1)
 	local base = Vector3.new(startLocal.X, levelOffset, startLocal.Z)
 	local localPos = base + (dir * localPosition.X) + Vector3.new(0, localPosition.Y, 0) + (right * localPosition.Z)
-	local yaw = math.atan2(dir.X, dir.Z)
+	local yaw = math.atan2(right.X, right.Z)
 	local radians = Vector3.new(math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
-	local localCFrame = CFrame.new(localPos) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(radians.X, radians.Y, radians.Z)
+	local rotationCFrame = CFrame.Angles(radians.X, radians.Y, radians.Z)
+	if rotationOffset then
+		rotationCFrame = rotationCFrame * rotationOffset
+	end
+	local localCFrame = CFrame.new(localPos) * CFrame.Angles(0, yaw, 0) * rotationCFrame
 	return plotPart.CFrame * localCFrame
 end
 
-function Formex.Objects.GetWorldCFrame(plotPart: BasePart, position: Vector3, rotation: Vector3): CFrame
+function Formex.Objects.GetWorldCFrame(
+	plotPart: BasePart,
+	position: Vector3,
+	rotation: Vector3,
+	rotationOffset: CFrame?
+): CFrame
 	local radians = Vector3.new(math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
-	local localCFrame = CFrame.new(position) * CFrame.Angles(radians.X, radians.Y, radians.Z)
+	local rotationCFrame = CFrame.Angles(radians.X, radians.Y, radians.Z)
+	if rotationOffset then
+		rotationCFrame = rotationCFrame * rotationOffset
+	end
+	local localCFrame = CFrame.new(position) * rotationCFrame
 	return plotPart.CFrame * localCFrame
+end
+
+function Formex.Objects.GetObjectCFrame(
+	objectData: Formex.ObjectData,
+	prefab: Formex.ObjectPrefab,
+	plotPart: BasePart,
+	plotData: Formex.PlotData?
+): CFrame?
+	if not objectData or not prefab or not plotPart then
+		return nil
+	end
+
+	local position = objectData.Position or Vector3.new(0, 0, 0)
+	local rotation = objectData.Rotation or Vector3.new(0, 0, 0)
+	local mount = prefab.ObjectMount or Formex.MountType.Floor
+	local side = resolveObjectSide(objectData.Side)
+	local boundsOffset, boundsSize = getPrefabBoundsInfo(prefab, objectData.ObjectModel)
+	local baseRotation = getPrefabRotationInfo(prefab, objectData.ObjectModel)
+
+	if mount == Formex.MountType.Wall
+		or mount == Formex.MountType.Door
+		or mount == Formex.MountType.Window then
+		if not objectData.WallId then
+			return nil
+		end
+		local wallData = nil
+		local levelIndex = objectData.Level or 1
+		if plotData and plotData.Levels and plotData.Levels[levelIndex] then
+			wallData = plotData.Levels[levelIndex].Walls[objectData.WallId]
+		end
+		if not wallData then
+			return nil
+		end
+		local dir, _, startLocal = Formex.Objects.GetWallBasis(wallData)
+		local anchor2 = Vector2.new(startLocal.X + dir.X * position.X, startLocal.Z + dir.Z * position.X)
+		local floorHeight = getFloorAndCeilingHeights(plotData, wallData.Level or levelIndex, anchor2)
+		local elevation = position.Y
+		if mount == Formex.MountType.Door then
+			elevation = 0
+		end
+		if mount == Formex.MountType.Wall then
+			return Formex.Objects.PlaceOnWall(
+				plotPart,
+				boundsOffset,
+				boundsSize,
+				baseRotation,
+				floorHeight,
+				wallData,
+				side,
+				elevation,
+				position.X
+			)
+		end
+		return Formex.Objects.PlaceInWall(
+			plotPart,
+			boundsOffset,
+			boundsSize,
+			baseRotation,
+			floorHeight,
+			wallData,
+			side,
+			elevation,
+			position.X
+		)
+	end
+
+	local rotationY = rotation.Y
+	if mount == Formex.MountType.Floor then
+		local levelIndex = objectData.Level or 1
+		local floorHeight = getFloorAndCeilingHeights(plotData, levelIndex, Vector2.new(position.X, position.Z))
+		return Formex.Objects.PlaceOnFloor(
+			plotPart,
+			boundsOffset,
+			boundsSize,
+			baseRotation,
+			floorHeight,
+			position.X,
+			position.Z,
+			rotationY
+		)
+	elseif mount == Formex.MountType.Ceiling then
+		local levelIndex = objectData.Level or 1
+		local _, ceilingHeight = getFloorAndCeilingHeights(plotData, levelIndex, Vector2.new(position.X, position.Z))
+		return Formex.Objects.PlaceOnCeiling(
+			plotPart,
+			boundsOffset,
+			boundsSize,
+			baseRotation,
+			ceilingHeight,
+			position.X,
+			position.Z,
+			rotationY
+		)
+	end
+
+	return Formex.Objects.PlaceOnSurface(
+		plotPart,
+		boundsOffset,
+		boundsSize,
+		baseRotation,
+		position,
+		rotationY
+	)
 end
 
 local function shouldCarve(prefab: Formex.ObjectPrefab?): boolean
@@ -564,12 +1005,12 @@ function Formex.Objects.CreateObject(parent: Instance, objectData: Formex.Object
 	objectData.Part = container
 	objectData.Prefab = prefab
 	objectData.PrefabName = prefab.PrefabName
+	objectData.Side = resolveObjectSide(objectData.Side)
 
 	local objectModel = objectModelTemplate:Clone()
 	objectModel.Name = "Object"
 	objectModel.Parent = container
 	applyObjectPartsSetup(objectModel, Formex.CollisionGroup.Object, false)
-	ensurePrimaryPart(objectModel)
 
 	local subtractModel: Model? = nil
 	if subtractTemplate and subtractTemplate:IsA("Model") then
@@ -579,7 +1020,11 @@ function Formex.Objects.CreateObject(parent: Instance, objectData: Formex.Object
 		applyObjectPartsSetup(subtractModel, Formex.CollisionGroup.Object, true)
 	end
 
-	container.PrimaryPart = objectModel.PrimaryPart or ensurePrimaryPart(objectModel)
+	if objectModel.PrimaryPart then
+		container.PrimaryPart = objectModel.PrimaryPart
+	else
+		container.PrimaryPart = nil
+	end
 	objectData.ObjectModel = objectModel
 	objectData.SubtractModel = subtractModel
 	objectData.DesignParts = Formex.Objects.BuildDesignParts(objectModel)
@@ -617,6 +1062,11 @@ function Formex.Objects.EditObject(objectData: Formex.ObjectData, plotPart: Base
 			objectData.ObjectModel = objectModel
 		end
 	end
+	if objectModel and objectModel.PrimaryPart then
+		container.PrimaryPart = objectModel.PrimaryPart
+	else
+		container.PrimaryPart = nil
+	end
 
 	if objectModel then
 		objectData.DesignParts = objectData.DesignParts or Formex.Objects.BuildDesignParts(objectModel)
@@ -625,19 +1075,22 @@ function Formex.Objects.EditObject(objectData: Formex.ObjectData, plotPart: Base
 
 	local rotation = objectData.Rotation or Vector3.new(0, 0, 0)
 	local position = objectData.Position or Vector3.new(0, 0, 0)
-	local objectMount = prefab and prefab.ObjectMount or Formex.MountType.Floor
-	local targetCFrame: CFrame? = nil
+	objectData.Side = resolveObjectSide(objectData.Side)
+	if prefab and (prefab.ObjectMount == Formex.MountType.Floor or prefab.ObjectMount == Formex.MountType.Ceiling) then
+		local _, boundsSize = getPrefabBoundsInfo(prefab, objectData.ObjectModel)
+		local levelIndex = objectData.Level or 1
+		local floorHeight, ceilingHeight = getFloorAndCeilingHeights(plotData, levelIndex, Vector2.new(position.X, position.Z))
+		if prefab.ObjectMount == Formex.MountType.Floor then
+			position = Vector3.new(position.X, floorHeight + (boundsSize.Y / 2), position.Z)
+		else
+			position = Vector3.new(position.X, ceilingHeight - (boundsSize.Y / 2), position.Z)
+		end
+		objectData.Position = position
+	end
 
-	if objectMount == Formex.MountType.Wall or objectMount == Formex.MountType.Door or objectMount == Formex.MountType.Window then
-		local wall = nil
-		if objectData.WallId and objectData.Level and plotData and plotData.Levels and plotData.Levels[objectData.Level] then
-			wall = plotData.Levels[objectData.Level].Walls[objectData.WallId]
-		end
-		if wall then
-			targetCFrame = Formex.Objects.GetWallCFrame(plotPart, wall, position, rotation)
-		end
-	else
-		targetCFrame = Formex.Objects.GetWorldCFrame(plotPart, position, rotation)
+	local targetCFrame: CFrame? = nil
+	if prefab then
+		targetCFrame = Formex.Objects.GetObjectCFrame(objectData, prefab, plotPart, plotData)
 	end
 
 	if targetCFrame then
@@ -646,6 +1099,7 @@ function Formex.Objects.EditObject(objectData: Formex.ObjectData, plotPart: Base
 
 	container:SetAttribute("Position", position)
 	container:SetAttribute("Rotation", rotation)
+	container:SetAttribute("Side", objectData.Side)
 	container:SetAttribute("WallId", objectData.WallId)
 	container:SetAttribute("PrefabName", objectData.PrefabName or (prefab and prefab.PrefabName) or "")
 	container:SetAttribute("Design", Formex.Objects.EncodeDesign(objectData.Design, objectData.DesignColors))

@@ -756,6 +756,7 @@ local function applyFloorChanges(plotData: Formex.PlotData, floorData: Formex.Fl
 		LevelsTouched = levelsTouched,
 		RemovedModels = removedModels,
 		RenderFloorsLevels = levelsTouched,
+		RenderObjectsLevels = levelsTouched,
 		Snapshot = resolvedSnapshot,
 	}
 end
@@ -785,6 +786,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 	if plotPart then
 		for _, levelIndex in ipairs(result.RenderFloorsLevels) do
 			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Floor)
+			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, Formex.PartType.Object)
 		end
 	end
 
@@ -826,11 +828,49 @@ local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.
 		Formex.Objects.EnsureDesignDefaults(entry, prefab)
 	end
 
+	local function getDefaultFloorSurfaceHeights(levelIndex: number): (number, number)
+		local levelTop = Formex.Plot.GetLevelOffset(levelIndex)
+		local thickness = levelIndex == 1 and Formex.FoundationHeight or Formex.InterfloorHeight
+		return levelTop, levelTop - thickness
+	end
+
+	local function getFloorSurfaceHeightsAt(position: Vector2, levelIndex: number): (number, number)
+		local fallbackTop, fallbackBottom = getDefaultFloorSurfaceHeights(levelIndex)
+		local floorData = Formex.Objects.GetFloorAtPosition(plotData, levelIndex, position)
+		if not floorData then
+			return fallbackTop, fallbackBottom
+		end
+		return Formex.Objects.GetFloorSurfaceY(floorData), Formex.Objects.GetCeilingSurfaceY(floorData)
+	end
+
 	local function normalizeObject(entry: Formex.ObjectData, prefab: Formex.ObjectPrefab, existing: Formex.ObjectData?): Formex.ObjectData
 		local position = entry.Position or (existing and existing.Position) or Vector3.new(0, 0, 0)
 		local rotation = entry.Rotation or (existing and existing.Rotation) or Vector3.new(0, 0, 0)
 		local wallId = entry.WallId
 		if wallId == 0 then
+			wallId = nil
+		end
+		local side = Formex.Objects.ResolveObjectSide(entry.Side or (existing and existing.Side))
+
+		if prefab.ObjectMount == Formex.MountType.Door then
+			position = Vector3.new(position.X, 0, 0)
+			rotation = Vector3.new(0, 0, 0)
+		elseif prefab.ObjectMount == Formex.MountType.Window or prefab.ObjectMount == Formex.MountType.Wall then
+			position = Vector3.new(position.X, position.Y, 0)
+			rotation = Vector3.new(0, 0, 0)
+		elseif prefab.ObjectMount == Formex.MountType.Floor or prefab.ObjectMount == Formex.MountType.Ceiling then
+			local _, boundsSize = Formex.Objects.GetPrefabBounds(prefab, nil)
+			local position2 = Vector2.new(position.X, position.Z)
+			local floorHeight, ceilingHeight = getFloorSurfaceHeightsAt(position2, levelIndex)
+			if prefab.ObjectMount == Formex.MountType.Floor then
+				position = Vector3.new(position.X, floorHeight + (boundsSize.Y / 2), position.Z)
+			else
+				position = Vector3.new(position.X, ceilingHeight - (boundsSize.Y / 2), position.Z)
+			end
+			rotation = Vector3.new(0, rotation.Y, 0)
+			wallId = nil
+		else
+			rotation = Vector3.new(0, rotation.Y, 0)
 			wallId = nil
 		end
 
@@ -839,6 +879,7 @@ local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.
 			Level = levelIndex,
 			Position = position,
 			Rotation = rotation,
+			Side = side,
 			WallId = wallId,
 			Prefab = prefab,
 			PrefabName = prefab.PrefabName,
@@ -860,10 +901,11 @@ local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.
 		if not entry.Position or not entry.Rotation then
 			return false
 		end
-		local size = prefab.Size or Vector3.new(1, 1, 1)
+		local _, boundsSize = Formex.Objects.GetPrefabBounds(prefab, nil)
 		local plot = plotData
+		local mount = prefab.ObjectMount
 
-		if isWallMount(prefab.ObjectMount) then
+		if isWallMount(mount) then
 			if not entry.WallId then
 				return false
 			end
@@ -871,28 +913,32 @@ local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.
 			if not wallData then
 				return false
 			end
-			local dir, _, _, length = Formex.Objects.GetWallBasis(wallData)
+			local dir, _, startLocal, length = Formex.Objects.GetWallBasis(wallData)
 			if length <= Formex.EPSILON then
 				return false
 			end
-			if size.Z > Formex.WallThickness + Formex.EPSILON then
-				return false
-			end
-			local wallHeight = wallData.Height or Formex.LevelHeight
-			local minX = size.X / 2
-			local maxX = length - (size.X / 2)
-			local minY = size.Y / 2
-			local maxY = wallHeight - (size.Y / 2)
+			local minX = boundsSize.X / 2
+			local maxX = length - (boundsSize.X / 2)
 			if entry.Position.X < minX - Formex.EPSILON or entry.Position.X > maxX + Formex.EPSILON then
 				return false
 			end
-			if entry.Position.Y < minY - Formex.EPSILON or entry.Position.Y > maxY + Formex.EPSILON then
+			local levelIndex = wallData.Level or entry.Level or 1
+			local levelOffset = Formex.Plot.GetLevelOffset(levelIndex)
+			local wallHeight = wallData.Height or Formex.LevelHeight
+			local wallTop = levelOffset + wallHeight
+			local anchor2 = Vector2.new(startLocal.X + dir.X * entry.Position.X, startLocal.Z + dir.Z * entry.Position.X)
+			local floorData = Formex.Objects.GetFloorAtPosition(plot, levelIndex, anchor2)
+			local floorHeight = floorData and Formex.Objects.GetFloorSurfaceY(floorData) or levelOffset
+			local elevation = entry.Position.Y
+			if mount == Formex.MountType.Door then
+				elevation = 0
+			end
+			if elevation < -Formex.EPSILON then
 				return false
 			end
-			if math.abs(entry.Position.Z) > (Formex.WallThickness - size.Z) / 2 + Formex.EPSILON then
-				return false
-			end
-			if dir.Magnitude <= Formex.EPSILON then
+			local bottomY = floorHeight + elevation
+			local topY = bottomY + boundsSize.Y
+			if topY > wallTop + Formex.EPSILON then
 				return false
 			end
 			return true
@@ -901,6 +947,12 @@ local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.
 		local position2 = Vector2.new(entry.Position.X, entry.Position.Z)
 		if not Formex.Plot.IsPointInUnlockedSegments(position2, plot.SegmentsUnlocked) then
 			return false
+		end
+		if mount == Formex.MountType.Floor or mount == Formex.MountType.Ceiling then
+			local floorData = Formex.Objects.GetFloorAtPosition(plot, entry.Level or 1, position2)
+			if not floorData then
+				return false
+			end
 		end
 		return true
 	end
@@ -1085,6 +1137,7 @@ function FormexBuild.BuildTransaction(player: Player, changes: {Formex.BuildChan
 				end
 			end
 			mergeLevelSet(renderFloors, result.RenderFloorsLevels)
+			mergeLevelSet(renderObjects, result.RenderObjectsLevels)
 			table.insert(results, {
 				PartType = partType,
 				Action = action,
