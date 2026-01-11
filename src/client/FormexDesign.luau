@@ -1042,7 +1042,7 @@ local function createSegmentOverlay(bounds: Formex.SegmentBounds, plotInfo: Form
 	part.CanQuery = true
 	part.CastShadow = false
 	part.Transparency = unlocked and 0.78 or 0.88
-	part.Material = Enum.Material.ForceField
+	part.Material = Enum.Material.Glass
 	part.Size = Vector3.new(bounds.Size.X - Formex.GridSize, 0.25, bounds.Size.Z - Formex.GridSize)
 
 	local surfaceHeight = 0.05

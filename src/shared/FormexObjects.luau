@@ -1,13 +1,35 @@
 --!strict
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 local Formex = require(script.Parent:FindFirstChild("Formex"))
 Formex.Util = require(script.Parent:FindFirstChild("FormexUtil"))
 
 Formex.Objects = {}
 
 local PREFAB_FOLDER_NAME = "FormexPrefabs"
+local WORKSPACE_ROOT_NAME = "Formex"
+local WORKSPACE_PREFABS_NAME = "Prefabs"
+local WORKSPACE_STAGE_FOLDER_NAME = "Stages"
+
 local prefabFolder = ReplicatedStorage:FindFirstChild(PREFAB_FOLDER_NAME)
+local workspacePrefabFolder = nil :: Instance?
+
+local function resolveWorkspacePrefabFolder(): Instance?
+	if workspacePrefabFolder then
+		return workspacePrefabFolder
+	end
+	local formexFolder = Workspace:FindFirstChild(WORKSPACE_ROOT_NAME)
+	if not formexFolder then
+		return nil
+	end
+	local prefabsFolder = formexFolder:FindFirstChild(WORKSPACE_PREFABS_NAME)
+	if prefabsFolder then
+		workspacePrefabFolder = prefabsFolder
+	end
+	return workspacePrefabFolder
+end
 
 local function splitPath(path: string): {string}
 	local parts = {}
@@ -17,12 +39,12 @@ local function splitPath(path: string): {string}
 	return parts
 end
 
-local function findPrefabModel(prefabName: string): Model?
-	if not prefabName or prefabName == "" or not prefabFolder then
+local function findPrefabInFolder(root: Instance?, prefabName: string): Model?
+	if not prefabName or prefabName == "" or not root then
 		return nil
 	end
 
-	local current: Instance = prefabFolder
+	local current: Instance = root
 	for _, segment in ipairs(splitPath(prefabName)) do
 		local child = current:FindFirstChild(segment)
 		if not child then
@@ -35,6 +57,14 @@ local function findPrefabModel(prefabName: string): Model?
 		return current
 	end
 	return nil
+end
+
+local function findPrefabModel(prefabName: string): Model?
+	local found = findPrefabInFolder(prefabFolder, prefabName)
+	if found then
+		return found
+	end
+	return findPrefabInFolder(resolveWorkspacePrefabFolder(), prefabName)
 end
 
 local function resolveObjectMount(value: any): Formex.ObjectMount
@@ -134,19 +164,29 @@ local function buildPrefabFromModel(model: Model, pathName: string): Formex.Obje
 	return prefab
 end
 
-local function collectPrefabModels(root: Instance, prefix: string, list: {Formex.ObjectPrefab})
+local function collectPrefabModels(root: Instance, prefix: string, list: {Formex.ObjectPrefab}, skipFolderName: string?)
 	for _, child in ipairs(root:GetChildren()) do
 		if child:IsA("Model") then
 			local pathName = prefix ~= "" and (prefix .. "/" .. child.Name) or child.Name
 			table.insert(list, buildPrefabFromModel(child, pathName))
 		elseif child:IsA("Folder") then
+			if skipFolderName and child.Name == skipFolderName then
+				continue
+			end
 			local folderPrefix = prefix ~= "" and (prefix .. "/" .. child.Name) or child.Name
-			collectPrefabModels(child, folderPrefix, list)
+			collectPrefabModels(child, folderPrefix, list, skipFolderName)
 		end
 	end
 end
 
 local function buildPrefabCache(): ({Formex.ObjectPrefab}, {[string]: Formex.ObjectPrefab})
+	if RunService:IsClient() and not game:IsLoaded() then
+		game.Loaded:Wait()
+	end
+
+	prefabFolder = ReplicatedStorage:FindFirstChild(PREFAB_FOLDER_NAME)
+	workspacePrefabFolder = resolveWorkspacePrefabFolder()
+
 	local list = table.clone(Formex.Furniture or {})
 	local byName = {} :: {[string]: Formex.ObjectPrefab}
 
@@ -159,9 +199,12 @@ local function buildPrefabCache(): ({Formex.ObjectPrefab}, {[string]: Formex.Obj
 		end
 	end
 
-	if prefabFolder then
+	local function mergeFromRoot(root: Instance?, skipFolderName: string?)
+		if not root then
+			return
+		end
 		local discovered = {} :: {Formex.ObjectPrefab}
-		collectPrefabModels(prefabFolder, "", discovered)
+		collectPrefabModels(root, "", discovered, skipFolderName)
 		for _, prefab in ipairs(discovered) do
 			if not byName[prefab.PrefabName] then
 				table.insert(list, prefab)
@@ -169,6 +212,11 @@ local function buildPrefabCache(): ({Formex.ObjectPrefab}, {[string]: Formex.Obj
 			end
 		end
 	end
+
+	mergeFromRoot(prefabFolder, nil)
+	mergeFromRoot(workspacePrefabFolder, WORKSPACE_STAGE_FOLDER_NAME)
+
+	Formex.Furniture = list
 
 	return list, byName
 end
@@ -198,9 +246,17 @@ local function resolvePrefabModels(prefab: Formex.ObjectPrefab): (Model?, Model?
 		return nil, nil
 	end
 
+	local prefabChild = prefabModel:FindFirstChild("Prefab")
+	local subtractModel = prefabModel:FindFirstChild("Subtract")
+	if prefabChild and prefabChild:IsA("Model") then
+		if prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window then
+			return prefabChild, subtractModel and subtractModel:IsA("Model") and subtractModel or nil
+		end
+		return prefabChild, nil
+	end
+
 	if prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window then
 		local objectModel = prefabModel:FindFirstChild("Model")
-		local subtractModel = prefabModel:FindFirstChild("Subtract")
 		if objectModel and objectModel:IsA("Model") then
 			return objectModel, subtractModel and subtractModel:IsA("Model") and subtractModel or nil
 		end

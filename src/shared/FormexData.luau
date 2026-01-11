@@ -120,16 +120,4 @@ Formex.Icons = { -- Content.fromAssetId(...)
     CircleBackground = 114484129436279,
 } :: {[string]: number}
 
-Formex.Furniture = {
-	{
-		Name = "Modern Chair",
-		IconAssetId = 128201486227303,
-		PrefabName = "Chairs/ModernChair",
-		ObjectMount = Formex.MountType.Floor,
-		Size = Vector3.new(4, 6, 4),
-		Categories = { "Seating", "Indoors" },
-		DefaultDesign = { Formex.DefaultWallMaterial },
-	},
-} :: {Formex.ObjectPrefab}
-
 return Formex

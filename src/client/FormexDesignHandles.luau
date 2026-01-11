@@ -88,7 +88,7 @@ function Handles.CreateHandle(name: string, color: Color3, iconAsset: number | s
         part.CanTouch = false
         part.CanQuery = true
         part.CastShadow = false
-        part.Material = Enum.Material.ForceField
+        part.Material = Enum.Material.Glass
         part.CollisionGroup = Formex.CollisionGroup.Grid
         part.Color = color
 
