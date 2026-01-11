@@ -344,6 +344,31 @@ function FormexPlugin.Init(plugin: Plugin)
 				viewportDialog:Show()
 			end
 		end,
+		OnDeleteSelected = function(paths)
+			if #paths == 0 then
+				Utils.DisplayMessageBox(plugin, "Delete Prefabs", "Select one or more prefabs from the catalog.")
+				return
+			end
+			Utils.ConfirmMessageBox(plugin, "Delete Prefabs", "Delete selected prefabs from ReplicatedStorage and Workspace?", function()
+				local replicatedRoot = PrefabFolders.GetReplicatedRoot()
+				local workspaceRoot = PrefabFolders.GetWorkspaceRoot()
+				for _, path in ipairs(paths) do
+					local replicated = PrefabCatalog.FindPrefabByPath(replicatedRoot, path)
+					if replicated then
+						replicated:Destroy()
+					end
+					local workspacePrefab = PrefabCatalog.FindPrefabByPath(workspaceRoot, path)
+					if workspacePrefab then
+						StageManager.RemoveStage(workspacePrefab)
+						workspacePrefab:Destroy()
+					end
+				end
+				layoutWorkspaceStages()
+				Selection:Set({})
+				ui:SetSelection(nil)
+				ui:UpdateCatalog(buildCatalogList(""))
+			end)
+		end,
 		OnRefreshCatalog = function(filterText)
 			ui:UpdateCatalog(buildCatalogList(filterText))
 		end,

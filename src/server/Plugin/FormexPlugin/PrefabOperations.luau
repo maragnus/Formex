@@ -113,38 +113,26 @@ local function sanitizeName(rootFolder: Instance, baseName: string): string
 	return candidate
 end
 
-local function getBoundsInStageSpace(model: Model, stagePivot: CFrame): (Vector3, Vector3)
+local function getWorldBounds(model: Model): (Vector3, Vector3)
 	local boundsCFrame, boundsSize = model:GetBoundingBox()
 	local half = boundsSize * 0.5
-	local min = Vector3.new(math.huge, math.huge, math.huge)
-	local max = Vector3.new(-math.huge, -math.huge, -math.huge)
-
-	for _, sx in ipairs({ -1, 1 }) do
-		for _, sy in ipairs({ -1, 1 }) do
-			for _, sz in ipairs({ -1, 1 }) do
-				local offset = Vector3.new(half.X * sx, half.Y * sy, half.Z * sz)
-				local worldPoint = boundsCFrame:PointToWorldSpace(offset)
-				local localPoint = stagePivot:PointToObjectSpace(worldPoint)
-				min = Vector3.new(
-					math.min(min.X, localPoint.X),
-					math.min(min.Y, localPoint.Y),
-					math.min(min.Z, localPoint.Z)
-				)
-				max = Vector3.new(
-					math.max(max.X, localPoint.X),
-					math.max(max.Y, localPoint.Y),
-					math.max(max.Z, localPoint.Z)
-				)
-			end
-		end
-	end
-
-	return min, max
+	return boundsCFrame.Position - half, boundsCFrame.Position + half
 end
 
 local function shiftModel(model: Model, offset: Vector3)
 	local pivot = model:GetPivot()
 	model:PivotTo(pivot + offset)
+end
+
+local function getPrefabBounds(root: Model): (CFrame, Vector3)
+	local prefabModel = PrefabMetadata.GetPrefabModel(root)
+	local target = prefabModel or root
+	return target:GetBoundingBox()
+end
+
+local function alignGuideToBounds(guide: BasePart, boundsCFrame: CFrame, boundsSize: Vector3)
+	guide.Size = boundsSize
+	guide.CFrame = boundsCFrame
 end
 
 local function sanitizePrefabTransforms(root: Model)
@@ -153,6 +141,35 @@ end
 
 function PrefabOperations.SanitizePrefab(root: Model)
 	sanitizePrefabTransforms(root)
+end
+
+local function ensureModelBase(root: Model)
+	local prefabModel = PrefabMetadata.GetPrefabModel(root)
+	if not prefabModel or prefabModel.PrimaryPart then
+		return
+	end
+
+	local existing = prefabModel:FindFirstChild("ModelBase")
+	if existing and existing:IsA("BasePart") then
+		prefabModel.PrimaryPart = existing
+		return
+	end
+
+	local boundsCFrame, boundsSize = prefabModel:GetBoundingBox()
+	local base = Instance.new("Part")
+	base.Name = "ModelBase"
+	base.Anchored = true
+	base.CanCollide = false
+	base.CanTouch = false
+	base.CanQuery = false
+	base.CastShadow = false
+	base.Transparency = 1
+	base.Locked = true
+	base.Size = Vector3.new(boundsSize.X, 0.001, boundsSize.Z)
+	local minY = boundsCFrame.Position.Y - (boundsSize.Y / 2)
+	base.CFrame = CFrame.new(boundsCFrame.Position.X, minY + 0.0005, boundsCFrame.Position.Z)
+	base.Parent = prefabModel
+	prefabModel.PrimaryPart = base
 end
 
 local function getSizeGuide(root: Model): BasePart?
@@ -178,10 +195,13 @@ local function ensureSizeGuide(root: Model): BasePart?
 	return StageManager.EnsureSizeGuide(root, size)
 end
 
-local function previewSizeGuide(root: Model, duration: number)
+local function previewSizeGuide(root: Model, duration: number, boundsCFrame: CFrame?, boundsSize: Vector3?)
 	local token = (guidePreviewTokens[root] or 0) + 1
 	guidePreviewTokens[root] = token
-	ensureSizeGuide(root)
+	local guide = ensureSizeGuide(root)
+	if guide and boundsCFrame and boundsSize then
+		alignGuideToBounds(guide, boundsCFrame, boundsSize)
+	end
 	task.delay(duration, function()
 		if guidePreviewTokens[root] == token then
 			local guide = getSizeGuide(root)
@@ -291,6 +311,7 @@ function PrefabOperations.PrepareSelection(selection: {Instance}): {Model}
 		local root = ensurePrefabRoot(instance, workspaceRoot)
 		if root then
 			sanitizePrefabTransforms(root)
+			ensureModelBase(root)
 			table.insert(roots, root)
 		end
 	end
@@ -350,39 +371,38 @@ function PrefabOperations.AutoPosition(root: Model): boolean
 		return false
 	end
 	local prefabModel = PrefabMetadata.GetPrefabModel(root) or root
-	local stagePivot = root:GetPivot()
-	local minBounds, maxBounds = getBoundsInStageSpace(prefabModel, stagePivot)
+	local minBounds, maxBounds = getWorldBounds(prefabModel)
 	local center = (minBounds + maxBounds) * 0.5
 
+	local stageCenter = root:GetPivot().Position
 	local stageHalf = Constants.Stage.Size / 2
-	local floorPlaneY = -stageHalf + (Constants.Stage.FloorThickness / 2)
-	local ceilingPlaneY = stageHalf - (Constants.Stage.FloorThickness / 2)
-	local backPlaneZ = -stageHalf + (Constants.WallThickness / 2)
+	local floorPlaneY = stageCenter.Y - stageHalf + (Constants.Stage.FloorThickness / 2)
+	local ceilingPlaneY = stageCenter.Y + stageHalf - (Constants.Stage.FloorThickness / 2)
+	local backPlaneZ = stageCenter.Z - stageHalf + (Constants.WallThickness / 2)
 
 	local mount = PrefabMetadata.ReadAttributes(root).ObjectMount
 	local offset = Vector3.new(0, 0, 0)
 	if mount == "Surface" or mount == "Floor" then
-		offset = Vector3.new(-center.X, floorPlaneY - minBounds.Y, -center.Z)
+		offset = Vector3.new(stageCenter.X - center.X, floorPlaneY - minBounds.Y, stageCenter.Z - center.Z)
 	elseif mount == "Ceiling" then
-		offset = Vector3.new(-center.X, ceilingPlaneY - maxBounds.Y, -center.Z)
+		offset = Vector3.new(stageCenter.X - center.X, ceilingPlaneY - maxBounds.Y, stageCenter.Z - center.Z)
 	elseif mount == "Wall" then
-		offset = Vector3.new(-center.X, -center.Y, backPlaneZ - minBounds.Z)
+		offset = Vector3.new(stageCenter.X - center.X, stageCenter.Y - center.Y, backPlaneZ - minBounds.Z)
 	elseif mount == "Door" then
-		offset = Vector3.new(-center.X, floorPlaneY - minBounds.Y, -center.Z)
+		offset = Vector3.new(stageCenter.X - center.X, floorPlaneY - minBounds.Y, stageCenter.Z - center.Z)
 	elseif mount == "Window" then
-		offset = Vector3.new(-center.X, -center.Y, -center.Z)
+		offset = Vector3.new(stageCenter.X - center.X, stageCenter.Y - center.Y, stageCenter.Z - center.Z)
 	else
-		offset = Vector3.new(-center.X, floorPlaneY - minBounds.Y, -center.Z)
+		offset = Vector3.new(stageCenter.X - center.X, floorPlaneY - minBounds.Y, stageCenter.Z - center.Z)
 	end
 
-	local worldOffset = stagePivot:VectorToWorldSpace(offset)
-	if worldOffset.Magnitude <= 1e-4 then
+	if offset.Magnitude <= 1e-4 then
 		return false
 	end
-	shiftModel(prefabModel, worldOffset)
+	shiftModel(prefabModel, offset)
 	local subtract = root:FindFirstChild(Constants.Prefab.SubtractModelName)
 	if subtract and subtract:IsA("Model") then
-		shiftModel(subtract, worldOffset)
+		shiftModel(subtract, offset)
 	end
 	return true
 end
@@ -390,13 +410,14 @@ end
 function PrefabOperations.AutoSize(root: Model)
 	sanitizePrefabTransforms(root)
 	local attributes = PrefabMetadata.ReadAttributes(root)
-	local size = PrefabSizing.CalculatePrefabSize(root)
-	size = PrefabSizing.SnapSize(size, attributes.ObjectMount)
+	local boundsCFrame, boundsSize = getPrefabBounds(root)
+	local size = PrefabSizing.SnapSize(boundsSize, attributes.ObjectMount)
 	PrefabMetadata.ApplyAttributes(root, { Size = size })
-	StageManager.RefreshSizeGuide(root, size)
 	local guide = getSizeGuide(root)
-	if not guide then
-		previewSizeGuide(root, 1)
+	if guide then
+		alignGuideToBounds(guide, boundsCFrame, boundsSize)
+	else
+		previewSizeGuide(root, 1, boundsCFrame, boundsSize)
 	end
 	return size
 end
@@ -425,7 +446,13 @@ function PrefabOperations.ToggleSizeGuide(root: Model): boolean
 		guide:Destroy()
 		return true
 	end
-	return ensureSizeGuide(root) ~= nil
+	local created = ensureSizeGuide(root)
+	if created then
+		local boundsCFrame, boundsSize = getPrefabBounds(root)
+		alignGuideToBounds(created, boundsCFrame, boundsSize)
+		return true
+	end
+	return false
 end
 
 function PrefabOperations.ToggleSubtract(root: Model): Model?

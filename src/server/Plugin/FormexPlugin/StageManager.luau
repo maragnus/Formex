@@ -41,6 +41,10 @@ local function getStageModel(root: Model): Model?
 	return nil
 end
 
+local function getStagePivot(root: Model): CFrame
+	return CFrame.new(root:GetPivot().Position)
+end
+
 local function clearStage(root: Model)
 	local stage = getStageModel(root)
 	if stage then
@@ -77,7 +81,7 @@ local function createStagePart(stage: Model, name: string, size: Vector3, cframe
 	return part
 end
 
-local function buildStageParts(stage: Model, rootPivot: CFrame, objectMount: string?): BasePart?
+local function buildStageParts(stage: Model, stagePivot: CFrame, objectMount: string?): BasePart?
 	clearStageParts(stage)
 
 	local stageSize = Constants.Stage.Size
@@ -99,7 +103,7 @@ local function buildStageParts(stage: Model, rootPivot: CFrame, objectMount: str
 			stage,
 			StageParts.Floor,
 			Vector3.new(stageSize, floorThickness, stageSize),
-			rootPivot * CFrame.new(0, -half, 0)
+			stagePivot * CFrame.new(0, -half, 0)
 		)
 		GridTexture.Apply(floor, Enum.NormalId.Top, {
 			OffsetStudsU = 2,
@@ -113,7 +117,7 @@ local function buildStageParts(stage: Model, rootPivot: CFrame, objectMount: str
 			stage,
 			StageParts.Ceiling,
 			Vector3.new(stageSize, floorThickness, stageSize),
-			rootPivot * CFrame.new(0, half, 0)
+			stagePivot * CFrame.new(0, half, 0)
 		)
 		GridTexture.Apply(ceiling, Enum.NormalId.Bottom, {
 			OffsetStudsU = 2,
@@ -127,7 +131,7 @@ local function buildStageParts(stage: Model, rootPivot: CFrame, objectMount: str
 			stage,
 			StageParts.Back,
 			Vector3.new(stageSize, stageSize, backThickness),
-			rootPivot * CFrame.new(0, 0, -half)
+			stagePivot * CFrame.new(0, 0, -half)
 		)
 		GridTexture.Apply(back, Enum.NormalId.Front, { OffsetStudsU = 2 })
 		GridTexture.Apply(back, Enum.NormalId.Back, { OffsetStudsU = 2 })
@@ -138,7 +142,7 @@ local function buildStageParts(stage: Model, rootPivot: CFrame, objectMount: str
 			stage,
 			StageParts.Wall,
 			Vector3.new(stageSize, stageSize, backThickness),
-			rootPivot * CFrame.new(0, 0, 0)
+			stagePivot * CFrame.new(0, 0, 0)
 		)
 		GridTexture.Apply(wall, Enum.NormalId.Front, { OffsetStudsU = 2 })
 		GridTexture.Apply(wall, Enum.NormalId.Back, { OffsetStudsU = 2 })
@@ -147,14 +151,14 @@ local function buildStageParts(stage: Model, rootPivot: CFrame, objectMount: str
 	return primarySurface
 end
 
-local function updateSizeGuide(guide: BasePart, rootPivot: CFrame, size: Vector3)
+local function updateSizeGuide(guide: BasePart, stagePivot: CFrame, size: Vector3)
 	local stageHalf = Constants.Stage.Size / 2
-	local guideCenter = rootPivot * CFrame.new(0, -stageHalf + (size.Y / 2), 0)
+	local guideCenter = stagePivot * CFrame.new(0, -stageHalf + (size.Y / 2), 0)
 	guide.Size = size
 	guide.CFrame = guideCenter
 end
 
-local function ensureSizeGuide(stage: Model, rootPivot: CFrame, size: Vector3): BasePart
+local function ensureSizeGuide(stage: Model, stagePivot: CFrame, size: Vector3): BasePart
 	local guide = stage:FindFirstChild(Constants.Prefab.SizeGuideName)
 	if not (guide and guide:IsA("BasePart")) then
 		local created = Instance.new("Part")
@@ -172,7 +176,7 @@ local function ensureSizeGuide(stage: Model, rootPivot: CFrame, size: Vector3): 
 		guide = created
 	end
 
-	updateSizeGuide(guide :: BasePart, rootPivot, size)
+	updateSizeGuide(guide :: BasePart, stagePivot, size)
 	return guide :: BasePart
 end
 
@@ -190,10 +194,10 @@ function StageManager.CreateStage(root: Model, stageIndex: number): StageInfo
 	stage.Name = root.Name
 	stage:SetAttribute(Constants.Attributes.StageId, stageId)
 
-	local rootPivot = root:GetPivot()
-	stage:PivotTo(rootPivot)
+	local stagePivot = getStagePivot(root)
+	stage:PivotTo(stagePivot)
 	local attributes = PrefabMetadata.ReadAttributes(root)
-	buildStageParts(stage, rootPivot, attributes.ObjectMount)
+	buildStageParts(stage, stagePivot, attributes.ObjectMount)
 
 	local size = attributes.Size
 	if not size or typeof(size) ~= "Vector3" then
@@ -213,9 +217,9 @@ function StageManager.UpdateStageDesign(root: Model, objectMount: string?)
 	if not stage then
 		return
 	end
-	local rootPivot = root:GetPivot()
-	stage:PivotTo(rootPivot)
-	buildStageParts(stage, rootPivot, objectMount)
+	local stagePivot = getStagePivot(root)
+	stage:PivotTo(stagePivot)
+	buildStageParts(stage, stagePivot, objectMount)
 end
 
 function StageManager.UpdateStageName(root: Model)
@@ -235,7 +239,7 @@ function StageManager.PositionStage(root: Model, stageIndex: number)
 	root:PivotTo(target)
 	local stage = getStageModel(root)
 	if stage then
-		stage:PivotTo(target)
+		stage:PivotTo(CFrame.new(position))
 	end
 end
 
@@ -252,8 +256,8 @@ function StageManager.RefreshSizeGuide(root: Model, size: Vector3)
 	end
 	local guide = stage:FindFirstChild(Constants.Prefab.SizeGuideName)
 	if guide and guide:IsA("BasePart") then
-		local rootPivot = root:GetPivot()
-		updateSizeGuide(guide, rootPivot, size)
+		local stagePivot = getStagePivot(root)
+		updateSizeGuide(guide, stagePivot, size)
 	end
 end
 
@@ -262,8 +266,8 @@ function StageManager.EnsureSizeGuide(root: Model, size: Vector3): BasePart?
 	if not stage then
 		return nil
 	end
-	local rootPivot = root:GetPivot()
-	return ensureSizeGuide(stage, rootPivot, size)
+	local stagePivot = getStagePivot(root)
+	return ensureSizeGuide(stage, stagePivot, size)
 end
 
 function StageManager.RemoveStage(root: Model)

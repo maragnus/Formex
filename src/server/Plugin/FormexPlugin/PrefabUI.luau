@@ -26,6 +26,7 @@ type Callbacks = {
 	OnPreview: () -> (),
 	OnFocusStage: () -> (),
 	OnPullSelected: ({string}) -> (),
+	OnDeleteSelected: ({string}) -> (),
 	OnRefreshCatalog: (string) -> (),
 }
 
@@ -51,6 +52,7 @@ local ICON_FOCUS = 88488799504419
 local ICON_PREVIEW = 70772215979759
 local ICON_UPDATE_ATTRIBUTES = 116875236311469
 local ICON_OBJECT_MOUNT = 114484129436279
+local ICON_DELETE = 91738865172085
 
 local function createWidget(plugin: Plugin): DockWidgetPluginGui
 	local info = DockWidgetPluginGuiInfo.new(
@@ -352,6 +354,7 @@ function PrefabUIFactory.new(plugin: Plugin, callbacks: Callbacks): PrefabUI
 	local searchBox = createTextBox(catalogSection, "Search")
 	local refreshButton = createButton(catalogSection, "Refresh Catalog")
 	local pullButton = createButton(catalogSection, "Pull Selected")
+	local deleteButton = createButton(catalogSection, "Delete Selected")
 
 	local catalogList = Instance.new("ScrollingFrame")
 	catalogList.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
@@ -387,6 +390,7 @@ function PrefabUIFactory.new(plugin: Plugin, callbacks: Callbacks): PrefabUI
 	addButtonIcon(focusStageButton, ICON_FOCUS)
 	addButtonIcon(previewButton, ICON_PREVIEW)
 	addButtonIcon(pullButton, ICON_LOAD)
+	addButtonIcon(deleteButton, ICON_DELETE)
 	addButtonIcon(refreshButton, ICON_REFRESH)
 
 	mountButton.MouseButton1Click:Connect(function()
@@ -464,6 +468,17 @@ function PrefabUIFactory.new(plugin: Plugin, callbacks: Callbacks): PrefabUI
 		end
 		table.sort(selections)
 		callbacks.OnPullSelected(selections)
+	end)
+
+	deleteButton.MouseButton1Click:Connect(function()
+		local selections = {}
+		for path, isSelected in pairs(selectedCatalog) do
+			if isSelected then
+				table.insert(selections, path)
+			end
+		end
+		table.sort(selections)
+		callbacks.OnDeleteSelected(selections)
 	end)
 
 	local ui = {} :: PrefabUI
