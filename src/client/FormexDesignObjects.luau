@@ -55,9 +55,16 @@ local moveOriginal: Formex.ObjectData? = nil
 local movePreview: Formex.ObjectData? = nil
 local previewHighlight: Highlight? = nil
 local previewValid = true
+local moveSnapshot: {[number]: Formex.ObjectData}? = nil
+local moveSnapshotMoved: {[number]: boolean}? = nil
 
 local lastHandleObjectId: number? = nil
 local SURFACE_UP_DOT = 0.65
+local ROTATE_STEP_DEGREES = 22.5
+
+local function snapRotationDegrees(value: number): number
+	return math.round(value / ROTATE_STEP_DEGREES) * ROTATE_STEP_DEGREES
+end
 
 local function setGhostHighlight(valid: boolean)
 	ghostValid = valid
@@ -227,6 +234,30 @@ local function getFloorModelFromTarget(target: Instance?): Model?
 	return nil
 end
 
+local function getLevelFolder(plotInfo: any, levelIndex: number): BasePart?
+	local plotPart = plotInfo and plotInfo.PlotPart
+	if not plotPart then
+		return nil
+	end
+	local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
+	if levelPart and levelPart:IsA("BasePart") then
+		return levelPart
+	end
+	return nil
+end
+
+local function getLevelFolderChild(plotInfo: any, levelIndex: number, name: string): Folder?
+	local levelPart = getLevelFolder(plotInfo, levelIndex)
+	if not levelPart then
+		return nil
+	end
+	local folder = levelPart:FindFirstChild(name)
+	if folder and folder:IsA("Folder") then
+		return folder
+	end
+	return nil
+end
+
 local function snapToGrid(value: number): number
 	local grid = Formex.ObjectGridSize
 	if grid <= 0 then
@@ -357,12 +388,32 @@ local function getObjectLocalCFrame(
 	return plotPart.CFrame:ToObjectSpace(worldCFrame)
 end
 
+local function getObjectBoundsSize(prefab: Formex.ObjectPrefab, objectData: Formex.ObjectData?): Vector3
+	local _, boundsSize = Formex.Objects.GetPrefabBounds(prefab, objectData and objectData.ObjectModel or nil)
+	return boundsSize
+end
+
+local function getLevelObjects(
+	plotInfo: any,
+	levelIndex: number,
+	snapshot: {[number]: Formex.ObjectData}?
+): {[number]: Formex.ObjectData}?
+	if snapshot then
+		return snapshot
+	end
+	local plotData = plotInfo and plotInfo.PlotData
+	local levelData = plotData and plotData.Levels and plotData.Levels[levelIndex]
+	return levelData and levelData.Objects or nil
+end
+
 local function isPlacementClear(
 	plotInfo: any,
 	objectData: Formex.ObjectData,
 	prefab: Formex.ObjectPrefab,
 	ignoreObjectId: number?,
-	wallOverride: Formex.WallData?
+	wallOverride: Formex.WallData?,
+	snapshot: {[number]: Formex.ObjectData}?,
+	movedIds: {[number]: boolean}?
 ): boolean
 	if not plotInfo or not plotInfo.PlotData then
 		return true
@@ -371,34 +422,81 @@ local function isPlacementClear(
 	if not localCFrame then
 		return true
 	end
-	local size = prefab.Size or Vector3.new(1, 1, 1)
+	local levelIndex = objectData.Level or getCurrentLevel()
+	local levelObjects = getLevelObjects(plotInfo, levelIndex, snapshot)
+	if not levelObjects then
+		return true
+	end
+	local size = getObjectBoundsSize(prefab, objectData)
 	local sourceObb = buildObb(localCFrame, size)
-	for _, levelData in pairs(plotInfo.PlotData.Levels or {}) do
-		for _, other in pairs(levelData.Objects or {}) do
-			if ignoreObjectId and other.ObjectId == ignoreObjectId then
-				continue
-			end
-			if objectData.ObjectId ~= 0 and other.ObjectId == objectData.ObjectId then
-				continue
-			end
-			local otherPrefab = other.Prefab
-			if not otherPrefab and other.PrefabName then
-				otherPrefab = Formex.Objects.GetPrefab(other.PrefabName)
-				other.Prefab = otherPrefab
-			end
-			if otherPrefab then
-				local otherCFrame = getObjectLocalCFrame(plotInfo, other, otherPrefab, nil)
-				if otherCFrame then
-					local otherSize = otherPrefab.Size or Vector3.new(1, 1, 1)
-					local otherObb = buildObb(otherCFrame, otherSize)
-					if obbOverlap2D(sourceObb, otherObb) then
-						return false
-					end
+	for _, other in pairs(levelObjects) do
+		if ignoreObjectId and other.ObjectId == ignoreObjectId then
+			continue
+		end
+		if objectData.ObjectId ~= 0 and other.ObjectId == objectData.ObjectId then
+			continue
+		end
+		if movedIds and other.ObjectId and movedIds[other.ObjectId] then
+			continue
+		end
+		local otherPrefab = other.Prefab
+		if not otherPrefab and other.PrefabName then
+			otherPrefab = Formex.Objects.GetPrefab(other.PrefabName)
+			other.Prefab = otherPrefab
+		end
+		if otherPrefab then
+			local otherCFrame = getObjectLocalCFrame(plotInfo, other, otherPrefab, nil)
+			if otherCFrame then
+				local otherSize = getObjectBoundsSize(otherPrefab, other)
+				local otherObb = buildObb(otherCFrame, otherSize)
+				if obbOverlap2D(sourceObb, otherObb) then
+					return false
 				end
 			end
 		end
 	end
 	return true
+end
+
+local function buildObjectSnapshot(plotInfo: any, levelIndex: number): {[number]: Formex.ObjectData}
+	local snapshot = {} :: {[number]: Formex.ObjectData}
+	local plotData = plotInfo and plotInfo.PlotData
+	local levelData = plotData and plotData.Levels and plotData.Levels[levelIndex]
+	if not levelData or not levelData.Objects then
+		return snapshot
+	end
+
+	for _, objectData in pairs(levelData.Objects) do
+		if objectData.ObjectId then
+			snapshot[objectData.ObjectId] = {
+				ObjectId = objectData.ObjectId,
+				Level = objectData.Level,
+				Position = objectData.Position,
+				Rotation = objectData.Rotation,
+				Side = objectData.Side,
+				WallId = objectData.WallId,
+				PrefabName = objectData.PrefabName,
+				Prefab = objectData.Prefab,
+				ObjectModel = objectData.ObjectModel,
+			} :: Formex.ObjectData
+		end
+	end
+
+	return snapshot
+end
+
+local function clearMoveSnapshot()
+	moveSnapshot = nil
+	moveSnapshotMoved = nil
+end
+
+local function startMoveSnapshot(input: any, objectData: Formex.ObjectData)
+	if not input or not input.PlotInfo or not objectData.ObjectId then
+		return
+	end
+	local levelIndex = objectData.Level or getCurrentLevel()
+	moveSnapshot = buildObjectSnapshot(input.PlotInfo, levelIndex)
+	moveSnapshotMoved = { [objectData.ObjectId] = true }
 end
 
 local function resolvePrefab(): Formex.ObjectPrefab?
@@ -501,7 +599,12 @@ local function getWallPlacement(input: any, prefab: Formex.ObjectPrefab, wallDat
 	} :: Formex.ObjectData, valid
 end
 
-local function getSurfacePlacement(input: any, prefab: Formex.ObjectPrefab, rotationOverride: Vector3?): (Formex.ObjectData, boolean)
+local function getSurfacePlacementWithMount(
+	input: any,
+	prefab: Formex.ObjectPrefab,
+	rotationOverride: Vector3?,
+	mountOverride: Formex.ObjectMount?
+): (Formex.ObjectData, boolean)
 	local plotPart = input.PlotInfo.PlotPart
 	local hitPosition = input.HitPosition
 	if not plotPart or not hitPosition then
@@ -509,7 +612,7 @@ local function getSurfacePlacement(input: any, prefab: Formex.ObjectPrefab, rota
 	end
 	local localHit = plotPart.CFrame:PointToObjectSpace(hitPosition)
 	local normal = input.HitNormal or Vector3.new(0, 1, 0)
-	local mount = prefab.ObjectMount
+	local mount = mountOverride or prefab.ObjectMount
 	local levelIndex = getLevelFromTarget(input.Target)
 	local validSurface = true
 	local rotationY = rotationOverride and rotationOverride.Y or 0
@@ -565,12 +668,18 @@ local function getSurfacePlacement(input: any, prefab: Formex.ObjectPrefab, rota
 	} :: Formex.ObjectData, valid
 end
 
+local function getSurfacePlacement(input: any, prefab: Formex.ObjectPrefab, rotationOverride: Vector3?): (Formex.ObjectData, boolean)
+	return getSurfacePlacementWithMount(input, prefab, rotationOverride, nil)
+end
+
 local function getPlacement(
 	input: any,
 	prefab: Formex.ObjectPrefab,
 	rotationOverride: Vector3?,
 	wallOverride: Formex.WallData?,
-	ignoreObjectId: number?
+	ignoreObjectId: number?,
+	snapshot: {[number]: Formex.ObjectData}?,
+	movedIds: {[number]: boolean}?
 ): (Formex.ObjectData, boolean)
 	local objectMount = prefab.ObjectMount
 	if objectMount == Formex.MountType.Wall or objectMount == Formex.MountType.Door or objectMount == Formex.MountType.Window then
@@ -582,18 +691,23 @@ local function getPlacement(
 			end
 		end
 		if not wallData then
+			local floorModel = getFloorModelFromTarget(input.Target)
+			if floorModel then
+				local data = getSurfacePlacementWithMount(input, prefab, rotationOverride, Formex.MountType.Floor)
+				return data, false
+			end
 			return {} :: Formex.ObjectData, false
 		end
 		local data, valid = getWallPlacement(input, prefab, wallData, rotationOverride)
 		if valid then
-			valid = isPlacementClear(input.PlotInfo, data, prefab, ignoreObjectId, wallData)
+			valid = isPlacementClear(input.PlotInfo, data, prefab, ignoreObjectId, wallData, snapshot, movedIds)
 		end
 		return data, valid
 	end
 
 	local data, valid = getSurfacePlacement(input, prefab, rotationOverride)
 	if valid then
-		valid = isPlacementClear(input.PlotInfo, data, prefab, ignoreObjectId, nil)
+		valid = isPlacementClear(input.PlotInfo, data, prefab, ignoreObjectId, nil, snapshot, movedIds)
 	end
 	return data, valid
 end
@@ -763,6 +877,7 @@ local function onHandleClick(handleType: ObjectHandleType)
 
 	moveOriginal = selectedData
 	movePreview = table.clone(selectedData)
+	startMoveSnapshot(input, moveOriginal)
 	setActionType(handleType == "Rotate" and Enums.ActionType.Rotate or Enums.ActionType.Move)
 	setHandlesVisible(false)
 	ensurePreviewHighlight(selectedData.Part)
@@ -794,7 +909,13 @@ local function updateObjectHandles(plotInfo: any)
 	if objectData.ObjectId ~= lastHandleObjectId then
 		clearHandles()
 		handleMove = Handles.CreateHandle("ObjectMove", Constants.HandleMoveColor, Formex.Icons.MoveItem, onHandleClick, "Move")
-		handleRotate = Handles.CreateHandle("ObjectRotate", Constants.HandleFlipColor, Formex.Icons.RotateItem, onHandleClick, "Rotate")
+		local rotateIcon = Formex.Icons.RotateItem
+		if prefab.ObjectMount == Formex.MountType.Wall
+			or prefab.ObjectMount == Formex.MountType.Door
+			or prefab.ObjectMount == Formex.MountType.Window then
+			rotateIcon = Formex.Icons.DirectionIndicator
+		end
+		handleRotate = Handles.CreateHandle("ObjectRotate", Constants.HandleFlipColor, rotateIcon, onHandleClick, "Rotate")
 		handleDelete = Handles.CreateHandle("ObjectDelete", Constants.HandleDeleteColor, Formex.Icons.DeleteItem, onHandleClick, "Delete")
 		lastHandleObjectId = objectData.ObjectId
 	end
@@ -899,7 +1020,7 @@ local function updateGhostPlacement(input: any)
 	end
 	applyDesignToGhost(prefab)
 
-	local data, valid = getPlacement(input, prefab, nil, nil, nil)
+	local data, valid = getPlacement(input, prefab, nil, nil, nil, nil, nil)
 	setGhostHighlight(valid)
 	if data.Position and data.Rotation then
 		data.ObjectModel = ghostModel
@@ -919,7 +1040,7 @@ local function finalizePlacement(input: any)
 	if not prefab then
 		return
 	end
-	local data, valid = getPlacement(input, prefab, nil, nil, nil)
+	local data, valid = getPlacement(input, prefab, nil, nil, nil, nil, nil)
 	if not valid then
 		setGhostHighlight(false)
 		return
@@ -981,7 +1102,15 @@ local function updateMovePreview(input: any)
 		end
 	end
 
-	local data, valid = getPlacement(input, prefab, moveOriginal.Rotation, wallData, moveOriginal.ObjectId)
+	local data, valid = getPlacement(
+		input,
+		prefab,
+		moveOriginal.Rotation,
+		wallData,
+		moveOriginal.ObjectId,
+		moveSnapshot,
+		moveSnapshotMoved
+	)
 	if data.Level ~= moveOriginal.Level then
 		data.Level = moveOriginal.Level
 		valid = false
@@ -1029,11 +1158,25 @@ local function updateRotatePreview(input: any)
 	end
 
 	local angle = math.deg(math.atan2(delta.X, delta.Y))
+	if prefab.ObjectMount == Formex.MountType.Floor
+		or prefab.ObjectMount == Formex.MountType.Ceiling
+		or prefab.ObjectMount == Formex.MountType.Surface then
+		angle = snapRotationDegrees(angle)
+	end
 	local newRotation = Vector3.new(0, angle, 0)
 	movePreview = table.clone(moveOriginal)
 	movePreview.Rotation = newRotation
 	movePreview.ObjectModel = moveOriginal.ObjectModel
-	setPreviewHighlight(true)
+	local valid = isPlacementClear(
+		input.PlotInfo,
+		movePreview,
+		prefab,
+		moveOriginal.ObjectId,
+		nil,
+		moveSnapshot,
+		moveSnapshotMoved
+	)
+	setPreviewHighlight(valid)
 
 	local cframe = getObjectWorldCFrame(input.PlotInfo, movePreview, prefab)
 	if cframe then
@@ -1061,6 +1204,7 @@ local function finalizeMove(input: any)
 		moveOriginal = nil
 		movePreview = nil
 		clearPreviewHighlight()
+		clearMoveSnapshot()
 		setActionType(Enums.ActionType.Select)
 		notifyDesignModeChange()
 		return
@@ -1081,6 +1225,7 @@ local function finalizeMove(input: any)
 	moveOriginal = nil
 	movePreview = nil
 	clearPreviewHighlight()
+	clearMoveSnapshot()
 	setActionType(Enums.ActionType.Select)
 	notifyDesignModeChange()
 end
@@ -1127,6 +1272,49 @@ function Objects.GetRaycastIgnoreInstances(): {Instance}
 	return {}
 end
 
+local function resolveRaycastPrefab(): Formex.ObjectPrefab?
+	local actionType = getActionType()
+	if (actionType == Enums.ActionType.Move or actionType == Enums.ActionType.Rotate) and moveOriginal then
+		return moveOriginal.Prefab or (moveOriginal.PrefabName and Formex.Objects.GetPrefab(moveOriginal.PrefabName))
+	end
+	return resolvePrefab()
+end
+
+function Objects.GetRaycastInfo(plotInfo: any, levelIndex: number): {FilterType: Enum.RaycastFilterType, Instances: {Instance}}?
+	local prefab = resolveRaycastPrefab()
+	if not prefab then
+		return nil
+	end
+
+	local mount = prefab.ObjectMount
+	if mount == Formex.MountType.Floor or mount == Formex.MountType.Ceiling then
+		local floors = getLevelFolderChild(plotInfo, levelIndex, "Floors")
+		if floors then
+			return { FilterType = Enum.RaycastFilterType.Include, Instances = { floors } }
+		end
+		return { FilterType = Enum.RaycastFilterType.Include, Instances = {} }
+	end
+
+	if mount == Formex.MountType.Wall or mount == Formex.MountType.Door or mount == Formex.MountType.Window then
+		local instances = {}
+		local walls = getLevelFolderChild(plotInfo, levelIndex, "Walls")
+		if walls then
+			table.insert(instances, walls)
+		end
+		local floors = getLevelFolderChild(plotInfo, levelIndex, "Floors")
+		if floors then
+			table.insert(instances, floors)
+		end
+		return { FilterType = Enum.RaycastFilterType.Include, Instances = instances }
+	end
+
+	if mount == Formex.MountType.Surface then
+		return { FilterType = Enum.RaycastFilterType.Exclude, Instances = {} }
+	end
+
+	return nil
+end
+
 function Objects.CancelAction()
 	clearGhost()
 	clearPreviewHighlight()
@@ -1145,6 +1333,7 @@ function Objects.CancelAction()
 	end
 	moveOriginal = nil
 	movePreview = nil
+	clearMoveSnapshot()
 	setActionType(Enums.ActionType.Select)
 end
 

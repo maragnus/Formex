@@ -1417,6 +1417,7 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Vec
 		return nil, nil, nil
 	end
 
+	local plotInfo = FormexClient.CurrentPlot
 	local mousePosition = UserInputService:GetMouseLocation()
 	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
 	local params = RaycastParams.new()
@@ -1426,6 +1427,16 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Vec
 		actionType ~= FormexDesign.ActionType.Select
 		and (designMode == FormexDesign.DesignMode.Wall
 			or designMode == FormexDesign.DesignMode.Floor)
+
+	local objectRaycastInfo = nil
+	if not useGridSegmentsOnly
+		and designMode == FormexDesign.DesignMode.Object
+		and actionType ~= FormexDesign.ActionType.Select
+		and Objects
+		and Objects.GetRaycastInfo
+		and plotInfo then
+		objectRaycastInfo = Objects.GetRaycastInfo(plotInfo, currentLevel)
+	end
 
 	if useGridSegmentsOnly then
 		local gridSegments = {}
@@ -1438,10 +1449,13 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Vec
 		params.FilterDescendantsInstances = gridSegments
 		params.RespectCanCollide = false
 	else
-		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterType = objectRaycastInfo and objectRaycastInfo.FilterType or Enum.RaycastFilterType.Exclude
 		local ignoreList = nil
 
-		if forceGridCollision then
+		if objectRaycastInfo and objectRaycastInfo.FilterType == Enum.RaycastFilterType.Include then
+			params.FilterDescendantsInstances = objectRaycastInfo.Instances
+			params.RespectCanCollide = false
+		elseif forceGridCollision then
 			params.CollisionGroup = Formex.CollisionGroup.Grid
 		elseif actionType == FormexDesign.ActionType.Select then
 			ignoreList = { overlayFolder }
@@ -1452,25 +1466,52 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Vec
 				table.insert(ignoreList, ghost)
 			end
 		elseif designMode == FormexDesign.DesignMode.Object then
-			params.CollisionGroup = Formex.CollisionGroup.Object
+			if not objectRaycastInfo then
+				params.CollisionGroup = Formex.CollisionGroup.Object
+			end
 		else
 			params.CollisionGroup = Formex.CollisionGroup.Grid
 		end
 
-		if Objects and Objects.GetRaycastIgnoreInstances then
-			local extraIgnore = Objects.GetRaycastIgnoreInstances()
-			if extraIgnore and #extraIgnore > 0 then
-				if not ignoreList then
-					ignoreList = {}
-				end
-				for _, instance in ipairs(extraIgnore) do
-					table.insert(ignoreList, instance)
-				end
+		if designMode == FormexDesign.DesignMode.Object
+			and actionType ~= FormexDesign.ActionType.Select
+			and (not objectRaycastInfo or objectRaycastInfo.FilterType == Enum.RaycastFilterType.Exclude) then
+			if not ignoreList then
+				ignoreList = { overlayFolder }
+			else
+				table.insert(ignoreList, overlayFolder)
+			end
+			if localPlayer.Character then
+				table.insert(ignoreList, localPlayer.Character)
+			end
+			if ghost then
+				table.insert(ignoreList, ghost)
 			end
 		end
 
-		if ignoreList then
-			params.FilterDescendantsInstances = ignoreList
+		if objectRaycastInfo and objectRaycastInfo.FilterType == Enum.RaycastFilterType.Exclude then
+			ignoreList = ignoreList or {}
+			for _, instance in ipairs(objectRaycastInfo.Instances) do
+				table.insert(ignoreList, instance)
+			end
+		end
+
+		if params.FilterType == Enum.RaycastFilterType.Exclude then
+			if Objects and Objects.GetRaycastIgnoreInstances then
+				local extraIgnore = Objects.GetRaycastIgnoreInstances()
+				if extraIgnore and #extraIgnore > 0 then
+					if not ignoreList then
+						ignoreList = {}
+					end
+					for _, instance in ipairs(extraIgnore) do
+						table.insert(ignoreList, instance)
+					end
+				end
+			end
+
+			if ignoreList then
+				params.FilterDescendantsInstances = ignoreList
+			end
 		end
 	end
 
