@@ -4,6 +4,7 @@ local Formex = require(script.Parent:FindFirstChild("FormexServer"))
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
 local DataStoreService = game:GetService("DataStoreService")
+local RunService = game:GetService("RunService")
 
 local FormexSystem = {}
 
@@ -235,6 +236,8 @@ local function ensurePlotNextId(plotData: Formex.PlotData)
 end
 
 local saveQueue = {} :: {[number]: number}
+local SAVE_DELAY = 5
+local SAVE_POLL_INTERVAL = 1
 
 function FormexSystem.QueueSave(plotId: number)
     if not saveQueue[plotId] then
@@ -308,6 +311,30 @@ function FormexSystem.SavePlot(plotId: number)
     return true
 end
 
+local saveAccumulator = 0
+RunService.Heartbeat:Connect(function(deltaTime)
+	saveAccumulator = saveAccumulator + deltaTime
+	if saveAccumulator < SAVE_POLL_INTERVAL then
+		return
+	end
+	saveAccumulator = 0
+
+	local now = time()
+	for plotId, queuedAt in pairs(saveQueue) do
+		local plotData = FormexSystem.PlotData[plotId]
+		if not plotData or plotData.SaveId == 0 then
+			saveQueue[plotId] = nil
+			continue
+		end
+		if now - queuedAt >= SAVE_DELAY then
+			saveQueue[plotId] = nil
+			task.spawn(function()
+				FormexSystem.SavePlot(plotId)
+			end)
+		end
+	end
+end)
+
 function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
     if not FormexSystem.PlotData[plotId] then error("Invalid plotId") end
     if not saveId or saveId == 0 then error("Invalid save selected") end
@@ -354,6 +381,7 @@ function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
     FormexSystem.ClearPlot(plotPart)
 
     FormexSystem.RenderPlot(plotId)
+    FormexSystem.QueueWallCarve(plotId)
 
     return true
 end
@@ -416,15 +444,30 @@ end
 
 local function renderWalls(data: RenderState)
     local parent = data.WallFolder
+    local seen = {} :: {[number]: boolean}
     for _, child in parent:GetChildren() do
         local wallId = tonumber(child.Name)
-        if wallId and not data.LevelData.Walls[wallId] then
-            child:Destroy()
+        if wallId then
+            if not data.LevelData.Walls[wallId] then
+                child:Destroy()
+            elseif seen[wallId] then
+                child:Destroy()
+            else
+                seen[wallId] = true
+            end
         end
     end
 
     for wallId, wallData in data.LevelData.Walls do
         local model = wallData.Part
+        if not model or not model.Parent then
+            local existing = parent:FindFirstChild(tostring(wallId))
+            if existing and existing:IsA("Model") then
+                wallData.Part = existing
+                model = existing
+            end
+        end
+
         if not model or not model.Parent then
             wallData.Part = nil
             local newModel = Formex.Walls.Create(wallData, data.PlotPart)
@@ -442,8 +485,42 @@ end
 
 local function renderFurniture(data: RenderState)
     local parent = data.ObjectFolder
+    local seen = {} :: {[number]: boolean}
+    local preferred = {} :: {[number]: Model}
     for objectId, objectData in data.LevelData.Objects do
-        if not objectData.Part then
+        local model = objectData.Part
+        if model and model.Parent == parent then
+            preferred[objectId] = model
+        end
+    end
+
+    for _, child in parent:GetChildren() do
+        local objectId = tonumber(child.Name)
+        if objectId then
+            if not data.LevelData.Objects[objectId] then
+                child:Destroy()
+            else
+                local desired = preferred[objectId]
+                if desired and child ~= desired then
+                    child:Destroy()
+                elseif seen[objectId] then
+                    child:Destroy()
+                else
+                    seen[objectId] = true
+                end
+            end
+        end
+    end
+
+    for objectId, objectData in data.LevelData.Objects do
+        if not objectData.Part or not objectData.Part.Parent then
+            local existing = parent:FindFirstChild(tostring(objectId))
+            if existing and existing:IsA("Model") then
+                objectData.Part = existing
+            end
+        end
+
+        if not objectData.Part or not objectData.Part.Parent then
             Formex.CreateObject(parent, objectData, data.PlotPart, data.PlotData)
         else
             Formex.EditObject(objectData, data.PlotPart, data.PlotData)
@@ -490,6 +567,45 @@ local function renderLevel(data: RenderState, levelIndex: number, filterPartType
     end
 end
 
+local function carveWallsForLevel(plotData: Formex.PlotData, levelIndex: number)
+	local levelData = plotData.Levels and plotData.Levels[levelIndex]
+	if not levelData or not levelData.Walls then
+		return
+	end
+
+	for _, wallData in pairs(levelData.Walls) do
+		if wallData.Part then
+			Formex.Objects.CarveWallObjects(plotData, wallData)
+		end
+	end
+end
+
+function FormexSystem.RefreshWallCarves(plotId: number, levelIndex: number?)
+	local plotData = FormexSystem.PlotData[plotId]
+	if not plotData then
+		return
+	end
+
+	if levelIndex then
+		carveWallsForLevel(plotData, levelIndex)
+		return
+	end
+
+	for level = 1, Formex.MaxPlotSize.Levels do
+		carveWallsForLevel(plotData, level)
+	end
+end
+
+function FormexSystem.QueueWallCarve(plotId: number, levelIndex: number?)
+	task.defer(function()
+		task.wait()
+		if not FormexSystem.Plots[plotId] then
+			return
+		end
+		FormexSystem.RefreshWallCarves(plotId, levelIndex)
+	end)
+end
+
 function FormexSystem.RenderPlot(plotId: number, filterLevelIndex: number?, filterPartType: Formex.PartType?): Model
     local data = {
         PlotPart = FormexSystem.Plots[plotId],
@@ -521,7 +637,5 @@ Players.PlayerAdded:Connect(function(player)
         player:SetAttribute("CanRedo", false)
     end
 end)
-
--- TODO every minute try and save all plots in saveQueue
 
 return FormexSystem

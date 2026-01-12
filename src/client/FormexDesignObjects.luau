@@ -969,7 +969,10 @@ local function updateMovePreview(input: any)
 	if prefab.ObjectMount == Formex.MountType.Wall
 		or prefab.ObjectMount == Formex.MountType.Door
 		or prefab.ObjectMount == Formex.MountType.Window then
-		if moveOriginal.WallId then
+		local targetWall = input.Target and getWallModelFromTarget(input.Target)
+		if targetWall then
+			wallData = getWallDataFromModel(targetWall)
+		elseif moveOriginal.WallId then
 			local plotData = input.PlotInfo.PlotData
 			local levelData = plotData.Levels and plotData.Levels[moveOriginal.Level]
 			if levelData then

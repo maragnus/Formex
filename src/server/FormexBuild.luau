@@ -274,6 +274,90 @@ local function resolveSideColors(entryTop: Color3?, entryBottom: Color3?, existi
 	return bottom, top
 end
 
+local function isWallMount(mount: Formex.ObjectMount?): boolean
+	return mount == Formex.MountType.Wall or mount == Formex.MountType.Door or mount == Formex.MountType.Window
+end
+
+local function isDoorWindowMount(mount: Formex.ObjectMount?): boolean
+	return mount == Formex.MountType.Door or mount == Formex.MountType.Window
+end
+
+local function rebuildWallModels(
+	plotData: Formex.PlotData,
+	rebuildWalls: {{Level: number, WallId: number}},
+	removedParts: {BasePart}
+)
+	local seen = {} :: {[string]: boolean}
+	for _, entry in ipairs(rebuildWalls) do
+		local key = tostring(entry.Level) .. ":" .. tostring(entry.WallId)
+		if seen[key] then
+			continue
+		end
+		seen[key] = true
+
+		local levelData = plotData.Levels and plotData.Levels[entry.Level]
+		local wallData = levelData and levelData.Walls and levelData.Walls[entry.WallId]
+		if wallData and wallData.Part then
+			table.insert(removedParts, wallData.Part)
+			wallData.Part = nil
+		end
+	end
+end
+
+local function syncWallMountedObjects(
+	plotData: Formex.PlotData,
+	plotPart: BasePart?,
+	movedWalls: {{Old: Formex.WallData, New: Formex.WallData}},
+	removedParts: {BasePart}
+): {[number]: boolean}
+	local rebuildLevels = {} :: {[number]: boolean}
+	for _, moved in ipairs(movedWalls) do
+		local levelIndex = moved.New.Level or moved.Old.Level or 1
+		local levelData = plotData.Levels[levelIndex]
+		if not levelData or not levelData.Objects then
+			continue
+		end
+
+		local wallId = moved.New.WallId
+		local hasDoorWindow = false
+
+		for _, objectData in pairs(levelData.Objects) do
+			if objectData.WallId == wallId then
+				local prefab = objectData.Prefab or (objectData.PrefabName and Formex.Objects.GetPrefab(objectData.PrefabName))
+				if prefab then
+					objectData.Prefab = prefab
+					if isWallMount(prefab.ObjectMount) then
+						local position = objectData.Position or Vector3.new(0, 0, 0)
+						local newY = position.Y
+						if prefab.ObjectMount == Formex.MountType.Door then
+							newY = 0
+						end
+						if position.Z ~= 0 or newY ~= position.Y then
+							objectData.Position = Vector3.new(position.X, newY, 0)
+						end
+						if plotPart then
+							Formex.Objects.EditObject(objectData, plotPart, plotData)
+						end
+						if prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window then
+							hasDoorWindow = true
+						end
+					end
+				end
+			end
+		end
+
+		if hasDoorWindow then
+			local wallData = levelData.Walls[wallId]
+			if wallData and wallData.Part then
+				table.insert(removedParts, wallData.Part)
+				wallData.Part = nil
+			end
+			rebuildLevels[levelIndex] = true
+		end
+	end
+	return rebuildLevels
+end
+
 local function applyWallChanges(plotData: Formex.PlotData, wallData: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction, snapshot: Formex.LevelArray?): any
 	plotData.Levels = plotData.Levels or {}
 	local wallList, isBatch = normalizeWallList(wallData)
@@ -282,6 +366,7 @@ local function applyWallChanges(plotData: Formex.PlotData, wallData: Formex.Wall
 
 	local updatedWalls = {} :: {Formex.WallData}
 	local returnWalls = {} :: {Formex.WallData}
+	local movedWalls = {} :: {{Old: Formex.WallData, New: Formex.WallData}}
 	local removedParts = {} :: {BasePart}
 	local removedWallIds = {} :: {[number]: {[number]: boolean}}
 	local didChange = false
@@ -466,6 +551,15 @@ local function applyWallChanges(plotData: Formex.PlotData, wallData: Formex.Wall
 					Part = existing.Part
 				}
 				levelData.Walls[existing.WallId] = updated
+				if existing.Start.X ~= entry.Start.X
+					or existing.Start.Y ~= entry.Start.Y
+					or existing.End.X ~= entry.End.X
+					or existing.End.Y ~= entry.End.Y then
+					table.insert(movedWalls, {
+						Old = existing,
+						New = updated,
+					})
+				end
 				table.insert(updatedWalls, updated)
 				table.insert(returnWalls, {
 					WallId = updated.WallId,
@@ -545,6 +639,7 @@ local function applyWallChanges(plotData: Formex.PlotData, wallData: Formex.Wall
 		RemovedWallIds = removedWallIds,
 		RenderWallsLevels = levelsTouched,
 		RenderObjectsLevels = levelsTouched,
+		MovedWalls = movedWalls,
 		Snapshot = resolvedSnapshot,
 	}
 end
@@ -560,6 +655,11 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 	local result = applyWallChanges(plotData, wallData, action, nil)
 	if not result.DidChange then
 		return nil
+	end
+
+	if result.MovedWalls and #result.MovedWalls > 0 then
+		local plotPart = FormexSystem.Plots[plotData.PlotId]
+		syncWallMountedObjects(plotData, plotPart, result.MovedWalls, result.RemovedParts)
 	end
 
 	if action ~= Formex.BuildAction.Delete then
@@ -959,6 +1059,13 @@ local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.
 
 	local didChange = false
 	local updatedObject: Formex.ObjectData? = nil
+	local rebuildWalls = {} :: {{Level: number, WallId: number}}
+
+	local function markRebuildWall(wallId: number?)
+		if wallId then
+			table.insert(rebuildWalls, { Level = levelIndex, WallId = wallId })
+		end
+	end
 
 	if action == Formex.BuildAction.Add then
 		local prefab = resolvePrefab(objectData)
@@ -971,6 +1078,9 @@ local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.
 			error("Invalid object placement")
 		end
 		levelData.Objects[newId] = resolved
+		if isDoorWindowMount(prefab.ObjectMount) then
+			markRebuildWall(resolved.WallId)
+		end
 		didChange = true
 		updatedObject = resolved
 	elseif action == Formex.BuildAction.Edit then
@@ -980,35 +1090,54 @@ local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.
 			plotData.Levels = resolvedSnapshot
 			error("Object not found")
 		end
+		local legacyKey = existing.ObjectId
+		if legacyKey ~= nil and legacyKey ~= objectId then
+			levelData.Objects[legacyKey] = nil
+		end
 		local prefab = resolvePrefab(objectData)
 		local resolved = normalizeObject(objectData, prefab, existing)
 		if not isObjectValid(resolved, prefab) then
 			plotData.Levels = resolvedSnapshot
 			error("Invalid object placement")
 		end
-		levelData.Objects[existing.ObjectId] = resolved
+		levelData.Objects[objectId] = resolved
+		if isDoorWindowMount(prefab.ObjectMount) then
+			markRebuildWall(existing.WallId)
+			markRebuildWall(resolved.WallId)
+		end
 		didChange = true
 		updatedObject = resolved
 	elseif action == Formex.BuildAction.Delete then
 		local objectId = tonumber(objectData.ObjectId) or objectData.ObjectId
 		local existing = objectId and levelData.Objects[objectId]
 		if existing then
+			local legacyKey = existing.ObjectId
+			if legacyKey ~= nil and legacyKey ~= objectId then
+				levelData.Objects[legacyKey] = nil
+			end
+			local prefab = existing.Prefab or (existing.PrefabName and Formex.Objects.GetPrefab(existing.PrefabName))
+			if prefab and isDoorWindowMount(prefab.ObjectMount) then
+				markRebuildWall(existing.WallId)
+			end
 			if existing.Part then
 				existing.Part:Destroy()
 			end
-			levelData.Objects[existing.ObjectId] = nil
+			levelData.Objects[objectId] = nil
 			didChange = true
 		end
 	else
 		error("Invalid object action")
 	end
 
+	local shouldRenderWalls = (updatedObject and updatedObject.Prefab and isWallMount(updatedObject.Prefab.ObjectMount)) or #rebuildWalls > 0
+
 	return {
 		DidChange = didChange,
 		ReturnSingle = updatedObject,
 		LevelsTouched = { levelIndex },
 		RenderObjectsLevels = { levelIndex },
-		RenderWallsLevels = (updatedObject and updatedObject.Prefab and isWallMount(updatedObject.Prefab.ObjectMount)) and { levelIndex } or {},
+		RenderWallsLevels = shouldRenderWalls and { levelIndex } or {},
+		RebuildWalls = rebuildWalls,
 		Snapshot = resolvedSnapshot,
 	}
 end
@@ -1026,6 +1155,16 @@ function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, 
 	local result = applyObjectChanges(plotData, objectData, action, nil)
 	if not result.DidChange then
 		return nil
+	end
+
+	local rebuildParts = {} :: {BasePart}
+	if result.RebuildWalls and #result.RebuildWalls > 0 then
+		rebuildWallModels(plotData, result.RebuildWalls, rebuildParts)
+	end
+	for _, part in ipairs(rebuildParts) do
+		if part and part.Parent then
+			part:Destroy()
+		end
 	end
 
 	local plotPart = FormexSystem.Plots[plotData.PlotId]
@@ -1103,6 +1242,8 @@ function FormexBuild.BuildTransaction(player: Player, changes: {Formex.BuildChan
 
 	local removedParts = {} :: {BasePart}
 	local removedModels = {} :: {Model}
+	local movedWalls = {} :: {{Old: Formex.WallData, New: Formex.WallData}}
+	local rebuildWalls = {} :: {{Level: number, WallId: number}}
 	local renderWalls = {} :: {[number]: boolean}
 	local renderFloors = {} :: {[number]: boolean}
 	local renderObjects = {} :: {[number]: boolean}
@@ -1119,6 +1260,11 @@ function FormexBuild.BuildTransaction(player: Player, changes: {Formex.BuildChan
 			if action ~= Formex.BuildAction.Delete then
 				for _, part in ipairs(result.RemovedParts) do
 					table.insert(removedParts, part)
+				end
+			end
+			if result.MovedWalls and #result.MovedWalls > 0 then
+				for _, moved in ipairs(result.MovedWalls) do
+					table.insert(movedWalls, moved)
 				end
 			end
 			mergeLevelSet(renderWalls, result.RenderWallsLevels)
@@ -1146,6 +1292,11 @@ function FormexBuild.BuildTransaction(player: Player, changes: {Formex.BuildChan
 		elseif partType == Formex.PartType.Object then
 			local result = applyObjectChanges(plotData, data :: any, action, snapshot)
 			didChange = didChange or result.DidChange
+			if result.RebuildWalls and #result.RebuildWalls > 0 then
+				for _, entry in ipairs(result.RebuildWalls) do
+					table.insert(rebuildWalls, entry)
+				end
+			end
 			mergeLevelSet(renderObjects, result.RenderObjectsLevels)
 			mergeLevelSet(renderWalls, result.RenderWallsLevels)
 			table.insert(results, {
@@ -1160,6 +1311,15 @@ function FormexBuild.BuildTransaction(player: Player, changes: {Formex.BuildChan
 
 	if not didChange then
 		return nil
+	end
+
+	if #rebuildWalls > 0 then
+		rebuildWallModels(plotData, rebuildWalls, removedParts)
+	end
+
+	if #movedWalls > 0 then
+		local plotPart = FormexSystem.Plots[plotData.PlotId]
+		syncWallMountedObjects(plotData, plotPart, movedWalls, removedParts)
 	end
 
 	for _, part in ipairs(removedParts) do

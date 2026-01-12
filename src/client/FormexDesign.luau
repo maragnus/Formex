@@ -122,6 +122,7 @@ local altHeld, alt1Held, alt2Held, alt3Held = false, false, false, false
 local selectionType: SelectionType = FormexDesign.SelectionType.None
 local selectionData: SelectionData = nil
 local selectionPart: Instance? = nil
+local lastPlotId = FormexClient.CurrentPlotId
 local canUndo = false
 local canRedo = false
 local altDropperForced = false
@@ -2751,9 +2752,13 @@ syncUndoRedoAttributes()
 localPlayer:GetAttributeChangedSignal("CanUndo"):Connect(syncUndoRedoAttributes)
 localPlayer:GetAttributeChangedSignal("CanRedo"):Connect(syncUndoRedoAttributes)
 
-FormexClient.ClientEvents:Connect(function(eventName, _plotId, _partType, _levelIndex, _partId, model, changeType)
+FormexClient.ClientEvents:Connect(function(eventName, plotId, _partType, _levelIndex, _partId, model, changeType)
 	if eventName == "CurrentPlotChanged" then
-		resetDesignForPlotChange()
+		local currentPlotId = FormexClient.CurrentPlotId
+		if plotId ~= lastPlotId or currentPlotId ~= lastPlotId then
+			lastPlotId = currentPlotId
+			resetDesignForPlotChange()
+		end
 		return
 	end
 
