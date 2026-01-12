@@ -2612,6 +2612,9 @@ FormexDesignContext.Init({
 	SetActionType = function(value: ActionType)
 		actionType = value
 	end,
+	SetActionHeld = function(value: boolean)
+		actionHeld = value
+	end,
 	GetDesignMode = function()
 		return designMode
 	end,
@@ -2719,6 +2722,7 @@ FormexDesignContext.Init({
 	GetSelectionInfoFromInstance = getSelectionInfoFromInstance,
 	DeleteAfterDelay = deleteAfterDelay,
 	CancelAction = FormexDesign.CancelAction,
+	HandlePrimaryRelease = handlePrimaryRelease,
 })
 
 FormexDesign.Handles.Init()

@@ -269,19 +269,21 @@ local function getPerpOffset(startPoint: Vector2int16, endPoint: Vector2int16, d
 	return perp * distance
 end
 
-local function getHandleIcon(handle: BasePart?): ImageLabel?
+local function getHandleIcon(handle: BasePart?): GuiObject?
 	if not handle then
 		return nil
 	end
 
-	local billboard = handle:FindFirstChild("HandleBillboard")
-	if not billboard or not billboard:IsA("BillboardGui") then
-		return nil
+	if Handles and Handles.GetHandleIcon then
+		return Handles.GetHandleIcon(handle)
 	end
 
-	local icon = billboard:FindFirstChild("Icon")
-	if icon and icon:IsA("ImageLabel") then
-		return icon
+	local billboard = handle:FindFirstChild("HandleBillboard")
+	if billboard and billboard:IsA("BillboardGui") then
+		local icon = billboard:FindFirstChild("Icon")
+		if icon and (icon:IsA("ImageButton") or icon:IsA("ImageLabel")) then
+			return icon
+		end
 	end
 
 	return nil

@@ -313,6 +313,8 @@ export type Context = {
 	GetSelectionInfoFromInstance: (Instance?) -> (SelectionType?, number?, number?),
 	DeleteAfterDelay: (Instance, number) -> (),
 	CancelAction: () -> (),
+	SetActionHeld: (boolean) -> (),
+	HandlePrimaryRelease: () -> (),
 }
 
 Context.Enums = table.freeze({
