@@ -95,7 +95,6 @@ export type WallData = {
 	BackPart: Part?,
 	FrontTopPart: Part?,
 	BackTopPart: Part?,
-	LevelData: number?, -- HELPER: LevelIndex
 	ConnectedWalls: {number}, -- HELPER: walls connected to start or end point
 	ConnectedFloors: {number}, -- HELPER: floors connected to start or end point
 	ConnectedRoomFront: number?, -- HELPER: rooms on either side of wall
@@ -123,7 +122,6 @@ export type FloorData = {
 	FloorClientPart: BasePart?,
 	FoundationClientPart: BasePart?,
 	CeilingClientPart: BasePart?,
-	LevelData: number?, -- HELPER: LevelIndex
 	ConnectedWalls: {number}, -- HELPER: walls connected to start or end point
 	ConnectedFloors: {number}, -- HELPER: floors connected to start or end point
 	ConnectedRooms: {number}, -- HELPER: rooms on either side of wall
@@ -149,7 +147,8 @@ export type ObjectData = {
 	Subtract: Model?,
 	ObjectModel: Model?,
 	SubtractModel: Model?,
-	DesignParts: {[number]: {BasePart}}, -- [part index]: {parts}	
+	DesignParts: {[number]: {BasePart}}, -- [part index]: {parts}
+	Room: number?, -- HELPER: room containing this object
 }
 
 export type BuildChange = {
@@ -348,6 +347,7 @@ Formex.Function = table.freeze({
 	RenamePlot = "RenamePlot",
 	ListSaves = "ListSaves",
 	LoadSave = "LoadSave",
+	PlotLoad = "PlotLoad",
 	NewSave = "NewSave",
 	GetPermissions = "GetPermissions",
 	SetPermission = "SetPermission",

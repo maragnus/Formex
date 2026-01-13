@@ -291,6 +291,56 @@ local function createMaterialColorRow(options)
 	}
 end
 
+local function createStatRow(parent: Instance, name: string, labelText: string)
+	local row = Instance.new("Frame", parent)
+	row.Name = name
+	row.BackgroundTransparency = 1
+	row.Size = UDim2.new(1, 0, 0, 18)
+
+	local layout = Instance.new("UIListLayout", row)
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 8)
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+	local label = Instance.new("TextLabel", row)
+	label.Name = "Label"
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(0.6, 0, 1, 0)
+	label.Font = Enum.Font.GothamMedium
+	label.Text = labelText
+	label.TextColor3 = COLORS.Muted
+	label.TextSize = 13
+	label.TextXAlignment = Enum.TextXAlignment.Left
+
+	local value = Instance.new("TextLabel", row)
+	value.Name = "Value"
+	value.BackgroundTransparency = 1
+	value.Size = UDim2.new(0.4, 0, 1, 0)
+	value.Font = Enum.Font.GothamSemibold
+	value.Text = "-"
+	value.TextColor3 = COLORS.Text
+	value.TextSize = 13
+	value.TextXAlignment = Enum.TextXAlignment.Right
+
+	return {
+		Row = row,
+		Value = value,
+	}
+end
+
+local function createRoomMaterialRow(options)
+	local handle = FormexUI.MaterialSelect({
+		Parent = options.Parent,
+		Label = options.Label,
+		PartType = options.PartType,
+		SelectedMaterial = options.MaterialValue,
+		Size = options.Size or UDim2.new(1, 0, 0, 64),
+	}, options.OnMaterialChanged)
+
+	return handle
+end
+
 local function updateWallSplitVisibility()
 	if not ui.WallFrontTopRow or not ui.WallBackTopRow then
 		return
@@ -447,6 +497,55 @@ local function buildObjectDesignRows(prefab: Formex.ObjectPrefab?, design: {[num
     end
 end
 
+local function clearRoomMaterialRows(rowsTable)
+	if not rowsTable then
+		return
+	end
+	for _, handle in pairs(rowsTable) do
+		if handle and handle.Frame then
+			handle.Frame:Destroy()
+		end
+	end
+	table.clear(rowsTable)
+end
+
+local function buildRoomMaterialRows(parent: Instance, rowsTable, materials, partType, onReplace)
+	if not parent then
+		return
+	end
+
+	clearRoomMaterialRows(rowsTable)
+	if not materials then
+		return
+	end
+
+	local entries = {}
+	for materialId, count in pairs(materials) do
+		table.insert(entries, { MaterialId = materialId, Count = count })
+	end
+	table.sort(entries, function(a, b)
+		return a.MaterialId < b.MaterialId
+	end)
+
+	for _, entry in ipairs(entries) do
+		local label = string.format("Material %d (%dx)", entry.MaterialId, entry.Count or 0)
+		local handle = createRoomMaterialRow({
+			Parent = parent,
+			Label = label,
+			PartType = partType,
+			MaterialValue = entry.MaterialId,
+			OnMaterialChanged = function(newMaterial)
+				local resolved = newMaterial or entry.MaterialId
+				if resolved == entry.MaterialId then
+					return
+				end
+				onReplace(entry.MaterialId, resolved)
+			end,
+		})
+		rowsTable[entry.MaterialId] = handle
+	end
+end
+
 local function setCollapsed(collapsed: boolean)
     sidebarCollapsed = collapsed
     if not ui.Container then
@@ -485,6 +584,202 @@ local function updateOwnerAvatar(userId: number)
     cachedOwnerUserId = userId
     local image = Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size60x60)
     ui.OwnerAvatar.Image = image
+end
+
+local function getSelectionSnapshot()
+	local selectionType, partId, levelIndex = FormexDesign.GetSelectionInfo()
+	local designState = FormexDesign.GetDesignState()
+	return {
+		Mode = designState.Mode,
+		SelectionType = selectionType or FormexDesign.SelectionType.None,
+		LevelIndex = levelIndex,
+		PartId = partId,
+	}
+end
+
+local function setHandlesBusy(active: boolean)
+	if FormexDesign.Handles and FormexDesign.Handles.SetBusy then
+		FormexDesign.Handles.SetBusy(active)
+	end
+end
+
+local function runBuildTransaction(changes)
+	setHandlesBusy(true)
+	local results = FormexClient.BuildTransaction(changes, getSelectionSnapshot())
+	setHandlesBusy(false)
+	return results
+end
+
+local function addMaterialCount(materials, materialId: number)
+	if materialId == nil then
+		return
+	end
+	materials[materialId] = (materials[materialId] or 0) + 1
+end
+
+local function buildRoomFloorMaterials(plotInfo, roomData)
+	local materials = {}
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[roomData.LevelIndex]
+	local floors = levelData and levelData.Floors
+	if not floors then
+		return materials
+	end
+	for _, floorId in ipairs(roomData.Floors or {}) do
+		local floor = floors[floorId]
+		if floor then
+			local materialId = floor.FloorMaterial or Formex.DefaultFloorMaterial
+			addMaterialCount(materials, materialId)
+		end
+	end
+	return materials
+end
+
+local function buildRoomInteriorWallMaterials(plotInfo, roomData)
+	local materials = {}
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[roomData.LevelIndex]
+	local walls = levelData and levelData.Walls
+	if not walls then
+		return materials
+	end
+	for _, wallId in ipairs(roomData.Walls or {}) do
+		local wall = walls[wallId]
+		if wall then
+			if wall.ConnectedRoomFront == roomData.RoomId then
+				local topMaterial = wall.FrontTopMaterial or Formex.DefaultWallMaterial
+				local bottomMaterial = wall.FrontBottomMaterial or topMaterial
+				addMaterialCount(materials, topMaterial)
+				addMaterialCount(materials, bottomMaterial)
+			end
+			if wall.ConnectedRoomBack == roomData.RoomId then
+				local topMaterial = wall.BackTopMaterial or Formex.DefaultWallMaterial
+				local bottomMaterial = wall.BackBottomMaterial or topMaterial
+				addMaterialCount(materials, topMaterial)
+				addMaterialCount(materials, bottomMaterial)
+			end
+		end
+	end
+	return materials
+end
+
+local function replaceRoomFloorMaterial(plotInfo, roomData, fromMaterial: number, toMaterial: number)
+	if fromMaterial == toMaterial then
+		return
+	end
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[roomData.LevelIndex]
+	local floors = levelData and levelData.Floors
+	if not floors then
+		return
+	end
+	local updates = {}
+	for _, floorId in ipairs(roomData.Floors or {}) do
+		local floor = floors[floorId]
+		if floor then
+			local floorMaterial = floor.FloorMaterial or Formex.DefaultFloorMaterial
+			if floorMaterial == fromMaterial then
+				local ceilingMaterial = floor.CeilingMaterial or floorMaterial
+				local floorColor = floor.FloorColor or Color3.new(1, 1, 1)
+				local ceilingColor = floor.CeilingColor or floorColor
+				local foundationColor = floor.FoundationColor or floorColor
+				table.insert(updates, {
+					FloorId = floorId,
+					LevelIndex = roomData.LevelIndex,
+					Points = floor.Points,
+					RaiseHeight = floor.RaiseHeight or 0,
+					FloorMaterial = toMaterial,
+					CeilingMaterial = ceilingMaterial,
+					FoundationMaterial = floor.FoundationMaterial or Formex.DefaultFoundationMaterial,
+					FloorColor = floorColor,
+					CeilingColor = ceilingColor,
+					FoundationColor = foundationColor,
+				})
+			end
+		end
+	end
+	if #updates > 0 then
+		runBuildTransaction({
+			{
+				PartType = Formex.PartType.Floor,
+				Action = Formex.BuildAction.Edit,
+				Data = updates,
+			},
+		})
+	end
+end
+
+local function replaceRoomInteriorWallMaterial(plotInfo, roomData, fromMaterial: number, toMaterial: number)
+	if fromMaterial == toMaterial then
+		return
+	end
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[roomData.LevelIndex]
+	local walls = levelData and levelData.Walls
+	if not walls then
+		return
+	end
+	local updates = {}
+	for _, wallId in ipairs(roomData.Walls or {}) do
+		local wall = walls[wallId]
+		if wall and wall.Start and wall.End then
+			local frontTopMaterial = wall.FrontTopMaterial or Formex.DefaultWallMaterial
+			local frontBottomMaterial = wall.FrontBottomMaterial or frontTopMaterial
+			local backTopMaterial = wall.BackTopMaterial or Formex.DefaultWallMaterial
+			local backBottomMaterial = wall.BackBottomMaterial or backTopMaterial
+			local updated = false
+
+			if wall.ConnectedRoomFront == roomData.RoomId then
+				if frontTopMaterial == fromMaterial then
+					frontTopMaterial = toMaterial
+					updated = true
+				end
+				if frontBottomMaterial == fromMaterial then
+					frontBottomMaterial = toMaterial
+					updated = true
+				end
+			end
+			if wall.ConnectedRoomBack == roomData.RoomId then
+				if backTopMaterial == fromMaterial then
+					backTopMaterial = toMaterial
+					updated = true
+				end
+				if backBottomMaterial == fromMaterial then
+					backBottomMaterial = toMaterial
+					updated = true
+				end
+			end
+
+			if updated then
+				local frontTopColor = wall.FrontTopColor or Color3.new(1, 1, 1)
+				local frontBottomColor = wall.FrontBottomColor or frontTopColor
+				local backTopColor = wall.BackTopColor or Color3.new(1, 1, 1)
+				local backBottomColor = wall.BackBottomColor or backTopColor
+				table.insert(updates, {
+					WallId = wallId,
+					Level = wall.Level or roomData.LevelIndex,
+					Start = wall.Start,
+					End = wall.End,
+					Height = wall.Height or Formex.LevelHeight,
+					FrontSplitHeight = wall.FrontSplitHeight or 0,
+					BackSplitHeight = wall.BackSplitHeight or 0,
+					FrontTopMaterial = frontTopMaterial,
+					FrontBottomMaterial = frontBottomMaterial,
+					BackTopMaterial = backTopMaterial,
+					BackBottomMaterial = backBottomMaterial,
+					FrontTopColor = frontTopColor,
+					FrontBottomColor = frontBottomColor,
+					BackTopColor = backTopColor,
+					BackBottomColor = backBottomColor,
+				})
+			end
+		end
+	end
+	if #updates > 0 then
+		runBuildTransaction({
+			{
+				PartType = Formex.PartType.Wall,
+				Action = Formex.BuildAction.Edit,
+				Data = updates,
+			},
+		})
+	end
 end
 
 local function buildSidebar()
@@ -741,6 +1036,9 @@ local function buildSidebar()
 		Select = createIconButton(modeRow, "Select", Formex.Icons.DesignSelect, function()
 			FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Select })
 		end),
+		Dropper = createIconButton(modeRow, "Dropper", Formex.Icons.DesignDropper, function()
+			FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Dropper })
+		end),
 		Room = createIconButton(modeRow, "Room", Formex.Icons.DesignRoom, function()
 			FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Room })
 		end),
@@ -815,6 +1113,9 @@ local function buildSidebar()
 		end),
 		PartMove = createIconButton(editModeRow, "PartMove", Formex.Icons.MoveItem, function()
 			FormexDesign.UpdateDesignState({ EditMode = FormexDesign.EditMode.PartMove })
+		end),
+		DisconnectMove = createIconButton(editModeRow, "DisconnectMove", Formex.Icons.WallDisconnect, function()
+			FormexDesign.UpdateDesignState({ EditMode = FormexDesign.EditMode.DisconnectMove })
 		end),
 	}
 
@@ -1204,6 +1505,25 @@ local function buildSidebar()
         end,
     })
 
+	local roomContent = Instance.new("Frame", designContentCard)
+	roomContent.Name = "RoomContent"
+	roomContent.BackgroundTransparency = 1
+	roomContent.Size = UDim2.new(1, 0, 0, 0)
+	roomContent.AutomaticSize = Enum.AutomaticSize.Y
+
+	local roomLayout = Instance.new("UIListLayout", roomContent)
+	roomLayout.FillDirection = Enum.FillDirection.Vertical
+	roomLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	roomLayout.Padding = UDim.new(0, 8)
+
+	local roomSummaryCard, roomSummaryContent = createSection(roomContent, "RoomSummary", "Room Summary")
+	local roomAreaRow = createStatRow(roomSummaryContent, "RoomArea", "Total Area")
+	local roomConnectionsRow = createStatRow(roomSummaryContent, "RoomConnections", "Connected Rooms")
+	local roomObjectsRow = createStatRow(roomSummaryContent, "RoomObjects", "Objects")
+
+	local _, roomFloorMaterialList = createSection(roomContent, "RoomFloorMaterials", "Floor Materials")
+	local _, roomWallMaterialList = createSection(roomContent, "RoomWallMaterials", "Interior Wall Materials")
+
     local objectContent = Instance.new("Frame", designContentCard)
     objectContent.Name = "ObjectContent"
     objectContent.BackgroundTransparency = 1
@@ -1394,9 +1714,17 @@ local function buildSidebar()
 	ui.FloorSelect = floorRow.Material
 	ui.FloorColorSelect = floorRow.Color
 	ui.FloorRaiseSlider = floorRaiseSlider
-    ui.FoundationRow = foundationRow.Row
+	ui.FoundationRow = foundationRow.Row
     ui.FoundationSelect = foundationRow.Material
     ui.FoundationColorSelect = foundationRow.Color
+	ui.RoomContent = roomContent
+	ui.RoomAreaValue = roomAreaRow.Value
+	ui.RoomConnectionsValue = roomConnectionsRow.Value
+	ui.RoomObjectsValue = roomObjectsRow.Value
+	ui.RoomFloorMaterialList = roomFloorMaterialList
+	ui.RoomWallMaterialList = roomWallMaterialList
+	ui.RoomFloorMaterialRows = {}
+	ui.RoomWallMaterialRows = {}
     ui.ObjectContent = objectContent
     ui.ObjectHint = objectHint
     ui.ObjectPrefabPreview = prefabPreview
@@ -1469,6 +1797,7 @@ local function refreshUI()
     setIconButtonActive(ui.DesignModeButtons.Floor, designMode == FormexDesign.DesignMode.Floor)
     setIconButtonActive(ui.DesignModeButtons.Object, designMode == FormexDesign.DesignMode.Object)
     setIconButtonActive(ui.DesignModeButtons.Room, designMode == FormexDesign.DesignMode.Room)
+    setIconButtonActive(ui.DesignModeButtons.Dropper, designMode == FormexDesign.DesignMode.Dropper)
     setIconButtonActive(ui.DesignModeButtons.Select, designMode == FormexDesign.DesignMode.Select)
 
     local showSubModes = designMode == FormexDesign.DesignMode.Wall
@@ -1494,6 +1823,7 @@ local function refreshUI()
 		ui.EditModeRow.Visible = inDesign and showEditModes
 		setIconButtonActive(ui.EditModeButtons.PointMove, editMode == FormexDesign.EditMode.PointMove)
 		setIconButtonActive(ui.EditModeButtons.PartMove, editMode == FormexDesign.EditMode.PartMove)
+		setIconButtonActive(ui.EditModeButtons.DisconnectMove, editMode == FormexDesign.EditMode.DisconnectMove)
 	end
 
     local canUndo = designState.CanUndo == true
@@ -1607,11 +1937,58 @@ local function refreshUI()
         clearObjectDesignRows()
     end
 
+	local _, selectionData = FormexDesign.GetSelection()
+	local roomSelection = selectionType == FormexDesign.SelectionType.Room and selectionData or nil
+	if ui.RoomContent and ui.RoomAreaValue and ui.RoomConnectionsValue and ui.RoomObjectsValue then
+		if roomSelection then
+			ui.RoomAreaValue.Text = tostring(math.round(roomSelection.Area or 0))
+			local connectedCount = 0
+			for _, connection in pairs(roomSelection.NeighboringRooms or {}) do
+				if connection and connection.IsConnected then
+					connectedCount += 1
+				end
+			end
+			ui.RoomConnectionsValue.Text = tostring(connectedCount)
+			ui.RoomObjectsValue.Text = tostring(#(roomSelection.Objects or {}))
+
+			local floorMaterials = buildRoomFloorMaterials(plot, roomSelection)
+			buildRoomMaterialRows(
+				ui.RoomFloorMaterialList,
+				ui.RoomFloorMaterialRows,
+				floorMaterials,
+				Formex.PartType.Floor,
+				function(fromMaterial, toMaterial)
+					replaceRoomFloorMaterial(plot, roomSelection, fromMaterial, toMaterial)
+				end
+			)
+
+			local wallMaterials = buildRoomInteriorWallMaterials(plot, roomSelection)
+			buildRoomMaterialRows(
+				ui.RoomWallMaterialList,
+				ui.RoomWallMaterialRows,
+				wallMaterials,
+				Formex.PartType.Wall,
+				function(fromMaterial, toMaterial)
+					replaceRoomInteriorWallMaterial(plot, roomSelection, fromMaterial, toMaterial)
+				end
+			)
+		else
+			ui.RoomAreaValue.Text = "-"
+			ui.RoomConnectionsValue.Text = "-"
+			ui.RoomObjectsValue.Text = "-"
+			clearRoomMaterialRows(ui.RoomFloorMaterialRows)
+			clearRoomMaterialRows(ui.RoomWallMaterialRows)
+		end
+	end
+
     ui.WallContent.Visible = false
     if ui.WallSideContent then
         ui.WallSideContent.Visible = false
     end
     ui.FloorContent.Visible = false
+	if ui.RoomContent then
+		ui.RoomContent.Visible = false
+	end
     ui.ObjectContent.Visible = false
     ui.DesignContentHint.Visible = false
 
@@ -1630,14 +2007,24 @@ local function refreshUI()
         ui.DesignContentTitle.Text = "Floor Materials"
         ui.FloorContent.Visible = true
     elseif designMode == FormexDesign.DesignMode.Room then
-        ui.DesignContentTitle.Text = "Room Materials"
-        ui.FloorContent.Visible = true
+        ui.DesignContentTitle.Text = "Room Overview"
+		if ui.RoomContent then
+			ui.RoomContent.Visible = roomSelection ~= nil
+		end
+		if not roomSelection then
+			ui.DesignContentHint.Text = "Select a room to view stats and materials."
+			ui.DesignContentHint.Visible = true
+		end
     elseif designMode == FormexDesign.DesignMode.Object then
         ui.DesignContentTitle.Text = "Objects"
         ui.ObjectContent.Visible = true
         if ui.ObjectHint then
             ui.ObjectHint.Visible = not hasObjectSelection
         end
+	elseif designMode == FormexDesign.DesignMode.Dropper then
+		ui.DesignContentTitle.Text = "Dropper"
+		ui.DesignContentHint.Text = "Click a wall side, floor, or object to pick materials."
+		ui.DesignContentHint.Visible = true
     elseif designMode == FormexDesign.DesignMode.Expand then
         ui.DesignContentTitle.Text = "Plot Expansion"
         ui.DesignContentHint.Text = "Select a segment to unlock."

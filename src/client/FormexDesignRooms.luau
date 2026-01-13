@@ -23,6 +23,8 @@ type MoveState = {
 	OriginLocal: Vector2,
 	Point: Vector2int16?,
 	Connections: { {WallId: number, EndType: "Start" | "End"} }?,
+	RoomWallSet: {[number]: boolean}?,
+	RoomFloorSet: {[number]: boolean}?,
 }
 
 local FormexClient: any
@@ -58,7 +60,7 @@ local movePreviewPoint: Vector2int16? = nil
 local moveValid = false
 
 local function snapToGrid(value: number): number
-	return math.round(value / Formex.GridSize) * Formex.GridSize
+	return math.round(value / Formex.LayoutGridSize) * Formex.LayoutGridSize
 end
 
 local function pointsEqual(a: Vector2int16, b: Vector2int16): boolean
@@ -71,6 +73,16 @@ end
 
 local function getPointKey(point: Vector2int16): string
 	return tostring(point.X) .. "," .. tostring(point.Y)
+end
+
+local function buildIdSet(list: {number}?): {[number]: boolean}
+	local set = {}
+	if list then
+		for _, id in ipairs(list) do
+			set[id] = true
+		end
+	end
+	return set
 end
 
 local function updateMergePreview(plotInfo: any, levelIndex: number, validation: any?)
@@ -96,6 +108,19 @@ local function updateMergePreview(plotInfo: any, levelIndex: number, validation:
 	else
 		Highlight.ClearMergeEdgePreview()
 	end
+end
+
+local function setHandlesBusy(active: boolean)
+	if Handles and Handles.SetBusy then
+		Handles.SetBusy(active)
+	end
+end
+
+local function runBuildTransaction(changes: {Formex.BuildChange}, selection: Formex.SelectionSnapshot?): {Formex.BuildChangeResult}?
+	setHandlesBusy(true)
+	local results = FormexClient.BuildTransaction(changes, selection)
+	setHandlesBusy(false)
+	return results
 end
 
 local function clearRoomHandles()
@@ -174,7 +199,7 @@ local function selectRoomAtPoint(plotInfo: any, levelIndex: number, point: Vecto
 
 	local selected = nil
 	for _, room in pairs(plotInfo.PlotData.Rooms) do
-		if room.LevelIndex == levelIndex and room.Points and #room.Points >= 3 then
+		if room.LevelIndex == levelIndex and room.Points and #room.Points >= 3 and not room.IsExterior then
 			if Poly.IsPointInsidePolygon(point, room.Points, true, Formex.EPSILON) then
 				if not selected or room.Area < selected.Area then
 					selected = room
@@ -226,7 +251,12 @@ local function beginWallMove(wallId: number)
 	notifyDesignModeChange()
 end
 
-local function getWallConnectionsAtPoint(plotInfo: any, levelIndex: number, point: Vector2int16): { {WallId: number, EndType: "Start" | "End"} }
+local function getWallConnectionsAtPoint(
+	plotInfo: any,
+	levelIndex: number,
+	point: Vector2int16,
+	wallFilter: {[number]: boolean}?
+): { {WallId: number, EndType: "Start" | "End"} }
 	local connections = {}
 	local levelData = plotInfo and plotInfo.PlotData and plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
 	if not levelData or not levelData.Walls then
@@ -234,6 +264,9 @@ local function getWallConnectionsAtPoint(plotInfo: any, levelIndex: number, poin
 	end
 
 	for wallId, wall in pairs(levelData.Walls) do
+		if wallFilter and not wallFilter[wallId] then
+			continue
+		end
 		if wall and wall.Start and wall.End then
 			if pointsEqual(wall.Start, point) then
 				table.insert(connections, {
@@ -258,6 +291,13 @@ local function beginPointMove(point: Vector2int16)
 	if not room or not input or not input.PlotInfo or not input.PlotInfo.PlotPart then
 		return
 	end
+	local editMode = getEditMode()
+	local roomWallSet = nil
+	local roomFloorSet = nil
+	if editMode == Enums.EditMode.DisconnectMove then
+		roomWallSet = buildIdSet(room.Walls)
+		roomFloorSet = buildIdSet(room.Floors)
+	end
 
 	activeMove = {
 		Kind = "Point",
@@ -267,7 +307,9 @@ local function beginPointMove(point: Vector2int16)
 		End = point,
 		OriginLocal = Vector2.new(0, 0),
 		Point = point,
-		Connections = getWallConnectionsAtPoint(input.PlotInfo, room.LevelIndex, point),
+		Connections = getWallConnectionsAtPoint(input.PlotInfo, room.LevelIndex, point, roomWallSet),
+		RoomWallSet = roomWallSet,
+		RoomFloorSet = roomFloorSet,
 	}
 	movePreviewPoint = point
 	moveValid = true
@@ -491,7 +533,13 @@ local function buildFloorUpdates(plotInfo: any, levelIndex: number, oldStart: Ve
 	return updates
 end
 
-local function buildFloorPointUpdates(plotInfo: any, levelIndex: number, oldPoint: Vector2int16, newPoint: Vector2int16): {Formex.FloorData}
+local function buildFloorPointUpdates(
+	plotInfo: any,
+	levelIndex: number,
+	oldPoint: Vector2int16,
+	newPoint: Vector2int16,
+	floorFilter: {[number]: boolean}?
+): {Formex.FloorData}
 	local updates = {}
 	local levelData = plotInfo and plotInfo.PlotData and plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
 	if not levelData or not levelData.Floors then
@@ -499,6 +547,9 @@ local function buildFloorPointUpdates(plotInfo: any, levelIndex: number, oldPoin
 	end
 
 	for floorId, floor in pairs(levelData.Floors) do
+		if floorFilter and not floorFilter[floorId] then
+			continue
+		end
 		if floor.Points and #floor.Points >= 3 then
 			local changed = false
 			local points = table.clone(floor.Points)
@@ -615,7 +666,7 @@ local function finalizeWallMove(plotInfo: any)
 		})
 	end
 
-	FormexClient.BuildTransaction(changes, getSelectionSnapshot())
+	runBuildTransaction(changes, getSelectionSnapshot())
 end
 
 local function finalizePointMove(plotInfo: any)
@@ -654,7 +705,13 @@ local function finalizePointMove(plotInfo: any)
 		end
 	end
 
-	local floorUpdates = buildFloorPointUpdates(plotInfo, activeMove.LevelIndex, activeMove.Start, movePreviewPoint)
+	local floorUpdates = buildFloorPointUpdates(
+		plotInfo,
+		activeMove.LevelIndex,
+		activeMove.Start,
+		movePreviewPoint,
+		activeMove.RoomFloorSet
+	)
 	local changes = {}
 
 	if #wallUpdates > 0 then
@@ -673,7 +730,7 @@ local function finalizePointMove(plotInfo: any)
 	end
 
 	if #changes > 0 then
-		FormexClient.BuildTransaction(changes, getSelectionSnapshot())
+		runBuildTransaction(changes, getSelectionSnapshot())
 	end
 end
 
@@ -783,16 +840,20 @@ function Rooms.UpdateHandles(plotInfo: any)
 				}
 			end
 		end
-	elseif editMode == Enums.EditMode.PointMove then
+	elseif editMode == Enums.EditMode.PointMove or editMode == Enums.EditMode.DisconnectMove then
 		local seen = {}
+		local handleColor = editMode == Enums.EditMode.DisconnectMove and Constants.HandleDisconnectColor
+			or Constants.HandleMoveColor
+		local handleIcon = editMode == Enums.EditMode.DisconnectMove and Formex.Icons.WallDisconnect
+			or Formex.Icons.ResizeItem
 		for _, point in ipairs(room.Points) do
 			local key = getPointKey(point)
 			if not seen[key] then
 				seen[key] = true
 				local handle = Handles.CreateHandle(
 					"RoomPoint_" .. key,
-					Constants.HandleMoveColor,
-					Formex.Icons.ResizeItem,
+					handleColor,
+					handleIcon,
 					beginPointMove,
 					point
 				)
@@ -814,6 +875,9 @@ end
 
 function Rooms.HandleUpdate(input: any)
 	if getActionType() == Enums.ActionType.Select then
+		if Highlight and Highlight.UpdateRoomOverlays then
+			Highlight.UpdateRoomOverlays(input.PlotInfo, getCurrentLevel())
+		end
 		Rooms.UpdateHandles(input.PlotInfo)
 		Handles.CheckHover(input.Ray)
 		return

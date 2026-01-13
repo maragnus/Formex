@@ -159,6 +159,7 @@ local predictedModelsByType = {
 	Floor = {} :: {[string]: Model},
 	Object = {} :: {[string]: Model},
 }
+local predictionIdCounter = 0
 
 local defaultColor = Color3.new(1, 1, 1)
 local meshClientSuffix = " (Client)"
@@ -633,6 +634,184 @@ local function applyPrediction(plotInfo: PlotInfo, validation: any): PredictionS
 	end
 
 	return state
+end
+
+local function nextPredictionId(): number
+	predictionIdCounter -= 1
+	return predictionIdCounter
+end
+
+local function buildPredictionIdMap(entries: {any}?, key: string): {[any]: number}
+	local map = {}
+	if not entries then
+		return map
+	end
+	for _, entry in ipairs(entries) do
+		local value = entry[key]
+		if value ~= nil and map[value] == nil then
+			map[value] = nextPredictionId()
+		end
+	end
+	return map
+end
+
+local function remapEntryIds(entries: {any}?, key: string, map: {[any]: number})
+	if not entries or not map then
+		return
+	end
+	for _, entry in ipairs(entries) do
+		local value = entry[key]
+		local remapped = value and map[value]
+		if remapped ~= nil then
+			entry[key] = remapped
+		end
+	end
+end
+
+local function remapIdList(ids: {any}?, map: {[any]: number})
+	if not ids or not map then
+		return
+	end
+	for index, value in ipairs(ids) do
+		local remapped = map[value]
+		if remapped ~= nil then
+			ids[index] = remapped
+		end
+	end
+end
+
+local function remapLevelWalls(levelData: Formex.LevelData, wallMap: {[any]: number}?)
+	if wallMap and levelData.Walls then
+		local remappedWalls = {}
+		for wallId, wallData in pairs(levelData.Walls) do
+			local newId = wallMap[wallId] or wallId
+			if newId ~= wallId then
+				wallData.WallId = newId
+			end
+			remappedWalls[newId] = wallData
+		end
+		levelData.Walls = remappedWalls
+	end
+
+	if wallMap and levelData.Floors then
+		for _, floorData in pairs(levelData.Floors) do
+			if floorData.ConnectedWalls then
+				remapIdList(floorData.ConnectedWalls, wallMap)
+			end
+		end
+	end
+
+	if wallMap and levelData.Objects then
+		for _, objectData in pairs(levelData.Objects) do
+			if objectData.WallId then
+				local newId = wallMap[objectData.WallId]
+				if newId ~= nil then
+					objectData.WallId = newId
+				end
+			end
+		end
+	end
+
+end
+
+local function remapLevelFloors(levelData: Formex.LevelData, floorMap: {[any]: number}?)
+	if not floorMap or not levelData.Floors then
+		return
+	end
+	local remappedFloors = {}
+	for floorId, floorData in pairs(levelData.Floors) do
+		local newId = floorMap[floorId] or floorId
+		if newId ~= floorId then
+			floorData.FloorId = newId
+		end
+		remappedFloors[newId] = floorData
+	end
+	levelData.Floors = remappedFloors
+
+	for _, floorData in pairs(levelData.Floors) do
+		if floorData.ConnectedFloors then
+			remapIdList(floorData.ConnectedFloors, floorMap)
+		end
+	end
+end
+
+local function remapLevelObjects(levelData: Formex.LevelData, objectMap: {[any]: number}?)
+	if not objectMap or not levelData.Objects then
+		return
+	end
+	local remappedObjects = {}
+	for objectId, objectData in pairs(levelData.Objects) do
+		local newId = objectMap[objectId] or objectId
+		if newId ~= objectId then
+			objectData.ObjectId = newId
+		end
+		remappedObjects[newId] = objectData
+	end
+	levelData.Objects = remappedObjects
+end
+
+local function remapResultIds(resultValue: any, map: {[any]: number}?)
+	if not map then
+		return resultValue
+	end
+	if type(resultValue) == "table" then
+		for index, value in ipairs(resultValue) do
+			local remapped = map[value]
+			if remapped ~= nil then
+				resultValue[index] = remapped
+			end
+		end
+		return resultValue
+	end
+	local remapped = map[resultValue]
+	if remapped ~= nil then
+		return remapped
+	end
+	return resultValue
+end
+
+local function remapPredictionValidation(validation: any)
+	if not validation then
+		return
+	end
+
+	local wallMap = buildPredictionIdMap(validation.AddedWalls, "WallId")
+	local floorMap = buildPredictionIdMap(validation.AddedFloors, "FloorId")
+	local objectMap = buildPredictionIdMap(validation.AddedObjects, "ObjectId")
+
+	remapEntryIds(validation.AddedWalls, "WallId", wallMap)
+	remapEntryIds(validation.UpdatedWalls, "WallId", wallMap)
+	remapEntryIds(validation.RemovedWalls, "WallId", wallMap)
+
+	remapEntryIds(validation.AddedFloors, "FloorId", floorMap)
+	remapEntryIds(validation.UpdatedFloors, "FloorId", floorMap)
+	remapEntryIds(validation.RemovedFloors, "FloorId", floorMap)
+
+	remapEntryIds(validation.AddedObjects, "ObjectId", objectMap)
+	remapEntryIds(validation.UpdatedObjects, "ObjectId", objectMap)
+	remapEntryIds(validation.RemovedObjects, "ObjectId", objectMap)
+
+	if validation.Levels then
+		for _, levelData in pairs(validation.Levels) do
+			if levelData then
+				remapLevelWalls(levelData, wallMap)
+				remapLevelFloors(levelData, floorMap)
+				remapLevelObjects(levelData, objectMap)
+			end
+		end
+	end
+
+	if validation.Results then
+		for _, result in ipairs(validation.Results) do
+			if result.PartType == Formex.PartType.Wall then
+				result.Result = remapResultIds(result.Result, wallMap)
+			elseif result.PartType == Formex.PartType.Floor then
+				result.Result = remapResultIds(result.Result, floorMap)
+			elseif result.PartType == Formex.PartType.Object then
+				result.Result = remapResultIds(result.Result, objectMap)
+			end
+		end
+	end
 end
 
 local function normalizeChangeEntries(partType: Formex.PartType, data: any): {any}
@@ -1701,6 +1880,14 @@ function FormexClient.LoadSave(saveId: number)
     return result, message
 end
 
+function FormexClient.PlotLoad(saveId: number?)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.PlotLoad, saveId)
+    if result == false then
+        warn("PlotLoad failed:", message)
+    end
+    return result, message
+end
+
 function FormexClient.NewSave(startingSegment: number?)
     local result, message = FormexFunctions:InvokeServer(Formex.Function.NewSave, startingSegment)
     if result == false then
@@ -1731,6 +1918,7 @@ function FormexClient.BuildTransaction(changes: {Formex.BuildChange}, selection:
 		return nil
 	end
 
+	remapPredictionValidation(validation)
 	local prediction = applyPrediction(plotInfo, validation)
 	local results, _message = FormexFunctions:InvokeServer(Formex.Function.BuildTransaction, changes, selection)
 	if not results then

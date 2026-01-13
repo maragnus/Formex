@@ -96,6 +96,7 @@ Formex.Icons = { -- Content.fromAssetId(...)
     PlotClaim = 85199762467908,
     PlotRelease = 137711830774408,
     PlotPermissions = 83277863761797,
+	PlotLoad = 86944909652185,
 	DesignStart = 78727585562674,
 	DesignSelect = 129357891944983,
     DesignFurniture = 120639802680464,

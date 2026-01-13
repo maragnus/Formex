@@ -79,6 +79,17 @@ function FormexPlot.LoadSave(player: Player, saveId: number): boolean
     return FormexSystem.LoadPlot(FormexSystem.PlayerToPlot[userId], saveId)
 end
 
+function FormexPlot.PlotLoad(player: Player, saveId: number?): (boolean, string?)
+    local plotId = FormexSystem.PlayerToPlot[player.UserId]
+    if not plotId or plotId == 0 then return false, "No claimed plot" end
+    local plotData = FormexSystem.PlotData[plotId]
+    if not plotData then return false, "Invalid plot" end
+    local targetSaveId = saveId or plotData.SaveId
+    if not targetSaveId or targetSaveId == 0 then return false, "No save loaded" end
+
+    return FormexSystem.LoadPlot(plotId, targetSaveId)
+end
+
 function FormexPlot.NewSave(player: Player, startingSegment: number?): boolean
     local plotId = FormexSystem.PlayerToPlot[player.UserId]
     if not plotId or plotId == 0 then error("No claimed plot") end

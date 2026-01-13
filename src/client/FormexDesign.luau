@@ -987,6 +987,7 @@ designModeViewSettings = {
 	Play = playViewSettings,
 	Design = playViewSettings,
 	Select = topDownViewSettings,
+	Dropper = topDownViewSettings,
 	Expand = expandViewSettings,
 	Wall = topDownViewSettings,
 	Floor = topDownViewSettings,
@@ -1319,6 +1320,8 @@ local function getLevel(): number
 end
 
 function FormexDesign.ClearSelection()
+	local wasObjectSelection = selectionType == FormexDesign.SelectionType.Object
+	local wasObjectMode = designMode == FormexDesign.DesignMode.Object
 	selectionType = FormexDesign.SelectionType.None
 	selectionData = nil
 	selectionPart = nil
@@ -1336,6 +1339,9 @@ function FormexDesign.ClearSelection()
 	end
 	FormexDesignHighlights.UpdateSelectionHighlight()
 	notifyDesignModeChange()
+	if wasObjectSelection and wasObjectMode then
+		FormexDesign.SetDesignMode(FormexDesign.DesignMode.Select, true)
+	end
 end
 
 local function snapToGrid(value: number): number
@@ -1810,6 +1816,11 @@ local allowedSelectionByMode = {
 		[FormexDesign.SelectionType.Floor] = true,
 		[FormexDesign.SelectionType.Object] = true,
 	},
+	[FormexDesign.DesignMode.Dropper] = {
+		[FormexDesign.SelectionType.Wall] = true,
+		[FormexDesign.SelectionType.Floor] = true,
+		[FormexDesign.SelectionType.Object] = true,
+	},
 	[FormexDesign.DesignMode.Wall] = {
 		[FormexDesign.SelectionType.Wall] = true,
 	},
@@ -1960,7 +1971,7 @@ local function selectRoomAtPoint(plotInfo: FormexClient.PlotInfo?, levelIndex: n
 
 	local selected = nil
 	for _, room in pairs(plotInfo.PlotData.Rooms) do
-		if room.LevelIndex == levelIndex and room.Points and #room.Points >= 3 then
+		if room.LevelIndex == levelIndex and room.Points and #room.Points >= 3 and not room.IsExterior then
 			if Formex.Poly.IsPointInsidePolygon(point, room.Points, true, Formex.EPSILON) then
 				if not selected or room.Area < selected.Area then
 					selected = room
@@ -2501,6 +2512,51 @@ function FormexDesign.UpdateDesignState(update: DesignStateUpdate)
 end
 
 
+local function handleDropperDesignModeClick(input: InputInfo): boolean
+	if designMode ~= FormexDesign.DesignMode.Dropper then
+		return false
+	end
+
+	if not input.Target then
+		return true
+	end
+
+	if Walls and Walls.CopyPaintFromTarget then
+		local copied = Walls.CopyPaintFromTarget(input.Target, input.HitPosition)
+		if copied then
+			FormexDesign.UpdateDesignState({
+				Mode = FormexDesign.DesignMode.Wall,
+				SubMode = FormexDesign.DesignSubMode.Paint,
+			})
+			return true
+		end
+	end
+
+	if Floors and Floors.CopyPaintFromTarget then
+		local copied = Floors.CopyPaintFromTarget(input.Target)
+		if copied then
+			FormexDesign.UpdateDesignState({
+				Mode = FormexDesign.DesignMode.Floor,
+				SubMode = FormexDesign.DesignSubMode.Paint,
+			})
+			return true
+		end
+	end
+
+	if Objects and Objects.CopyPaintFromTarget then
+		local copied = Objects.CopyPaintFromTarget(input.Target)
+		if copied then
+			FormexDesign.UpdateDesignState({
+				Mode = FormexDesign.DesignMode.Object,
+				SubMode = FormexDesign.DesignSubMode.Paint,
+			})
+			return true
+		end
+	end
+
+	return true
+end
+
 local function handlePaintDropperClick(input: InputInfo): boolean
 	if designSubMode == FormexDesign.DesignSubMode.Normal then
 		return false
@@ -2646,6 +2702,25 @@ function FormexDesign.Select(part: Instance)
 				end
 			end
 		end
+		if selectionKind == FormexDesign.SelectionType.Object then
+			local objectModel = part:IsA("Model") and part or part:FindFirstAncestorOfClass("Model")
+			while objectModel do
+				local parent = objectModel.Parent
+				if parent and parent:IsA("Folder") and parent.Name == "Objects" then
+					local displayModel = objectModel:FindFirstChild("Object")
+					if displayModel and displayModel:IsA("Model") then
+						selectionTarget = displayModel
+					else
+						selectionTarget = objectModel
+					end
+					break
+				end
+				if not parent or not parent:IsA("Model") then
+					break
+				end
+				objectModel = parent
+			end
+		end
 
 		selectionType = selectionKind
 		selectionData = nil -- TODO
@@ -2786,6 +2861,11 @@ local function handlePrimaryClick()
 		return
 	end
 
+	if designMode == FormexDesign.DesignMode.Dropper then
+		handleDropperDesignModeClick(input)
+		return
+	end
+
 	if isPaintableDesignMode(designMode) and designSubMode ~= FormexDesign.DesignSubMode.Normal then
 		handlePaintDropperClick(input)
 		return
@@ -2825,6 +2905,7 @@ function FormexDesign.SetDesignMode(mode: DesignMode?, preserveSelection: boolea
 		mode = FormexDesign.DesignMode.Select
 	end
 	if designMode == mode then return end
+	local previousMode = designMode
 	local nextViewSettings = designModeViewSettings[mode]
 	if viewSettings.CameraMode == FormexCamera.CameraMode.TopDown
 		and nextViewSettings
@@ -2846,6 +2927,11 @@ function FormexDesign.SetDesignMode(mode: DesignMode?, preserveSelection: boolea
 	end
 
 	designMode = mode
+	if previousMode == FormexDesign.DesignMode.Room
+		and mode ~= FormexDesign.DesignMode.Room
+		and FormexDesignHighlights.ClearRoomOverlays then
+		FormexDesignHighlights.ClearRoomOverlays()
+	end
 	if not isPaintableDesignMode(mode) then
 		designSubMode = FormexDesign.DesignSubMode.Normal
 		altDropperForced = false

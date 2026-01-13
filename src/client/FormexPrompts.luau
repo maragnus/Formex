@@ -26,6 +26,7 @@ end
 
 function FormexPrompts.PlotLoad()
     local saves = FormexClient.GetSaves() or {}
+    local currentSaveId = FormexClient.CurrentPlot.SaveId or 0
 
     table.sort(saves, function(a, b)
         return (a.LastPlayed or 0) > (b.LastPlayed or 0)
@@ -42,10 +43,8 @@ function FormexPrompts.PlotLoad()
         Name = "LoadSaveDialog",
         Title = "Load a save",
         Size = "Medium",
-        Scrolling = Enum.ScrollingDirection.Y,
-        Buttons = {
-            { Label = "Close", Result = false, Options = { Type = "Secondary", Style = "Outline" } }
-        }
+        CanClose = true,
+        AutoSize = true,
     }, function(dialog)
         local list = FormexUI.CreateColumn({
             Parent = dialog.ContentFrame,
@@ -68,6 +67,10 @@ function FormexPrompts.PlotLoad()
         end
 
         for _, save in ipairs(saves) do
+            local isCurrentSave = currentSaveId ~= 0 and save.SaveId == currentSaveId
+            local actionIcon = isCurrentSave and Formex.Icons.Refresh or Formex.Icons.PlotLoad
+            local actionType = isCurrentSave and "Primary" or "Secondary"
+
             local row = Instance.new("Frame", list)
             row.Name = "Save_" .. tostring(save.SaveId or "Unknown")
             row.BackgroundColor3 = Color3.fromRGB(245, 248, 255)
@@ -90,7 +93,7 @@ function FormexPrompts.PlotLoad()
             local info = Instance.new("Frame", row)
             info.Name = "Info"
             info.BackgroundTransparency = 1
-            info.Size = UDim2.new(1, -150, 1, 0)
+            info.Size = UDim2.new(1, -72, 1, 0)
             local infoLayout = Instance.new("UIListLayout", info)
             infoLayout.FillDirection = Enum.FillDirection.Vertical
             infoLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -116,22 +119,23 @@ function FormexPrompts.PlotLoad()
             detailsLabel.TextXAlignment = Enum.TextXAlignment.Left
             detailsLabel.TextColor3 = Color3.fromRGB(90, 105, 140)
 
-            local loadButton = FormexUI.CreateButton({
+            local reloadButton = FormexUI.CreateButton({
                 Parent = row,
-                Name = "Load_" .. tostring(save.SaveId),
-                Text = "Load",
-                Type = "Primary",
+                Name = "Reload_" .. tostring(save.SaveId),
+                Icon = actionIcon,
+                Type = actionType,
+                Style = "Solid",
             }, function()
-                local success, message = FormexClient.LoadSave(save.SaveId)
+                local success, message = FormexClient.PlotLoad(save.SaveId)
                 if success == false then
                     warn("Failed to load save:", message)
                     return
                 end
                 dialog.Close(save.SaveId)
             end)
-            loadButton.Visible = true
-            loadButton.LayoutOrder = 3
-            loadButton.Size = UDim2.new(0, 120, 0, 42)
+            reloadButton.Visible = true
+            reloadButton.LayoutOrder = 3
+            reloadButton.Size = UDim2.new(0, 44, 0, 44)
         end
 
         if #saves < Formex.MaxSaveSlots then

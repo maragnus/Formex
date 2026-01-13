@@ -6,6 +6,7 @@ Exports:
 - Init(): load shared dependencies
 - IsHighlightInstance(instance): boolean
 - UpdateSelectionHighlight(): ()
+- UpdateRoomOverlays(plotInfo, levelIndex): ()
 - UpdateFloorEdgePreview(plotInfo, levelIndex, points, isValid, raiseHeight): ()
 - UpdateFloorHolePreview(plotInfo, levelIndex, points, raiseHeight): ()
 - UpdateWallEdgePreview(plotInfo, levelIndex, startPoint, endPoint, isValid): ()
@@ -13,6 +14,7 @@ Exports:
 - ClearFloorEdgePreview(): ()
 - ClearFloorHolePreview(): ()
 - ClearMergeEdgePreview(): ()
+- ClearRoomOverlays(): ()
 ]]
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 local FormexDesignHighlights = {}
@@ -37,6 +39,29 @@ local holeEdgeParts = {} :: {BasePart}
 local holeEdgeHighlights = {} :: {Highlight}
 local mergeEdgeParts = {} :: {BasePart}
 local mergeEdgeHighlights = {} :: {Highlight}
+local roomFloorHighlights = {} :: {[number]: Highlight}
+local roomDoorHighlights = {} :: {[number]: Highlight}
+
+local ROOM_PALETTE = {
+	Color3.fromRGB(198, 231, 255),
+	Color3.fromRGB(204, 255, 233),
+	Color3.fromRGB(219, 210, 255),
+	Color3.fromRGB(255, 214, 238),
+	Color3.fromRGB(214, 246, 214),
+	Color3.fromRGB(205, 245, 255),
+	Color3.fromRGB(238, 224, 255),
+	Color3.fromRGB(219, 255, 204),
+	Color3.fromRGB(210, 228, 255),
+	Color3.fromRGB(255, 225, 255),
+	Color3.fromRGB(204, 255, 250),
+	Color3.fromRGB(232, 242, 255),
+}
+
+local ROOM_HIGHLIGHT_FILL = 0.6
+local ROOM_HIGHLIGHT_OUTLINE = 0.25
+local ROOM_DOOR_COLOR = Color3.fromRGB(120, 219, 205)
+local ROOM_DOOR_FILL = 0.45
+local ROOM_DOOR_OUTLINE = 0.15
 
 function FormexDesignHighlights.Init()
 	local ctx = Context.Get()
@@ -307,6 +332,31 @@ local function updateSegmentPreview(
 	end
 end
 
+local function getRoomPaletteColor(roomId: number): Color3
+	local count = #ROOM_PALETTE
+	if count == 0 then
+		return Constants.SelectionColor
+	end
+	local index = ((roomId - 1) % count) + 1
+	return ROOM_PALETTE[index]
+end
+
+local function getLevelFolder(plotInfo: any, levelIndex: number): Instance?
+	local plotPart = plotInfo and plotInfo.PlotPart
+	if not plotPart then
+		return nil
+	end
+	return plotPart:FindFirstChild(tostring(levelIndex))
+end
+
+local function getLevelFolderChild(plotInfo: any, levelIndex: number, name: string): Instance?
+	local levelFolder = getLevelFolder(plotInfo, levelIndex)
+	if not levelFolder then
+		return nil
+	end
+	return levelFolder:FindFirstChild(name)
+end
+
 function FormexDesignHighlights.UpdateFloorEdgePreview(
 	plotInfo: any,
 	levelIndex: number,
@@ -345,6 +395,117 @@ end
 
 function FormexDesignHighlights.ClearMergeEdgePreview()
 	clearEdgePreviews(mergeEdgeParts, mergeEdgeHighlights)
+end
+
+function FormexDesignHighlights.UpdateRoomOverlays(plotInfo: any, levelIndex: number)
+	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Rooms then
+		FormexDesignHighlights.ClearRoomOverlays()
+		return
+	end
+
+	local floorFolder = getLevelFolderChild(plotInfo, levelIndex, "Floors")
+	local objectFolder = getLevelFolderChild(plotInfo, levelIndex, "Objects")
+	local floorColors = {}
+	local portalIds = {}
+
+	for _, room in pairs(plotInfo.PlotData.Rooms) do
+		if room.LevelIndex == levelIndex and room.Points and #room.Points >= 3 and not room.IsExterior then
+			local color = getRoomPaletteColor(room.RoomId)
+			for _, floorId in ipairs(room.Floors or {}) do
+				if floorColors[floorId] == nil then
+					floorColors[floorId] = color
+				end
+			end
+			for _, connection in pairs(room.NeighboringRooms or {}) do
+				if connection and connection.Portals then
+					for _, portalId in ipairs(connection.Portals) do
+						if portalId ~= nil then
+							portalIds[portalId] = true
+						end
+					end
+				end
+			end
+		end
+	end
+
+	for floorId, color in pairs(floorColors) do
+		local model = floorFolder and floorFolder:FindFirstChild(tostring(floorId))
+		if model and model:IsA("Model") then
+			local highlight = roomFloorHighlights[floorId]
+			if not highlight or not highlight.Parent then
+				highlight = Instance.new("Highlight")
+				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				highlight.Adornee = model
+				highlight.Parent = model
+				roomFloorHighlights[floorId] = highlight
+			else
+				highlight.Adornee = model
+			end
+			highlight.FillColor = color
+			highlight.OutlineColor = color
+			highlight.FillTransparency = ROOM_HIGHLIGHT_FILL
+			highlight.OutlineTransparency = ROOM_HIGHLIGHT_OUTLINE
+		end
+	end
+
+	for floorId, highlight in pairs(roomFloorHighlights) do
+		local model = floorFolder and floorFolder:FindFirstChild(tostring(floorId))
+		if not floorColors[floorId] or not model or not model:IsA("Model") then
+			if highlight then
+				highlight:Destroy()
+			end
+			roomFloorHighlights[floorId] = nil
+		end
+	end
+
+	for portalId in pairs(portalIds) do
+		local model = objectFolder and objectFolder:FindFirstChild(tostring(portalId))
+		if model and model:IsA("Model") then
+			local doorModel = model:FindFirstChild("Object")
+			if doorModel and doorModel:IsA("Model") then
+				model = doorModel
+			end
+			local highlight = roomDoorHighlights[portalId]
+			if not highlight or not highlight.Parent then
+				highlight = Instance.new("Highlight")
+				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				highlight.Adornee = model
+				highlight.Parent = model
+				roomDoorHighlights[portalId] = highlight
+			else
+				highlight.Adornee = model
+			end
+			highlight.FillColor = ROOM_DOOR_COLOR
+			highlight.OutlineColor = ROOM_DOOR_COLOR
+			highlight.FillTransparency = ROOM_DOOR_FILL
+			highlight.OutlineTransparency = ROOM_DOOR_OUTLINE
+		end
+	end
+
+	for portalId, highlight in pairs(roomDoorHighlights) do
+		local model = objectFolder and objectFolder:FindFirstChild(tostring(portalId))
+		if not portalIds[portalId] or not model then
+			if highlight then
+				highlight:Destroy()
+			end
+			roomDoorHighlights[portalId] = nil
+		end
+	end
+end
+
+function FormexDesignHighlights.ClearRoomOverlays()
+	for floorId, highlight in pairs(roomFloorHighlights) do
+		if highlight then
+			highlight:Destroy()
+		end
+		roomFloorHighlights[floorId] = nil
+	end
+	for portalId, highlight in pairs(roomDoorHighlights) do
+		if highlight then
+			highlight:Destroy()
+		end
+		roomDoorHighlights[portalId] = nil
+	end
 end
 
 return FormexDesignHighlights

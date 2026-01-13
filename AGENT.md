@@ -16,6 +16,7 @@ Do not use `pcall`. While developing, errors need to propogate normally to find 
     - Move the function and it's dependencies up
 
 - Luau type casting for assigments is not valid syntax `(value :: any).Levels = ...` just use `value.Levels = ...` instead
+- Wall, floor, and room XY snapping must use `Formex.LayoutGridSize`; only object placement uses `Formex.ObjectGridSize` / `Formex.GridSize`.
 
 - World has predefined `Part` instances named "PlotPlaceholder" created in the `Workspace/Formex/Plots` Folder to define the **Plots** that a player can claim.
 - Players can claim only one **Plot** on a server
@@ -28,6 +29,7 @@ Do not use `pcall`. While developing, errors need to propogate normally to find 
 - When handles must be disabled while waiting for server confirmation, wrap the call with `Handles.SetBusy(true)` and `Handles.SetBusy(false)` to show the spinner.
 - Implement with an emphasis on KISS and DRY principals. 
 - Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
+- EditMode includes `DisconnectMove`; disconnect handles align with point handles and avoid moving shared connections for walls, floors, and rooms.
 
 ## Ideal flow
 
@@ -94,7 +96,8 @@ Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Cont
 
 ## Paint/Dropper Behavior
 
-- Paint and Dropper are sub-modes only for Wall, Floor, and Object design modes.
+- Dropper is a full DesignMode (between Select and Room) and an Alt-only sub-mode for Wall, Floor, and Object.
+- In Dropper DesignMode, clicking a wall side/floor/object copies paint and switches to the matching DesignMode with Paint sub-mode.
 - While in Paint or Dropper, primary clicks never select or start build actions; they only attempt paint or dropper.
 - Dropper:
   - Walls: copy wall height plus the clicked side's split height, top/bottom material, and top/bottom color into wall paint settings.
@@ -166,6 +169,8 @@ When updating `PlotData`, `LevelData`, `WallData`, `FloorData`, or `ObjectData`:
 - `src/client/FormexDesignObjects.luau`: object design interactions (currently minimal).
 - `src/client/FormexDesignHandles.luau`: shared handle creation, hover, and click behavior.
 - `src/client/FormexDesignHighlights.lua`: selection and edge preview highlighting.
+- Room DesignMode: exterior rooms (`IsExterior`) are not selectable; room overlays tint floors per-room and highlight doors between rooms.
+- Room sidebar: show area, connected rooms, object counts, plus replace-all lists for floor and interior wall materials.
 
 Design flow: `FormexDesign` initializes the context with Formex client/camera dependencies, then calls `Init()` on handles/highlights/walls/floors/objects. Submodules use `FormexDesignContext.Get()` for shared dependencies and for cross-module access, and all wall/floor materials/colors are sourced from model attributes.
 

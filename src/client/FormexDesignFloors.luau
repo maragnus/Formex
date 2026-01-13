@@ -975,6 +975,8 @@ local function onFloorHandleClicked(info: any)
 	if not plotInfo or not plotInfo.PlotPart then
 		return
 	end
+	local editMode = getEditMode()
+	local allowShared = editMode ~= Enums.EditMode.DisconnectMove
 
 	local floorModel = getFloorModelFromSelection()
 	if not floorModel then
@@ -1021,13 +1023,15 @@ local function onFloorHandleClicked(info: any)
 		local nextIndex = info.NextIndex or ((handleIndex % #points) + 1)
 		local originKey = getPointKey(points[handleIndex])
 		local originKey2 = getPointKey(points[nextIndex])
-		local sharedStart = collectSharedFloors(plotInfo, floorData.LevelIndex, points[handleIndex], originKey, floorData.FloorId)
-		local sharedEnd = collectSharedFloors(plotInfo, floorData.LevelIndex, points[nextIndex], originKey2, floorData.FloorId)
-		for _, shared in ipairs(sharedStart) do
-			table.insert(moveSharedPoints, shared)
-		end
-		for _, shared in ipairs(sharedEnd) do
-			table.insert(moveSharedPoints, shared)
+		if allowShared then
+			local sharedStart = collectSharedFloors(plotInfo, floorData.LevelIndex, points[handleIndex], originKey, floorData.FloorId)
+			local sharedEnd = collectSharedFloors(plotInfo, floorData.LevelIndex, points[nextIndex], originKey2, floorData.FloorId)
+			for _, shared in ipairs(sharedStart) do
+				table.insert(moveSharedPoints, shared)
+			end
+			for _, shared in ipairs(sharedEnd) do
+				table.insert(moveSharedPoints, shared)
+			end
 		end
 
 		activeHandle = {
@@ -1046,7 +1050,9 @@ local function onFloorHandleClicked(info: any)
 		}
 	else
 		local originKey = getPointKey(points[handleIndex])
-		moveSharedPoints = collectSharedFloors(plotInfo, floorData.LevelIndex, points[handleIndex], originKey, floorData.FloorId)
+		if allowShared then
+			moveSharedPoints = collectSharedFloors(plotInfo, floorData.LevelIndex, points[handleIndex], originKey, floorData.FloorId)
+		end
 		activeHandle = {
 			Kind = "Point",
 			Index = handleIndex,
@@ -1093,9 +1099,13 @@ local function updateFloorHandles(plotInfo: any)
 	local levelIndex = floorData.LevelIndex
 	local y = getHandleY(levelIndex)
 
-	if editMode == Enums.EditMode.PointMove then
+	if editMode == Enums.EditMode.PointMove or editMode == Enums.EditMode.DisconnectMove then
+		local handleColor = editMode == Enums.EditMode.DisconnectMove and Constants.HandleDisconnectColor
+			or Constants.HandleMoveColor
+		local handleIcon = editMode == Enums.EditMode.DisconnectMove and Formex.Icons.WallDisconnect
+			or Formex.Icons.ResizeItem
 		for index, point in ipairs(points) do
-			local handle = addFloorHandle("FloorPoint_" .. tostring(index), Constants.HandleMoveColor, Formex.Icons.ResizeItem, onFloorHandleClicked, {
+			local handle = addFloorHandle("FloorPoint_" .. tostring(index), handleColor, handleIcon, onFloorHandleClicked, {
 				Kind = "Point",
 				Index = index,
 				Handle = nil,
@@ -1129,7 +1139,8 @@ local function updateFloorHandles(plotInfo: any)
 				}
 			end
 		end
-	elseif editMode == Enums.EditMode.PointMove and #points < Formex.MaxFloorPoints then
+	elseif (editMode == Enums.EditMode.PointMove or editMode == Enums.EditMode.DisconnectMove)
+		and #points < Formex.MaxFloorPoints then
 		for index = 1, #points do
 			local midpoint = getSnappedMidpoint(points, index)
 			if midpoint then

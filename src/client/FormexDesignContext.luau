@@ -14,9 +14,9 @@ local Context = {}
 
 export type WallMode = "Full" | "Half" | "Hidden"
 export type HandleLocation = "Top" | "Middle" | "Bottom"
-export type DesignMode = "Play" | "Design" | "Select" | "Expand" | "Floor" | "Wall" | "Object" | "Room"
+export type DesignMode = "Play" | "Design" | "Select" | "Dropper" | "Expand" | "Floor" | "Wall" | "Object" | "Room"
 export type DesignSubMode = "Normal" | "Paint" | "Dropper"
-export type EditMode = "PointMove" | "PartMove"
+export type EditMode = "PointMove" | "PartMove" | "DisconnectMove"
 export type ActionType = "Select" | "Start" | "Step" | "Rotate" | "Move"
 export type SelectionType = "None" | "Wall" | "Floor" | "Object" | "Room"
 export type FloorMode = "Manual" | "Autofill"
@@ -188,6 +188,7 @@ export type DesignModeEnum = {
 	Play: DesignMode,
 	Design: DesignMode,
 	Select: DesignMode,
+	Dropper: DesignMode,
 	Expand: DesignMode,
 	Floor: DesignMode,
 	Wall: DesignMode,
@@ -204,6 +205,7 @@ export type DesignSubModeEnum = {
 export type EditModeEnum = {
 	PointMove: EditMode,
 	PartMove: EditMode,
+	DisconnectMove: EditMode,
 }
 
 export type ActionTypeEnum = {
@@ -343,6 +345,7 @@ Context.Enums = table.freeze({
 		Play = "Play",
 		Design = "Design",
 		Select = "Select",
+		Dropper = "Dropper",
 		Expand = "Expand",
 		Floor = "Floor",
 		Wall = "Wall",
@@ -357,6 +360,7 @@ Context.Enums = table.freeze({
 	EditMode = table.freeze({
 		PointMove = "PointMove",
 		PartMove = "PartMove",
+		DisconnectMove = "DisconnectMove",
 	}),
 	ActionType = table.freeze({
 		Select = "Select",

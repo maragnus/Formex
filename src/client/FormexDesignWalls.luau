@@ -1179,8 +1179,8 @@ local function updateWallHandles(plotInfo: any)
 	wallHandleStart.Position = toWorld(startPoint2)
 	wallHandleEnd.Position = toWorld(endPoint2)
 	wallHandleCenter.Position = toWorld(midPoint)
-	wallHandleStartSolo.Position = toWorld(startPoint2 + offset)
-	wallHandleEndSolo.Position = toWorld(endPoint2 + offset)
+	wallHandleStartSolo.Position = toWorld(startPoint2)
+	wallHandleEndSolo.Position = toWorld(endPoint2)
 	wallHandleExtendStart.Position = toWorld(startPoint2 + extendOffset)
 	wallHandleExtendEnd.Position = toWorld(endPoint2 + extendOffset)
 	local deletePosition = toWorld(Vector2.new(midPoint.X, math.min(startPoint.Y, endPoint.Y) - Constants.HandleOffset * 2))
@@ -1194,6 +1194,7 @@ local function updateWallHandles(plotInfo: any)
 
 	local editMode = getEditMode()
 	local showPointHandles = editMode == Enums.EditMode.PointMove
+	local showDisconnectHandles = editMode == Enums.EditMode.DisconnectMove
 	local showPartHandle = editMode == Enums.EditMode.PartMove
 
 	Handles.SetHandleVisible(wallHandleStart, showPointHandles)
@@ -1203,8 +1204,8 @@ local function updateWallHandles(plotInfo: any)
 	local walls = getLevelWallInfos(plotInfo, level)
 	local connectedAtStart = getConnectedWallsAtPoint(walls, startPoint, wallId)
 	local connectedAtEnd = getConnectedWallsAtPoint(walls, endPoint, wallId)
-	Handles.SetHandleVisible(wallHandleStartSolo, showPointHandles and #connectedAtStart > 0)
-	Handles.SetHandleVisible(wallHandleEndSolo, showPointHandles and #connectedAtEnd > 0)
+	Handles.SetHandleVisible(wallHandleStartSolo, showDisconnectHandles and #connectedAtStart > 0)
+	Handles.SetHandleVisible(wallHandleEndSolo, showDisconnectHandles and #connectedAtEnd > 0)
 	Handles.SetHandleVisible(wallHandleDivide, canSplit)
 end
 

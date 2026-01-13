@@ -339,7 +339,7 @@ export type Dialog = {
     Size: DialogSize,
     Frame: Frame,
     ContentFrame: Frame,
-    ButtonsFrame: Frame,
+    ButtonsFrame: Frame?,
     Result: any,
     Close: (result: any?) -> nil,
 }
@@ -1385,6 +1385,7 @@ export type DialogOptions = {
     Size: DialogSize?,
     CanClose: boolean?,
     CloseResult: any?,
+    AutoSize: boolean?,
     Scrolling: Enum.ScrollingDirection?,
     Buttons: {[number]: ButtonInfo}?
 }
@@ -1496,7 +1497,8 @@ function FormexUI.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> 
         Large = 380,
     }
     local contentContainer: GuiObject
-    if options.Scrolling then
+    local useScrolling = options.Scrolling ~= nil and options.AutoSize ~= true
+    if useScrolling then
         local scrollingFrame = Instance.new("ScrollingFrame", dialogFrame)
         scrollingFrame.Name = "ContentContainer"
         scrollingFrame.BackgroundTransparency = 1
@@ -1531,21 +1533,9 @@ function FormexUI.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> 
     contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
     contentLayout.Padding = UDim.new(0, 8)
 
-    local buttonsFrame = Instance.new("Frame", dialogFrame)
-    buttonsFrame.Name = "Buttons"
-    buttonsFrame.BackgroundTransparency = 1
-    buttonsFrame.Size = UDim2.new(1, 0, 0, 48)
-    buttonsFrame.LayoutOrder = 3
-    local buttonsLayout = Instance.new("UIListLayout", buttonsFrame)
-    buttonsLayout.FillDirection = Enum.FillDirection.Horizontal
-    buttonsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-    buttonsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    buttonsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    buttonsLayout.Padding = UDim.new(0, 8)
-
     dialog.Frame = dialogFrame
     dialog.ContentFrame = contentFrame
-    dialog.ButtonsFrame = buttonsFrame
+    dialog.ButtonsFrame = nil
 
     local blur = BlurController.new(dialogFrame, "Rectangle")
     overlay.Destroying:Connect(function()
@@ -1564,13 +1554,29 @@ function FormexUI.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> 
         end
     end
 
-    for index, buttonInfo in ipairs(options.Buttons or {}) do
-        buttonInfo.Parent = buttonsFrame
-        local button = FormexUI.CreateButton(buttonInfo, function() dialog.Close(buttonInfo.Result) end)
+    if options.Buttons and #options.Buttons > 0 then
+        local buttonsFrame = Instance.new("Frame", dialogFrame)
+        buttonsFrame.Name = "Buttons"
+        buttonsFrame.BackgroundTransparency = 1
+        buttonsFrame.Size = UDim2.new(1, 0, 0, 48)
+        buttonsFrame.LayoutOrder = 3
+        local buttonsLayout = Instance.new("UIListLayout", buttonsFrame)
+        buttonsLayout.FillDirection = Enum.FillDirection.Horizontal
+        buttonsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+        buttonsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+        buttonsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        buttonsLayout.Padding = UDim.new(0, 8)
 
-        button.Visible = true
-        button.LayoutOrder = index
-        button.ZIndex = dialogFrame.ZIndex + 1
+        dialog.ButtonsFrame = buttonsFrame
+
+        for index, buttonInfo in ipairs(options.Buttons) do
+            buttonInfo.Parent = buttonsFrame
+            local button = FormexUI.CreateButton(buttonInfo, function() dialog.Close(buttonInfo.Result) end)
+
+            button.Visible = true
+            button.LayoutOrder = index
+            button.ZIndex = dialogFrame.ZIndex + 1
+        end
     end
 
     while not closed and overlay.Parent do

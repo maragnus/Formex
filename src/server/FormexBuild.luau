@@ -1219,6 +1219,30 @@ local function buildCarveWallIds(
 	return carveWallIdsByLevel
 end
 
+local function renderPlotChanges(
+	plotData: Formex.PlotData,
+	snapshotLevels: Formex.LevelArray?,
+	result: TransactionResult?,
+	levelsTouched: {number}?
+)
+	local plotPart = FormexSystem.Plots[plotData.PlotId]
+	if not plotPart then
+		return
+	end
+
+	if result and levelsTouched then
+		local levelsToRender = result.LevelsTouched or levelsTouched
+		local carveWallIdsByLevel = buildCarveWallIds(plotData, snapshotLevels, result, levelsToRender)
+		for _, levelIndex in ipairs(levelsToRender) do
+			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, nil, carveWallIdsByLevel)
+		end
+		return
+	end
+
+	FormexSystem.RenderPlot(plotData.PlotId)
+	FormexSystem.RefreshWallCarves(plotData.PlotId)
+end
+
 function FormexBuild.BuildTransaction(player: Player, changes: {Formex.BuildChange}, selection: Formex.SelectionSnapshot?)
 	local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
 	if not plotData then
@@ -1246,14 +1270,7 @@ function FormexBuild.BuildTransaction(player: Player, changes: {Formex.BuildChan
 		return nil, "No changes"
 	end
 
-	local plotPart = FormexSystem.Plots[plotData.PlotId]
-	if plotPart then
-		local levelsToRender = result.LevelsTouched or levelsTouched
-		local carveWallIdsByLevel = buildCarveWallIds(plotData, snapshot, result, levelsToRender)
-		for _, levelIndex in ipairs(levelsToRender) do
-			FormexSystem.RenderPlot(plotData.PlotId, levelIndex, nil, carveWallIdsByLevel)
-		end
-	end
+	renderPlotChanges(plotData, snapshot, result, levelsTouched)
 
 	pushUndo(plotData.PlotId, player.UserId, snapshot, selection)
 	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
@@ -1305,7 +1322,7 @@ function FormexBuild.Undo(player: Player, selection: Formex.SelectionSnapshot?):
 	})
 	plotData.Levels = transaction.Levels
 
-	FormexSystem.RenderPlot(plotData.PlotId)
+	renderPlotChanges(plotData, nil, nil, nil)
 	FormexSystem.QueueSave(plotData.PlotId)
 	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
 	return true, nil, transaction.Selection
@@ -1335,7 +1352,7 @@ function FormexBuild.Redo(player: Player, selection: Formex.SelectionSnapshot?):
 	end
 	plotData.Levels = transaction.Levels
 
-	FormexSystem.RenderPlot(plotData.PlotId)
+	renderPlotChanges(plotData, nil, nil, nil)
 	FormexSystem.QueueSave(plotData.PlotId)
 	updatePlayerUndoRedoAttributes(player, plotData.PlotId)
 	return true, nil, transaction.Selection
