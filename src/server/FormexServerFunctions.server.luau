@@ -67,11 +67,12 @@ local remoteFunctions = {
 }
 
 FormexFunctions.OnServerInvoke = function(player, functionName, ...)
-    warn(player.Name .. " called " .. functionName)
     local func = remoteFunctions[functionName]
     if func and type(func) == "function" then
         if DEBUG then
-            return func(player, ...)
+            local result = func(player, ...)
+            warn(player.Name .. " called " .. functionName, {...}, result)
+            return result
         else
             local success, result = pcall(func, player, ...)
             if not success then

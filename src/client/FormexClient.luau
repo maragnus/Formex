@@ -149,6 +149,7 @@ type PredictionState = {
 	RemovedObjects: {[number]: {[number]: Formex.ObjectData}},
 	HiddenParts: {[BasePart]: {Transparency: number, CanCollide: boolean, CanQuery: boolean, CanTouch: boolean}},
 	CreatedModels: {Instance},
+	RemovedPredictionModels: {Model},
 	PredictedModels: {[string]: Model},
 	OriginalNextId: number?,
 }
@@ -411,17 +412,18 @@ local function applyPrediction(plotInfo: PlotInfo, validation: any): PredictionS
 		PlotInfo = plotInfo,
 		PlotState = plotState,
 		LevelsTouched = levelsTouched,
-	SnapshotWalls = snapshotWalls,
-	SnapshotFloors = snapshotFloors,
-	SnapshotObjects = snapshotObjects,
-	OriginalLevels = {},
-	OriginalLevelMissing = {},
-	UsedLevelSwap = false,
-	RemovedWalls = {},
-	RemovedFloors = {},
-	RemovedObjects = {},
-	HiddenParts = {},
-	CreatedModels = {},
+		SnapshotWalls = snapshotWalls,
+		SnapshotFloors = snapshotFloors,
+		SnapshotObjects = snapshotObjects,
+		OriginalLevels = {},
+		OriginalLevelMissing = {},
+		UsedLevelSwap = false,
+		RemovedWalls = {},
+		RemovedFloors = {},
+		RemovedObjects = {},
+		HiddenParts = {},
+		CreatedModels = {},
+		RemovedPredictionModels = {},
 		PredictedModels = {},
 		OriginalNextId = plotData.NextId,
 	}
@@ -501,6 +503,9 @@ local function applyPrediction(plotInfo: PlotInfo, validation: any): PredictionS
 		local model = findWallModel(plotInfo, levelIndex, wallId)
 		if model then
 			setModelHidden(state, model, true)
+			if isPredictionModel(model) then
+				table.insert(state.RemovedPredictionModels, model)
+			end
 		end
 		local levelData = plotData.Levels and plotData.Levels[levelIndex]
 		if levelData and levelData.Walls and levelData.Walls[wallId] then
@@ -546,6 +551,9 @@ local function applyPrediction(plotInfo: PlotInfo, validation: any): PredictionS
 		local model = findFloorModel(plotInfo, levelIndex, floorId)
 		if model then
 			setModelHidden(state, model, true)
+			if isPredictionModel(model) then
+				table.insert(state.RemovedPredictionModels, model)
+			end
 		end
 		local levelData = plotData.Levels and plotData.Levels[levelIndex]
 		if levelData and levelData.Floors and levelData.Floors[floorId] then
@@ -591,6 +599,9 @@ local function applyPrediction(plotInfo: PlotInfo, validation: any): PredictionS
 		local model = findObjectModel(plotInfo, levelIndex, objectId)
 		if model then
 			setModelHidden(state, model, true)
+			if isPredictionModel(model) then
+				table.insert(state.RemovedPredictionModels, model)
+			end
 		end
 		local levelData = plotData.Levels and plotData.Levels[levelIndex]
 		if levelData and levelData.Objects and levelData.Objects[objectId] then
@@ -622,6 +633,166 @@ local function applyPrediction(plotInfo: PlotInfo, validation: any): PredictionS
 	end
 
 	return state
+end
+
+local function normalizeChangeEntries(partType: Formex.PartType, data: any): {any}
+	if type(data) ~= "table" then
+		return {}
+	end
+	if partType == Formex.PartType.Wall then
+		if data.WallId ~= nil or data.Start ~= nil or data.End ~= nil then
+			return { data }
+		end
+	elseif partType == Formex.PartType.Floor then
+		if data.FloorId ~= nil or data.Points ~= nil then
+			return { data }
+		end
+	elseif partType == Formex.PartType.Object then
+		if data.ObjectId ~= nil or data.Prefab ~= nil or data.Position ~= nil then
+			return { data }
+		end
+	end
+	return data
+end
+
+local function normalizeResultIds(resultValue: any): {any}
+	if type(resultValue) == "table" then
+		local ids = {}
+		for _, value in ipairs(resultValue) do
+			table.insert(ids, value)
+		end
+		return ids
+	end
+	if resultValue ~= nil then
+		return { resultValue }
+	end
+	return {}
+end
+
+local function updatePredictedId(plotInfo: PlotInfo, partType: Formex.PartType, levelIndex: number, predictedId: any, serverId: any)
+	if predictedId == nil or serverId == nil or predictedId == serverId then
+		return
+	end
+
+	local map = predictedModelsByType[partType]
+	if map then
+		local predictedKey = getPredictionKey(levelIndex, predictedId)
+		local serverKey = getPredictionKey(levelIndex, serverId)
+		local model = map[predictedKey]
+		if model then
+			map[predictedKey] = nil
+			map[serverKey] = model
+			model.Name = tostring(serverId)
+		end
+	end
+
+	local plotData = plotInfo.PlotData
+	local levelData = plotData.Levels and plotData.Levels[levelIndex]
+	if not levelData then
+		return
+	end
+
+	local predictedKeyId = tonumber(predictedId) or predictedId
+	local serverKeyId = tonumber(serverId) or serverId
+
+	if partType == Formex.PartType.Wall then
+		local walls = levelData.Walls
+		local wallData = walls and walls[predictedKeyId]
+		if wallData and walls then
+			walls[predictedKeyId] = nil
+			wallData.WallId = serverKeyId
+			wallData.Level = levelIndex
+			walls[serverKeyId] = wallData
+		end
+	elseif partType == Formex.PartType.Floor then
+		local floors = levelData.Floors
+		local floorData = floors and floors[predictedKeyId]
+		if floorData and floors then
+			floors[predictedKeyId] = nil
+			floorData.FloorId = serverKeyId
+			floorData.LevelIndex = levelIndex
+			floors[serverKeyId] = floorData
+		end
+	elseif partType == Formex.PartType.Object then
+		local objects = levelData.Objects
+		local objectData = objects and objects[predictedKeyId]
+		if objectData and objects then
+			objects[predictedKeyId] = nil
+			objectData.ObjectId = serverKeyId
+			objectData.Level = levelIndex
+			objects[serverKeyId] = objectData
+		end
+	end
+end
+
+local function reconcilePredictionResults(plotInfo: PlotInfo, validation: any, changes: {Formex.BuildChange}, results: {Formex.BuildChangeResult})
+	if not validation or not validation.Results then
+		return
+	end
+
+	local maxServerId: number? = nil
+	for index, serverResult in ipairs(results) do
+		local predictedResult = validation.Results[index]
+		local change = changes[index]
+		if predictedResult and change then
+			local action = predictedResult.Action or change.Action
+			local partType = predictedResult.PartType or change.PartType
+			if action == Formex.BuildAction.Add and serverResult.Action == Formex.BuildAction.Add and partType then
+				local entries = normalizeChangeEntries(partType, change.Data)
+				local predictedIds = normalizeResultIds(predictedResult.Result)
+				local serverIds = normalizeResultIds(serverResult.Result)
+				local count = math.min(#entries, #predictedIds, #serverIds)
+				for i = 1, count do
+					local entry = entries[i]
+					local levelIndex = (entry and (entry.LevelIndex or entry.Level)) or 1
+					updatePredictedId(plotInfo, partType, levelIndex, predictedIds[i], serverIds[i])
+					local numericId = tonumber(serverIds[i])
+					if numericId then
+						if not maxServerId or numericId > maxServerId then
+							maxServerId = numericId
+						end
+					end
+				end
+			end
+		end
+	end
+
+	if maxServerId then
+		local plotData = plotInfo.PlotData
+		if type(plotData.NextId) == "number" and plotData.NextId <= maxServerId then
+			plotData.NextId = maxServerId + 1
+		end
+	end
+end
+
+local function finalizePrediction(state: PredictionState?)
+	if not state then
+		return
+	end
+	if not state.RemovedPredictionModels or #state.RemovedPredictionModels == 0 then
+		return
+	end
+
+	local removedSet = {} :: {[Model]: boolean}
+	for _, model in ipairs(state.RemovedPredictionModels) do
+		if model then
+			removedSet[model] = true
+		end
+	end
+
+	for _, model in ipairs(state.RemovedPredictionModels) do
+		if model and model.Parent then
+			model:Destroy()
+		end
+	end
+
+	for _, map in pairs(predictedModelsByType) do
+		for key, entry in pairs(map) do
+			if removedSet[entry] then
+				map[key] = nil
+			end
+		end
+	end
 end
 
 local function rollbackPrediction(state: PredictionState?)
@@ -1563,9 +1734,12 @@ function FormexClient.BuildTransaction(changes: {Formex.BuildChange}, selection:
 	local prediction = applyPrediction(plotInfo, validation)
 	local results, _message = FormexFunctions:InvokeServer(Formex.Function.BuildTransaction, changes, selection)
 	if not results then
+		warn("BuildTransaction rolling back prediction due to server rejection")
 		rollbackPrediction(prediction)
 		return nil
 	end
+	reconcilePredictionResults(plotInfo, validation, changes, results)
+	finalizePrediction(prediction)
 
 	return results
 end
