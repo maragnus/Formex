@@ -24,9 +24,9 @@ local function ensureChildPart(parent: Instance, name: string, allowCreate: bool
 		return nil
 	end
 
-	local part = Instance.new("Part")
+	local part = Instance.new("Part", parent)
 	part.Name = name
-	part.Parent = parent
+	part.Anchored = true
 	return part
 end
 
@@ -164,7 +164,7 @@ function Formex.IsWallValid(plot: Formex.PlotData, wall: Formex.WallData)
 	end
 
 	local levelIndex = wall.Level or 1
-	local levels = (plot :: any).Levels
+	local levels = plot.Levels
 	if levels and levels[levelIndex] then
 		local walls = levels[levelIndex].Walls
 		if walls then
@@ -271,7 +271,7 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?, allowCrea
 	local function applySegment(target: BasePart, segmentHeight: number, segmentCenterY: number, offsetX: number)
 		target.Size = Vector3.new(sideThickness, segmentHeight, length)
 		target.CFrame = wallCFrame * CFrame.new(offsetX, segmentCenterY - (levelOffset + height / 2), 0)
-		target.Anchored = frontPart.Anchored
+		target.Anchored = true
 		target.CollisionGroup = frontPart.CollisionGroup
 		target.CanCollide = frontPart.CanCollide
 		target.CanTouch = frontPart.CanTouch

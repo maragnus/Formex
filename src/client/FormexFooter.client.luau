@@ -10,6 +10,29 @@ local BlurController = FormexUI.BlurController
 
 local screenGui: ScreenGui = FormexUI.ScreenGui
 
+local function setHandlesBusy(active: boolean)
+	if FormexDesign.Handles and FormexDesign.Handles.SetBusy then
+		FormexDesign.Handles.SetBusy(active)
+	end
+end
+
+local function buildWall(wallData: any, action: any): any
+	setHandlesBusy(true)
+	local results = FormexClient.BuildTransaction({
+		{
+			PartType = Formex.PartType.Wall,
+			Action = action,
+			Data = wallData,
+		},
+	}, nil)
+	setHandlesBusy(false)
+	if not results then
+		return nil
+	end
+	local changeResult = results[1]
+	return changeResult and changeResult.Result or nil
+end
+
 local footerContainer = FormexUI.Footer(screenGui)
 
 local footerButtons = {} :: {[string]: ImageButton}
@@ -161,7 +184,7 @@ createButton("Delete", "Delete", nil, function()
     end
 
     if selectionType == FormexDesign.SelectionType.Wall then
-        FormexClient.BuildWall({
+        buildWall({
             WallId = partId,
             Level = level,
             Start = Vector2.new(0, 0),

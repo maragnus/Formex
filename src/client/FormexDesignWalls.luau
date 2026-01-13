@@ -321,13 +321,52 @@ local function isZeroLength(startPoint: Vector2int16, endPoint: Vector2int16): b
 	return startPoint.X == endPoint.X and startPoint.Y == endPoint.Y
 end
 
-local function safeBuildWall(wallData: any, action: any): (boolean, any)
-	local ok, result = pcall(FormexClient.BuildWall, wallData, action, getSelectionSnapshot())
-	if not ok then
-		warn("FormexClient.BuildWall failed:", result)
-		return false, nil
+local function setHandlesBusy(active: boolean)
+	if Handles and Handles.SetBusy then
+		Handles.SetBusy(active)
 	end
+end
+
+local function runBuildTransaction(changes: {Formex.BuildChange}, selection: Formex.SelectionSnapshot?): {Formex.BuildChangeResult}?
+	setHandlesBusy(true)
+	local results = FormexClient.BuildTransaction(changes, selection)
+	setHandlesBusy(false)
+	return results
+end
+
+local function buildWall(wallData: any, action: any, selection: Formex.SelectionSnapshot?): any
+	local results = runBuildTransaction({
+		{
+			PartType = Formex.PartType.Wall,
+			Action = action,
+			Data = wallData,
+		},
+	}, selection)
+	if not results then
+		return nil
+	end
+	local changeResult = results[1]
+	return changeResult and changeResult.Result or nil
+end
+
+local function safeBuildWall(wallData: any, action: any): (boolean, any)
+	local result = buildWall(wallData, action, getSelectionSnapshot())
 	return true, result
+end
+
+local function getResultWallId(result: any): number?
+	if type(result) == "number" then
+		return result
+	end
+	if type(result) == "table" then
+		if result.WallId then
+			return result.WallId
+		end
+		if #result >= 1 then
+			return tonumber(result[1])
+		end
+	end
+	return nil
 end
 
 local function createWallPreview(plotPart: BasePart, wallData: any): Model?
@@ -345,6 +384,31 @@ local function createWallPreview(plotPart: BasePart, wallData: any): Model?
 		deleteAfterDelay(preview, 1)
 	end
 	return preview
+end
+
+local function updateMergePreview(plotInfo: any, levelIndex: number, validation: any?)
+	if not Highlight or not validation or not validation.MergeSegments then
+		if Highlight and Highlight.ClearMergeEdgePreview then
+			Highlight.ClearMergeEdgePreview()
+		end
+		return
+	end
+
+	local segments = {}
+	for _, entry in ipairs(validation.MergeSegments) do
+		if entry.Level == levelIndex then
+			table.insert(segments, {
+				Start = entry.Start,
+				End = entry.End,
+			})
+		end
+	end
+
+	if #segments > 0 then
+		Highlight.UpdateMergeEdgePreview(plotInfo, levelIndex, segments, Constants.HandleAddColor)
+	else
+		Highlight.ClearMergeEdgePreview()
+	end
 end
 
 local function getWallBackPart(model: Model): BasePart?
@@ -524,7 +588,7 @@ local function applyWallAppearance(plotInfo: any, wallModel: Model, overrides: {
 	Formex.Walls.Edit(updated, plotInfo.PlotPart, false)
 	local serverData = table.clone(updated)
 	serverData.Part = nil
-	FormexClient.BuildWall(serverData, Formex.BuildAction.Edit, getSelectionSnapshot())
+	buildWall(serverData, Formex.BuildAction.Edit, getSelectionSnapshot())
 end
 
 function Walls.ApplySelectedAppearance(overrides: {[string]: any}): boolean
@@ -874,10 +938,6 @@ local function onWallDelete()
 		cancelAction()
 		return
 	end
-
-	if selectedWall.Part and selectedWall.Part.Parent then
-		selectedWall.Part:Destroy()
-	end
 	clearSelection()
 end
 
@@ -897,7 +957,7 @@ local function onWallFlip()
 	wallData.End = selectedWall.Start
 	wallData.Part = nil
 
-	FormexClient.BuildWall(wallData, Formex.BuildAction.Edit, getSelectionSnapshot())
+	buildWall(wallData, Formex.BuildAction.Edit, getSelectionSnapshot())
 
 	selectedWall.Start = wallData.Start
 	selectedWall.End = wallData.End
@@ -940,8 +1000,9 @@ local function onWallDivide()
 	notifyDesignModeChange()
 
 	local result = resultA or resultB
-	if result and result.WallId then
-		selectWallByIdAsync(input.PlotInfo, result.Level or selectedLevel, result.WallId)
+	local resultWallId = getResultWallId(result)
+	if resultWallId then
+		selectWallByIdAsync(input.PlotInfo, selectedLevel, resultWallId)
 	end
 end
 
@@ -957,6 +1018,7 @@ local function resetMoveState()
 	movePreviewStart = nil
 	movePreviewEnd = nil
 	moveDragOriginLocal = nil
+	Highlight.ClearMergeEdgePreview()
 end
 
 local function setWallHandlesVisible(visible: boolean)
@@ -1178,8 +1240,16 @@ local function updateWallGhost(input: any)
 	ensureWallGhost(input.PlotInfo.PlotPart, wallStart, snappedEndPoint)
 
 	local previewData = buildWallData(wallStart, snappedEndPoint)
-	local valid = Formex.IsWallValid(input.PlotInfo :: any, previewData)
+	local validation = Formex.IsTransactionValid(input.PlotInfo.PlotData, {
+		{
+			PartType = Formex.PartType.Wall,
+			Action = Formex.BuildAction.Add,
+			Data = previewData,
+		},
+	})
+	local valid = validation ~= nil and validation.IsValid == true
 	updateGhostValidity(valid)
+	updateMergePreview(input.PlotInfo, getCurrentLevel(), validation)
 end
 
 local function updateWallStartGhost(input: any)
@@ -1195,6 +1265,7 @@ local function updateWallStartGhost(input: any)
 
 	ensureWallGhost(input.PlotInfo.PlotPart, startPoint, startPoint)
 	updateGhostValidity(isPointInOwnedSegments(input.PlotInfo, Vector2.new(startPoint.X, startPoint.Y)))
+	Highlight.ClearMergeEdgePreview()
 end
 
 local function updateWallMoveGhost(input: any)
@@ -1310,10 +1381,27 @@ local function updateWallMoveGhost(input: any)
 	end
 	moveWallUpdated = updatedWalls
 
-	local previewData = buildWallData(newStart, newEnd)
-	local valid = Formex.IsWallValid(input.PlotInfo :: any, previewData)
+	local wallBatch = {}
+	for _, wall in pairs(updatedWalls) do
+		table.insert(wallBatch, {
+			WallId = wall.WallId,
+			Level = wall.Level,
+			Start = wall.Start,
+			End = wall.End,
+		})
+	end
+
+	local validation = Formex.IsTransactionValid(input.PlotInfo.PlotData, {
+		{
+			PartType = Formex.PartType.Wall,
+			Action = Formex.BuildAction.Edit,
+			Data = wallBatch,
+		},
+	})
+	local valid = validation ~= nil and validation.IsValid == true
 	updateGhostValidity(valid)
 	Highlight.UpdateWallEdgePreview(input.PlotInfo, moveWallOriginal.Level, newStart, newEnd, valid)
+	updateMergePreview(input.PlotInfo, moveWallOriginal.Level, validation)
 end
 
 local function finalizeWall(plotInfo: any, endPosition: Vector3)
@@ -1328,8 +1416,16 @@ local function finalizeWall(plotInfo: any, endPosition: Vector3)
 		return
 	end
 	local wallData = buildWallData(wallStart, snappedEndPoint)
-	if not Formex.IsWallValid(plotInfo :: any, wallData) then
+	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
+		{
+			PartType = Formex.PartType.Wall,
+			Action = Formex.BuildAction.Add,
+			Data = wallData,
+		},
+	})
+	if not validation or validation.IsValid ~= true then
 		updateGhostValidity(false)
+		updateMergePreview(plotInfo, getCurrentLevel(), validation)
 		return
 	end
 
@@ -1344,12 +1440,12 @@ local function finalizeWall(plotInfo: any, endPosition: Vector3)
 	end
 	cancelAction()
 
-	if result and result.WallId then
-		local ignoreIds = { [result.WallId] = true }
-		splitWallsAtPoints(plotInfo, result.Level or getCurrentLevel(), { wallData.Start, wallData.End }, ignoreIds)
-
-		local levelIndex = result.Level or getCurrentLevel()
-		selectWallByIdAsync(plotInfo, levelIndex, result.WallId)
+	local resultWallId = getResultWallId(result)
+	if resultWallId then
+		local levelIndex = getCurrentLevel()
+		local ignoreIds = { [resultWallId] = true }
+		splitWallsAtPoints(plotInfo, levelIndex, { wallData.Start, wallData.End }, ignoreIds)
+		selectWallByIdAsync(plotInfo, levelIndex, resultWallId)
 	end
 end
 
@@ -1357,49 +1453,52 @@ local function finalizeWallMove(plotInfo: any)
 	if not moveWallOriginal or not movePreviewStart or not movePreviewEnd then
 		return
 	end
-
-	local editData = {
-		WallId = moveWallOriginal.WallId,
-		Level = moveWallOriginal.Level,
-		Start = movePreviewStart,
-		End = movePreviewEnd,
-	}
-
-	local valid = Formex.IsWallValid(plotInfo :: any, editData)
-	if not valid then
-		updateGhostValidity(false)
-		cancelAction()
-		return
-	end
+	local originalWall = moveWallOriginal
 
 	local updates = moveWallUpdated
 	if not updates or next(updates) == nil then
 		updates = {
-			[moveWallOriginal.WallId] = {
-				WallId = moveWallOriginal.WallId,
-				Level = moveWallOriginal.Level,
+			[originalWall.WallId] = {
+				WallId = originalWall.WallId,
+				Level = originalWall.Level,
 				Start = movePreviewStart,
 				End = movePreviewEnd,
-				Part = moveWallOriginal.Part,
+				Part = originalWall.Part,
 			}
 		}
 	end
 
-	local selectedDeleted = false
-	local deletedWalls = {}
 	local wallBatch = {}
 	for _, wall in pairs(updates) do
-		local data = {
+		table.insert(wallBatch, {
 			WallId = wall.WallId,
 			Level = wall.Level,
 			Start = wall.Start,
 			End = wall.End,
 			Part = nil,
-		}
-		table.insert(wallBatch, data)
+		})
+	end
 
+	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
+		{
+			PartType = Formex.PartType.Wall,
+			Action = Formex.BuildAction.Edit,
+			Data = wallBatch,
+		},
+	})
+	local valid = validation ~= nil and validation.IsValid == true
+	if not valid then
+		updateGhostValidity(false)
+		updateMergePreview(plotInfo, originalWall.Level, validation)
+		cancelAction()
+		return
+	end
+
+	local selectedDeleted = false
+	local deletedWalls = {}
+	for _, wall in pairs(updates) do
 		if isZeroLength(wall.Start, wall.End) then
-			if wall.WallId == moveWallOriginal.WallId then
+			if wall.WallId == originalWall.WallId then
 				selectedDeleted = true
 			end
 			table.insert(deletedWalls, wall)
@@ -1417,14 +1516,8 @@ local function finalizeWallMove(plotInfo: any)
 		return
 	end
 
-	for _, wall in ipairs(deletedWalls) do
-		if wall.Part and wall.Part.Parent then
-			wall.Part:Destroy()
-		end
-	end
-
 	local splitPoints = { movePreviewStart, movePreviewEnd }
-	local splitLevel = moveWallOriginal.Level
+	local splitLevel = originalWall.Level
 	local ignoreIds: {[number]: boolean} = {}
 	for wallId in pairs(updates) do
 		ignoreIds[wallId] = true
@@ -1432,11 +1525,11 @@ local function finalizeWallMove(plotInfo: any)
 
 	if not selectedDeleted then
 		selectedWall = {
-			WallId = moveWallOriginal.WallId,
-			Level = moveWallOriginal.Level,
+			WallId = originalWall.WallId,
+			Level = originalWall.Level,
 			Start = movePreviewStart,
 			End = movePreviewEnd,
-			Part = moveWallOriginal.Part,
+			Part = originalWall.Part,
 		}
 	end
 	resetMoveState()
@@ -1473,6 +1566,7 @@ function Walls.ClearSelection()
 	Handles.ClearHandleHover()
 	Handles.Clear()
 	Highlight.ClearFloorEdgePreview()
+	Highlight.ClearMergeEdgePreview()
 	Highlight.UpdateSelectionHighlight()
 end
 

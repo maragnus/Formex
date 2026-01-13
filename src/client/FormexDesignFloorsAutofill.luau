@@ -26,7 +26,7 @@ Algorithm overview (high level):
    - Faces that enclose the selected polygon (outer boundary) are ignored.
    - findContainedFloorBlocker(): also checks existing floors fully inside the polygon as holes.
 7) Validate against Formex rules and expose errors.
-   - Formex.Floors.IsFloorValid(): final validation (simple polygon, within plot bounds, etc).
+   - Formex.IsTransactionValid(): final validation (simple polygon, within plot bounds, etc).
    - Hole previews reuse FormexDesignHighlights edge previews for a red outline.
 Debugging:
 - When DEBUG is true, HandlePrimaryClick runs a second trace that populates Autofill.DebugOutput
@@ -42,20 +42,17 @@ Exports:
 - HandleSecondaryClick(input): boolean
 ]]
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
-local Formex = Context.Formex
 
 local Autofill = {}
 
 local DEBUG = false
 local DEBUG_OUTPUT: {[string]: any}? = nil
 
-type BlockerKind = "Wall" | "Floor"
-
 type Segment = {
 	Start: Vector2int16,
 	End: Vector2int16,
-	Blocker: Instance?,
-	BlockerKind: BlockerKind?,
+	Kind: "Wall" | "Floor",
+	IsBoundary: boolean?,
 }
 
 type DirectedEdge = {
@@ -65,8 +62,10 @@ type DirectedEdge = {
 	StartKey: string,
 	EndKey: string,
 	Angle: number,
-	Blocker: Instance?,
-	BlockerKind: BlockerKind?,
+	Kind: "Wall" | "Floor",
+	WallId: number?,
+	FloorId: number?,
+	IsBoundary: boolean?,
 	NextId: number?,
 	Visited: boolean,
 }
@@ -79,6 +78,7 @@ type Face = {
 
 local FormexClient: any
 local Formex: any
+local Poly: any
 local Highlight: any
 local Enums: any
 
@@ -93,12 +93,13 @@ local getFloorColor: () -> Color3
 local getCeilingColor: () -> Color3
 local getFoundationMaterialId: () -> number
 local getFoundationColor: () -> Color3
+local buildFloor: (Formex.FloorData, any?) -> any?
+local selectAfterFloorBuild: (any, number, {Vector2int16}, any?) -> ()
 local setTipMessage: (string?) -> ()
 local notifyDesignModeChange: () -> ()
 local clearSelection: () -> ()
 local clearGhost: () -> ()
 local select: (Instance) -> boolean
-local selectPlotModelByIdAsync: (any, string, number, number, number?) -> ()
 
 local cachedPolygon: {Vector2int16}? = nil
 local cachedValid = false
@@ -204,6 +205,7 @@ function Autofill.Init()
 	local ctx = Context.Get()
 	FormexClient = ctx.FormexClient
 	Formex = ctx.Formex
+	Poly = Formex.Poly
 	Highlight = ctx.Highlight
 	Enums = ctx.Enums
 
@@ -218,16 +220,13 @@ function Autofill.Init()
 	getCeilingColor = ctx.GetCeilingColor
 	getFoundationMaterialId = ctx.GetFoundationMaterialId
 	getFoundationColor = ctx.GetFoundationColor
+	buildFloor = ctx.BuildFloor
+	selectAfterFloorBuild = ctx.SelectAfterFloorBuild
 	setTipMessage = ctx.SetTipMessage
 	notifyDesignModeChange = ctx.NotifyDesignModeChange
 	clearSelection = ctx.ClearSelection
 	clearGhost = ctx.ClearGhost
 	select = ctx.Select
-	selectPlotModelByIdAsync = ctx.SelectPlotModelByIdAsync
-end
-
-local function getPointKey(point: Vector2int16): string
-	return tostring(point.X) .. "," .. tostring(point.Y)
 end
 
 local function toVector2(point: Vector2int16): Vector2
@@ -235,20 +234,13 @@ local function toVector2(point: Vector2int16): Vector2
 end
 
 local function pointsEqual(a: Vector2int16, b: Vector2int16): boolean
-	return a.X == b.X and a.Y == b.Y
+	return Poly.PointsEqual(a, b)
 end
 
 local function cross2(a: Vector2, b: Vector2): number
 	return a.X * b.Y - a.Y * b.X
 end
 
-local function isPointOnSegment(point: Vector2, a: Vector2, b: Vector2): boolean
-	if math.abs(cross2(b - a, point - a)) > Formex.EPSILON then
-		return false
-	end
-	return math.min(a.X, b.X) - Formex.EPSILON <= point.X and point.X <= math.max(a.X, b.X) + Formex.EPSILON
-		and math.min(a.Y, b.Y) - Formex.EPSILON <= point.Y and point.Y <= math.max(a.Y, b.Y) + Formex.EPSILON
-end
 
 local function toPointList(points: {Vector2int16}?): {{number}}
 	if not points then
@@ -273,14 +265,6 @@ local function getFloorModelFromTarget(target: Instance?): Model?
 		return model
 	end
 	return nil
-end
-
-local function selectFloorAfterBuild(plotInfo: any, levelIndex: number, floorId: number?)
-	if not plotInfo or not floorId then
-		return
-	end
-
-	selectPlotModelByIdAsync(plotInfo, Enums.SelectionType.Floor, levelIndex, floorId)
 end
 
 local function getLevelData(plotInfo: any, levelIndex: number): Formex.LevelData?
@@ -323,123 +307,25 @@ local function getLevelDebugData(plotInfo: any, levelIndex: number): ({[string]:
 end
 
 local function polygonArea(points: {Vector2int16}): number
-	local area = 0
-	for i = 1, #points do
-		local nextIndex = (i % #points) + 1
-		local a = points[i]
-		local b = points[nextIndex]
-		area += (a.X * b.Y) - (b.X * a.Y)
-	end
-	return area / 2
+	return Poly.PolygonArea(points)
 end
 
-local function isPointOnPolygonEdge(point: Vector2, polygon: {Vector2int16}): boolean
-	for i = 1, #polygon do
-		local a = toVector2(polygon[i])
-		local b = toVector2(polygon[(i % #polygon) + 1])
-		if isPointOnSegment(point, a, b) then
-			return true
-		end
-	end
-	return false
-end
 
 local function isPointInsidePolygon(point: Vector2, polygon: {Vector2int16}, includeBoundary: boolean?): boolean
-	if #polygon < 3 then
-		return false
-	end
-
-	if isPointOnPolygonEdge(point, polygon) then
-		return includeBoundary == true
-	end
-
-	local inside = false
-	local j = #polygon
-	for i = 1, #polygon do
-		local pi = polygon[i]
-		local pj = polygon[j]
-		local xi = pi.X
-		local yi = pi.Y
-		local xj = pj.X
-		local yj = pj.Y
-
-		local intersects = ((yi > point.Y) ~= (yj > point.Y))
-			and (point.X < (xj - xi) * (point.Y - yi) / ((yj - yi) + 0.0000001) + xi)
-		if intersects then
-			inside = not inside
-		end
-		j = i
-	end
-	return inside
+	return Poly.IsPointInsidePolygon(point, polygon, includeBoundary, Formex.EPSILON)
 end
 
-local function orientation(a: Vector2, b: Vector2, c: Vector2): number
-	local value = (b.Y - a.Y) * (c.X - b.X) - (b.X - a.X) * (c.Y - b.Y)
-	if math.abs(value) <= Formex.EPSILON then
-		return 0
-	end
-	return value > 0 and 1 or 2
-end
-
-local function onSegment(a: Vector2, b: Vector2, c: Vector2): boolean
-	return math.min(a.X, c.X) - Formex.EPSILON <= b.X and b.X <= math.max(a.X, c.X) + Formex.EPSILON
-		and math.min(a.Y, c.Y) - Formex.EPSILON <= b.Y and b.Y <= math.max(a.Y, c.Y) + Formex.EPSILON
-end
 
 local function segmentsIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2): boolean
-	local o1 = orientation(p1, p2, q1)
-	local o2 = orientation(p1, p2, q2)
-	local o3 = orientation(q1, q2, p1)
-	local o4 = orientation(q1, q2, p2)
-
-	if o1 ~= o2 and o3 ~= o4 then
-		return true
-	end
-
-	if o1 == 0 and onSegment(p1, q1, p2) then return true end
-	if o2 == 0 and onSegment(p1, q2, p2) then return true end
-	if o3 == 0 and onSegment(q1, p1, q2) then return true end
-	if o4 == 0 and onSegment(q1, p2, q2) then return true end
-
-	return false
+	return Poly.SegmentsIntersect(p1, p2, q1, q2, Formex.EPSILON)
 end
 
 local function polygonsIntersect(a: {Vector2int16}, b: {Vector2int16}): boolean
-	if #a < 2 or #b < 2 then
-		return false
-	end
-
-	for i = 1, #a do
-		local a1 = toVector2(a[i])
-		local a2 = toVector2(a[(i % #a) + 1])
-		for j = 1, #b do
-			local b1 = toVector2(b[j])
-			local b2 = toVector2(b[(j % #b) + 1])
-			if segmentsIntersect(a1, a2, b1, b2) then
-				return true
-			end
-		end
-	end
-
-	return false
+	return Poly.PolygonsIntersect(a, b, Formex.EPSILON)
 end
 
 local function isPolygonInside(outer: {Vector2int16}, inner: {Vector2int16}): boolean
-	if #inner < 3 or #outer < 3 then
-		return false
-	end
-
-	if polygonsIntersect(outer, inner) then
-		return false
-	end
-
-	for _, point in ipairs(inner) do
-		if not isPointInsidePolygon(Vector2.new(point.X, point.Y), outer, false) then
-			return false
-		end
-	end
-
-	return true
+	return Poly.IsPolygonInside(outer, inner, Formex.EPSILON)
 end
 
 local function updateHolePreview(plotInfo: any, points: {Vector2int16}?)
@@ -466,361 +352,46 @@ local function buildFloorDataFromPoints(points: {Vector2int16}): Formex.FloorDat
 	}
 end
 
-local function collectSegments(plotInfo: any, levelIndex: number): {Segment}
-	local segments = {}
-	local levelData = getLevelData(plotInfo, levelIndex)
-	if not levelData then
-		return segments
+local function isFloorDataValid(plotInfo: any, floorData: Formex.FloorData, action: Formex.BuildAction?): boolean
+	if not plotInfo or not plotInfo.PlotData then
+		return false
 	end
-
-	if levelData.Walls then
-		for _, wall in pairs(levelData.Walls) do
-			if wall.Start and wall.End and not pointsEqual(wall.Start, wall.End) then
-				table.insert(segments, {
-					Start = wall.Start,
-					End = wall.End,
-					Blocker = wall.Part,
-					BlockerKind = "Wall",
-				})
-			end
-		end
-	end
-
-	if levelData.Floors then
-		for _, floor in pairs(levelData.Floors) do
-			if floor.Points and #floor.Points >= 3 then
-				local cleaned = Formex.Floors.CleanPolygon(floor.Points)
-				if #cleaned >= 3 then
-					for i = 1, #cleaned do
-						local a = cleaned[i]
-						local b = cleaned[(i % #cleaned) + 1]
-						if not pointsEqual(a, b) then
-							table.insert(segments, {
-								Start = a,
-								End = b,
-								Blocker = floor.Model,
-								BlockerKind = "Floor",
-							})
-						end
-					end
-				end
-			end
-		end
-	end
-
-	return segments
+	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
+		{
+			PartType = Formex.PartType.Floor,
+			Action = action or Formex.BuildAction.Edit,
+			Data = floorData,
+		},
+	})
+	return validation ~= nil and validation.IsValid == true
 end
 
-local function computeDegrees(segments: {Segment}): {[string]: number}
-	local degrees = {}
-	for _, seg in ipairs(segments) do
-		local startKey = getPointKey(seg.Start)
-		local endKey = getPointKey(seg.End)
-		degrees[startKey] = (degrees[startKey] or 0) + 1
-		degrees[endKey] = (degrees[endKey] or 0) + 1
+local function collectSegments(plotInfo: any, levelIndex: number): ({Segment}, number)
+	if not plotInfo or not plotInfo.PlotData then
+		return {}, 0
 	end
-	return degrees
+	return Poly.CollectSegments(Formex, plotInfo.PlotData, levelIndex, {
+		IncludeWalls = true,
+		IncludeFloors = true,
+		IncludeBoundary = true,
+		CleanPolygon = Formex.Floors.CleanPolygon,
+	})
 end
 
 local function pruneWallSegments(segments: {Segment})
-	local changed = true
-	while changed do
-		changed = false
-		local degrees = computeDegrees(segments)
-		for i = #segments, 1, -1 do
-			local seg = segments[i]
-			if seg.BlockerKind == "Wall" then
-				local startDegree = degrees[getPointKey(seg.Start)] or 0
-				local endDegree = degrees[getPointKey(seg.End)] or 0
-				if startDegree < 2 or endDegree < 2 then
-					table.remove(segments, i)
-					changed = true
-				end
-			end
-		end
-	end
-end
-
-local function addPlotBoundarySegments(plotInfo: any, segments: {Segment}): number
-	if not plotInfo then
-		return 0
-	end
-
-	local mask = plotInfo.SegmentsUnlocked
-	if not mask or mask == 0 then
-		return 0
-	end
-
-	local edgeMap = {} :: {[string]: Segment}
-
-	local function canonicalKey(a: Vector2int16, b: Vector2int16): string
-		local aKey = getPointKey(a)
-		local bKey = getPointKey(b)
-		if aKey < bKey then
-			return aKey .. "|" .. bKey
-		end
-		return bKey .. "|" .. aKey
-	end
-
-	local function toggleEdge(a: Vector2int16, b: Vector2int16)
-		local key = canonicalKey(a, b)
-		if edgeMap[key] then
-			edgeMap[key] = nil
-		else
-			edgeMap[key] = {
-				Start = a,
-				End = b,
-				Blocker = nil,
-				BlockerKind = "Wall",
-			}
-		end
-	end
-
-	local halfWidth = Formex.SegmentSize.Width / 2
-	local halfDepth = Formex.SegmentSize.Depth / 2
-
-	for index = 1, Formex.Segments.Count do
-		if Formex.Segments.IsUnlocked(mask, index) then
-			local row, column = Formex.Segments.GetRowColumn(index)
-			local centerX = (column - (Formex.Segments.GridWidth + 1) / 2) * Formex.SegmentSize.Width
-			local centerY = (row - (Formex.Segments.GridHeight + 1) / 2) * Formex.SegmentSize.Depth
-			local minX = centerX - halfWidth
-			local maxX = centerX + halfWidth
-			local minY = centerY - halfDepth
-			local maxY = centerY + halfDepth
-
-			local a = Vector2int16.new(minX, minY)
-			local b = Vector2int16.new(maxX, minY)
-			local c = Vector2int16.new(maxX, maxY)
-			local d = Vector2int16.new(minX, maxY)
-
-			toggleEdge(a, b)
-			toggleEdge(b, c)
-			toggleEdge(c, d)
-			toggleEdge(d, a)
-		end
-	end
-
-	local added = 0
-	for _, segment in pairs(edgeMap) do
-		table.insert(segments, segment)
-		added += 1
-	end
-
-	return added
+	Poly.PruneSegments(segments, Formex.EPSILON)
 end
 
 local function splitSegments(segments: {Segment}): {Segment}
-	local entries = table.create(#segments)
-	local pointMaps = table.create(#segments)
-
-	for index, segment in ipairs(segments) do
-		entries[index] = segment
-		local map = {}
-		map[getPointKey(segment.Start)] = segment.Start
-		map[getPointKey(segment.End)] = segment.End
-		pointMaps[index] = map
-	end
-
-	local function addPoint(map: {[string]: Vector2int16}, point: Vector2int16)
-		map[getPointKey(point)] = point
-	end
-
-	for i = 1, #entries do
-		local segA = entries[i]
-		local a1 = toVector2(segA.Start)
-		local a2 = toVector2(segA.End)
-		for j = i + 1, #entries do
-			local segB = entries[j]
-			local b1 = toVector2(segB.Start)
-			local b2 = toVector2(segB.End)
-			local r = a2 - a1
-			local s = b2 - b1
-			local rxs = cross2(r, s)
-			local qpxr = cross2(b1 - a1, r)
-
-			if math.abs(rxs) <= Formex.EPSILON and math.abs(qpxr) <= Formex.EPSILON then
-				if isPointOnSegment(a1, b1, b2) then
-					addPoint(pointMaps[j], segA.Start)
-				end
-				if isPointOnSegment(a2, b1, b2) then
-					addPoint(pointMaps[j], segA.End)
-				end
-				if isPointOnSegment(b1, a1, a2) then
-					addPoint(pointMaps[i], segB.Start)
-				end
-				if isPointOnSegment(b2, a1, a2) then
-					addPoint(pointMaps[i], segB.End)
-				end
-			elseif math.abs(rxs) > Formex.EPSILON then
-				local t = cross2(b1 - a1, s) / rxs
-				local u = cross2(b1 - a1, r) / rxs
-				if t >= -Formex.EPSILON and t <= 1 + Formex.EPSILON and u >= -Formex.EPSILON and u <= 1 + Formex.EPSILON then
-					local intersection = a1 + r * t
-					local ix = math.round(intersection.X)
-					local iy = math.round(intersection.Y)
-					if math.abs(intersection.X - ix) <= Formex.EPSILON and math.abs(intersection.Y - iy) <= Formex.EPSILON then
-						local point = Vector2int16.new(ix, iy)
-						addPoint(pointMaps[i], point)
-						addPoint(pointMaps[j], point)
-					end
-				end
-			end
-		end
-	end
-
-	local deduped = {}
-	local segmentMap = {} :: {[string]: Segment}
-	for index, segment in ipairs(entries) do
-		local points = {}
-		for _, point in pairs(pointMaps[index]) do
-			table.insert(points, point)
-		end
-		if #points >= 2 then
-			local start = toVector2(segment.Start)
-			local dir = toVector2(segment.End) - start
-			local length2 = dir:Dot(dir)
-			table.sort(points, function(a, b)
-				if length2 <= Formex.EPSILON then
-					return false
-				end
-				local ta = (toVector2(a) - start):Dot(dir) / length2
-				local tb = (toVector2(b) - start):Dot(dir) / length2
-				return ta < tb
-			end)
-
-			for i = 1, #points - 1 do
-				local a = points[i]
-				local b = points[i + 1]
-				if not pointsEqual(a, b) then
-					local aKey = getPointKey(a)
-					local bKey = getPointKey(b)
-					local key = aKey < bKey and (aKey .. "|" .. bKey) or (bKey .. "|" .. aKey)
-					local existing = segmentMap[key]
-					if not existing then
-						local newSegment = {
-							Start = a,
-							End = b,
-							Blocker = segment.Blocker,
-							BlockerKind = segment.BlockerKind,
-						}
-						segmentMap[key] = newSegment
-						table.insert(deduped, newSegment)
-					elseif existing.BlockerKind ~= "Wall" and segment.BlockerKind == "Wall" then
-						existing.BlockerKind = "Wall"
-						existing.Blocker = segment.Blocker or existing.Blocker
-					end
-				end
-			end
-		end
-	end
-
-	return deduped
+	return Poly.SplitSegments(segments, Formex.EPSILON)
 end
 
 local function buildDirectedEdges(segments: {Segment}): {DirectedEdge}
-	local directedEdges = {}
-	local adjacency = {}
-
-	local function addDirected(startPoint: Vector2int16, endPoint: Vector2int16, blocker: Instance?, kind: BlockerKind?)
-		local id = #directedEdges + 1
-		local edge = {
-			Id = id,
-			Start = startPoint,
-			End = endPoint,
-			StartKey = getPointKey(startPoint),
-			EndKey = getPointKey(endPoint),
-			Angle = math.atan2(endPoint.Y - startPoint.Y, endPoint.X - startPoint.X),
-			Blocker = blocker,
-			BlockerKind = kind,
-			NextId = nil,
-			Visited = false,
-		} :: DirectedEdge
-		directedEdges[id] = edge
-		local list = adjacency[edge.StartKey]
-		if not list then
-			list = {}
-			adjacency[edge.StartKey] = list
-		end
-		table.insert(list, id)
-	end
-
-	for _, seg in ipairs(segments) do
-		addDirected(seg.Start, seg.End, seg.Blocker, seg.BlockerKind)
-		addDirected(seg.End, seg.Start, seg.Blocker, seg.BlockerKind)
-	end
-
-	for _, list in pairs(adjacency) do
-		table.sort(list, function(aId, bId)
-			return directedEdges[aId].Angle < directedEdges[bId].Angle
-		end)
-	end
-
-	for _, edge in ipairs(directedEdges) do
-		local list = adjacency[edge.EndKey]
-		if not list then
-			continue
-		end
-		local reverseIndex = nil
-		for i, id in ipairs(list) do
-			local candidate = directedEdges[id]
-			if candidate.EndKey == edge.StartKey then
-				reverseIndex = i
-				break
-			end
-		end
-		if reverseIndex then
-			local nextIndex = reverseIndex - 1
-			if nextIndex < 1 then
-				nextIndex = #list
-			end
-			edge.NextId = list[nextIndex]
-		end
-	end
-
-	return directedEdges
+	return Poly.BuildDirectedEdges(segments)
 end
 
 local function buildFaces(directedEdges: {DirectedEdge}): {Face}
-	local faces = {}
-	local maxSteps = #directedEdges + 5
-
-	for _, edge in ipairs(directedEdges) do
-		if edge.Visited or not edge.NextId then
-			continue
-		end
-
-		local points = {}
-		local edges = {}
-		local current = edge
-		local steps = 0
-		local closed = false
-
-		while current and not current.Visited and steps < maxSteps do
-			steps += 1
-			current.Visited = true
-			table.insert(points, current.Start)
-			table.insert(edges, current)
-			if current.NextId == nil then
-				break
-			end
-			current = directedEdges[current.NextId]
-			if current == edge then
-				closed = true
-				break
-			end
-		end
-
-		if closed and #points >= 3 then
-			table.insert(faces, {
-				Points = points,
-				Edges = edges,
-				Area = polygonArea(points),
-			})
-		end
-	end
-
-	return faces
+	return Poly.BuildFaces(directedEdges)
 end
 
 local function selectFaceForPoint(faces: {Face}, point: Vector2): Face?
@@ -934,20 +505,6 @@ local function getFaceSamplePoint(points: {Vector2int16}): Vector2?
 	return nil
 end
 
-local function findHoleBlockerFromFace(face: Face): Instance?
-	for _, edge in ipairs(face.Edges) do
-		if edge.Blocker and edge.BlockerKind == "Wall" then
-			return edge.Blocker
-		end
-	end
-	for _, edge in ipairs(face.Edges) do
-		if edge.Blocker and edge.BlockerKind == "Floor" then
-			return edge.Blocker
-		end
-	end
-	return nil
-end
-
 local function findContainedFloorBlocker(plotInfo: any, levelIndex: number, polygon: {Vector2int16}): (Instance?, {Vector2int16}?)
 	local levelData = getLevelData(plotInfo, levelIndex)
 	if not levelData or not levelData.Floors then
@@ -958,7 +515,12 @@ local function findContainedFloorBlocker(plotInfo: any, levelIndex: number, poly
 		if floor.Points and #floor.Points >= 3 then
 			local cleaned = Formex.Floors.CleanPolygon(floor.Points)
 			if #cleaned >= 3 then
-				if Formex.Floors.IsFloorValid(plotInfo.PlotData, { Points = cleaned } :: any)
+				if isFloorDataValid(plotInfo, {
+					FloorId = floor.FloorId,
+					LevelIndex = levelIndex,
+					Points = cleaned,
+					RaiseHeight = floor.RaiseHeight or 0,
+				} :: Formex.FloorData, Formex.BuildAction.Edit)
 				and isPolygonInside(polygon, cleaned) then
 					return floor.Model, cleaned
 				end
@@ -981,13 +543,13 @@ local function computeAutofill(
 			Boundary = 0,
 		}
 		for _, segment in ipairs(list) do
-			if segment.BlockerKind == "Wall" then
-				if segment.Blocker == nil then
+			if segment.Kind == "Wall" then
+				if segment.IsBoundary then
 					counts.Boundary += 1
 				else
 					counts.Walls += 1
 				end
-			elseif segment.BlockerKind == "Floor" then
+			elseif segment.Kind == "Floor" then
 				counts.Floors += 1
 			end
 		end
@@ -1003,8 +565,7 @@ local function computeAutofill(
 	debugWrite("LevelWalls", wallLines)
 	debugWrite("LevelFloors", floorPolygons)
 
-	local segments = collectSegments(plotInfo, levelIndex)
-	local boundaryCount = addPlotBoundarySegments(plotInfo, segments)
+	local segments, boundaryCount = collectSegments(plotInfo, levelIndex)
 	debugWrite("Segments", {
 		Total = #segments,
 		Boundary = boundaryCount,
@@ -1110,9 +671,9 @@ local function computeAutofill(
 		return cleaned, false, "hole", floorHolePoints
 	end
 
-	local isValid = Formex.Floors.IsFloorValid(plotInfo.PlotData, { Points = cleaned } :: any)
+	local isValid = isFloorDataValid(plotInfo, buildFloorDataFromPoints(cleaned), Formex.BuildAction.Add)
 	if not isValid then
-		debugMessage("IsFloorValid rejected.")
+		debugMessage("IsTransactionValid rejected.")
 		return cleaned, false, "invalid", nil
 	end
 
@@ -1238,10 +799,8 @@ local function finalizeAutofill()
 	end
 
 	local floorData = buildFloorDataFromPoints(cachedPolygon)
-	local result = FormexClient.BuildFloor(floorData, Formex.BuildAction.Add, getSelectionSnapshot())
-	if result and result.FloorId then
-		selectFloorAfterBuild(plotInfo, floorData.LevelIndex, result.FloorId)
-	end
+	local result = buildFloor(floorData, getSelectionSnapshot())
+	selectAfterFloorBuild(plotInfo, floorData.LevelIndex, floorData.Points, result)
 	resetCache()
 	setActionType(Enums.ActionType.Select)
 	clearGhost()

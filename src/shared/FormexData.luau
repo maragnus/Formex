@@ -78,6 +78,7 @@ Formex.Icons = { -- Content.fromAssetId(...)
 	Confirm = 116875236311469,
 	Cancel = 92308571652477,
     Refresh = 123101975679190,
+    Spinner = 71598598282628, -- rotates at 45 degree increments every 0.2 seconds
 	DirectionIndicator = 81358910239829,
     ModeAutomatic = 134762217816858,
     ModeManual = 83671159533759,

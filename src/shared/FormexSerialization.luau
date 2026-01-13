@@ -10,6 +10,7 @@ local MAX_LEVELS: number = 5
 local Buffer = require(script.Parent.Buffer)
 
 local FormexSerialization = {}
+-- Rooms are transient (derived from wall geometry) and are intentionally not serialized.
 
 local function writeMaterialId(writer, value: number?)
 	writer:WriteU8(value and value > 0 and value or 0)

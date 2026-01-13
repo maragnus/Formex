@@ -66,6 +66,50 @@ local function snapRotationDegrees(value: number): number
 	return math.round(value / ROTATE_STEP_DEGREES) * ROTATE_STEP_DEGREES
 end
 
+local function getResultObjectId(result: any): number | string?
+	local resultType = type(result)
+	if resultType == "number" or resultType == "string" then
+		return result
+	end
+	if resultType == "table" then
+		if result.ObjectId then
+			return result.ObjectId
+		end
+		if #result >= 1 then
+			return result[1]
+		end
+	end
+	return nil
+end
+
+local function setHandlesBusy(active: boolean)
+	if Handles and Handles.SetBusy then
+		Handles.SetBusy(active)
+	end
+end
+
+local function runBuildTransaction(changes: {Formex.BuildChange}, selection: Formex.SelectionSnapshot?): {Formex.BuildChangeResult}?
+	setHandlesBusy(true)
+	local results = FormexClient.BuildTransaction(changes, selection)
+	setHandlesBusy(false)
+	return results
+end
+
+local function buildObject(objectData: any, action: any, selection: Formex.SelectionSnapshot?): any
+	local results = runBuildTransaction({
+		{
+			PartType = Formex.PartType.Object,
+			Action = action,
+			Data = objectData,
+		},
+	}, selection)
+	if not results then
+		return nil
+	end
+	local changeResult = results[1]
+	return changeResult and changeResult.Result or nil
+end
+
 local function setGhostHighlight(valid: boolean)
 	ghostValid = valid
 	if ghostHighlight then
@@ -712,6 +756,20 @@ local function getPlacement(
 	return data, valid
 end
 
+local function isObjectTransactionValid(plotInfo: any, objectData: Formex.ObjectData, action: Formex.BuildAction): boolean
+	if not plotInfo or not plotInfo.PlotData then
+		return false
+	end
+	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
+		{
+			PartType = Formex.PartType.Object,
+			Action = action,
+			Data = objectData,
+		},
+	})
+	return validation ~= nil and validation.IsValid == true
+end
+
 local function getSelectedObjectModel(): Model?
 	local selectionPart = getSelectionPart()
 	if not selectionPart then
@@ -839,7 +897,7 @@ local function onHandleClick(handleType: ObjectHandleType)
 	end
 
 	if handleType == "Delete" then
-		FormexClient.BuildObject({
+		buildObject({
 			ObjectId = selectedData.ObjectId,
 			Level = selectedData.Level,
 			Position = selectedData.Position,
@@ -861,7 +919,7 @@ local function onHandleClick(handleType: ObjectHandleType)
 			and Formex.ObjectSide.Front
 			or Formex.ObjectSide.Back
 		selectedData.Side = nextSide
-		FormexClient.BuildObject({
+		buildObject({
 			ObjectId = selectedData.ObjectId,
 			Level = selectedData.Level,
 			Position = selectedData.Position,
@@ -931,7 +989,7 @@ function Objects.ApplySelectedDesign(design: {[number]: number}, colors: {[numbe
 	end
 	selectedData.Design = table.clone(design)
 	selectedData.DesignColors = table.clone(colors)
-	FormexClient.BuildObject({
+	buildObject({
 		ObjectId = selectedData.ObjectId,
 		Level = selectedData.Level,
 		Position = selectedData.Position,
@@ -969,7 +1027,7 @@ function Objects.ApplyPaintToTarget(target: Instance): boolean
 	if color then
 		updatedColors[designIndex] = color
 	end
-	FormexClient.BuildObject({
+	buildObject({
 		ObjectId = objectData.ObjectId,
 		Level = objectData.Level,
 		Position = objectData.Position,
@@ -1021,6 +1079,9 @@ local function updateGhostPlacement(input: any)
 	applyDesignToGhost(prefab)
 
 	local data, valid = getPlacement(input, prefab, nil, nil, nil, nil, nil)
+	if valid then
+		valid = isObjectTransactionValid(input.PlotInfo, data, Formex.BuildAction.Add)
+	end
 	setGhostHighlight(valid)
 	if data.Position and data.Rotation then
 		data.ObjectModel = ghostModel
@@ -1041,6 +1102,9 @@ local function finalizePlacement(input: any)
 		return
 	end
 	local data, valid = getPlacement(input, prefab, nil, nil, nil, nil, nil)
+	if valid then
+		valid = isObjectTransactionValid(input.PlotInfo, data, Formex.BuildAction.Add)
+	end
 	if not valid then
 		setGhostHighlight(false)
 		return
@@ -1062,11 +1126,12 @@ local function finalizePlacement(input: any)
 	}
 	Formex.Objects.EnsureDesignDefaults(objectEntry, prefab)
 
-	local result = FormexClient.BuildObject(objectEntry, Formex.BuildAction.Add, getSelectionSnapshot())
+local result = buildObject(objectEntry, Formex.BuildAction.Add, getSelectionSnapshot())
 	clearGhost()
 	setActionType(Enums.ActionType.Select)
-	if result and result.ObjectId then
-		selectPlotModelByIdAsync(input.PlotInfo, Enums.SelectionType.Object, data.Level, result.ObjectId)
+	local resultObjectId = getResultObjectId(result)
+	if resultObjectId then
+		selectPlotModelByIdAsync(input.PlotInfo, Enums.SelectionType.Object, data.Level, resultObjectId)
 	end
 	notifyDesignModeChange()
 end
@@ -1115,7 +1180,6 @@ local function updateMovePreview(input: any)
 		data.Level = moveOriginal.Level
 		valid = false
 	end
-	setPreviewHighlight(valid)
 	if not data.Position or not data.Rotation then
 		return
 	end
@@ -1126,6 +1190,10 @@ local function updateMovePreview(input: any)
 	movePreview.Rotation = data.Rotation
 	movePreview.Side = data.Side
 	movePreview.WallId = data.WallId
+	if valid then
+		valid = isObjectTransactionValid(input.PlotInfo, movePreview, Formex.BuildAction.Edit)
+	end
+	setPreviewHighlight(valid)
 
 	movePreview.ObjectModel = moveOriginal.ObjectModel
 	local targetCFrame = getObjectWorldCFrame(input.PlotInfo, movePreview, prefab)
@@ -1176,6 +1244,9 @@ local function updateRotatePreview(input: any)
 		moveSnapshot,
 		moveSnapshotMoved
 	)
+	if valid then
+		valid = isObjectTransactionValid(input.PlotInfo, movePreview, Formex.BuildAction.Edit)
+	end
 	setPreviewHighlight(valid)
 
 	local cframe = getObjectWorldCFrame(input.PlotInfo, movePreview, prefab)
@@ -1210,7 +1281,7 @@ local function finalizeMove(input: any)
 		return
 	end
 
-	FormexClient.BuildObject({
+	buildObject({
 		ObjectId = moveOriginal.ObjectId,
 		Level = movePreview.Level or moveOriginal.Level,
 		Position = movePreview.Position,

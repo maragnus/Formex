@@ -14,11 +14,11 @@ local Context = {}
 
 export type WallMode = "Full" | "Half" | "Hidden"
 export type HandleLocation = "Top" | "Middle" | "Bottom"
-export type DesignMode = "Play" | "Design" | "Select" | "Expand" | "Floor" | "Wall" | "Object"
+export type DesignMode = "Play" | "Design" | "Select" | "Expand" | "Floor" | "Wall" | "Object" | "Room"
 export type DesignSubMode = "Normal" | "Paint" | "Dropper"
 export type EditMode = "PointMove" | "PartMove"
 export type ActionType = "Select" | "Start" | "Step" | "Rotate" | "Move"
-export type SelectionType = "None" | "Wall" | "Floor" | "Object"
+export type SelectionType = "None" | "Wall" | "Floor" | "Object" | "Room"
 export type FloorMode = "Manual" | "Autofill"
 
 export type WallPaintSettings = {
@@ -192,6 +192,7 @@ export type DesignModeEnum = {
 	Floor: DesignMode,
 	Wall: DesignMode,
 	Object: DesignMode,
+	Room: DesignMode,
 }
 
 export type DesignSubModeEnum = {
@@ -218,6 +219,7 @@ export type SelectionTypeEnum = {
 	Wall: SelectionType,
 	Floor: SelectionType,
 	Object: SelectionType,
+	Room: SelectionType,
 }
 
 export type Enums = {
@@ -250,6 +252,7 @@ export type Modules = {
 	Walls: any?,
 	Floors: any?,
 	Objects: any?,
+	Rooms: any?,
 	Handles: any?,
 	Highlights: any?,
 }
@@ -273,10 +276,14 @@ export type Context = {
 	GetViewSettings: () -> any,
 	GetSelectionType: () -> SelectionType,
 	GetSelectionPart: () -> Instance?,
+	GetSelectionData: () -> any?,
+	SetRoomSelection: (any?) -> (),
 	GetSelectionSnapshot: () -> any?,
 	GetLastInputInfo: () -> any?,
 	GetPlotModelFromPlotData: (any, SelectionType, number, number) -> Model?,
 	SelectPlotModelByIdAsync: (any, SelectionType, number, number, number?) -> (),
+	BuildFloor: (any, any?) -> any?,
+	SelectAfterFloorBuild: (any, number, {Vector2int16}, any?) -> (),
 	GetSnappedPoint: (BasePart, Vector3) -> Vector2int16,
 	SnapWallEndPoint: (Vector2 | Vector2int16, Vector2) -> Vector2int16,
 	ToSnappedVector2int16: (Vector2) -> Vector2int16,
@@ -340,6 +347,7 @@ Context.Enums = table.freeze({
 		Floor = "Floor",
 		Wall = "Wall",
 		Object = "Object",
+		Room = "Room",
 	}),
 	DesignSubMode = table.freeze({
 		Normal = "Normal",
@@ -362,6 +370,7 @@ Context.Enums = table.freeze({
 		Wall = "Wall",
 		Floor = "Floor",
 		Object = "Object",
+		Room = "Room",
 	}),
 }) :: Enums
 

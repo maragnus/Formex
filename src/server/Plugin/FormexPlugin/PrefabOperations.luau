@@ -156,7 +156,7 @@ local function ensureModelBase(root: Model)
 	end
 
 	local boundsCFrame, boundsSize = prefabModel:GetBoundingBox()
-	local base = Instance.new("Part")
+	local base = Instance.new("Part", prefabModel)
 	base.Name = "ModelBase"
 	base.Anchored = true
 	base.CanCollide = false
@@ -168,7 +168,6 @@ local function ensureModelBase(root: Model)
 	base.Size = Vector3.new(boundsSize.X, 0.001, boundsSize.Z)
 	local minY = boundsCFrame.Position.Y - (boundsSize.Y / 2)
 	base.CFrame = CFrame.new(boundsCFrame.Position.X, minY + 0.0005, boundsCFrame.Position.Z)
-	base.Parent = prefabModel
 	prefabModel.PrimaryPart = base
 end
 

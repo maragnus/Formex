@@ -9,8 +9,10 @@ Exports:
 - UpdateFloorEdgePreview(plotInfo, levelIndex, points, isValid, raiseHeight): ()
 - UpdateFloorHolePreview(plotInfo, levelIndex, points, raiseHeight): ()
 - UpdateWallEdgePreview(plotInfo, levelIndex, startPoint, endPoint, isValid): ()
+- UpdateMergeEdgePreview(plotInfo, levelIndex, segments, color): ()
 - ClearFloorEdgePreview(): ()
 - ClearFloorHolePreview(): ()
+- ClearMergeEdgePreview(): ()
 ]]
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 local FormexDesignHighlights = {}
@@ -33,6 +35,8 @@ local edgeParts = {} :: {BasePart}
 local edgeHighlights = {} :: {Highlight}
 local holeEdgeParts = {} :: {BasePart}
 local holeEdgeHighlights = {} :: {Highlight}
+local mergeEdgeParts = {} :: {BasePart}
+local mergeEdgeHighlights = {} :: {Highlight}
 
 function FormexDesignHighlights.Init()
 	local ctx = Context.Get()
@@ -241,6 +245,68 @@ local function updateEdgePreview(
 	end
 end
 
+local function updateSegmentPreview(
+	plotInfo: any,
+	levelIndex: number,
+	segments: {{Start: Vector2int16, End: Vector2int16}},
+	color: Color3,
+	edgeList: {BasePart},
+	highlightList: {Highlight},
+	nameSuffix: string
+)
+	if not plotInfo or not plotInfo.PlotPart or not segments or #segments == 0 then
+		clearEdgePreviews(edgeList, highlightList)
+		return
+	end
+
+	local thickness = 0.15
+	local elevation = 0.1
+	local y = Formex.LevelHeight * (levelIndex - 1) + elevation
+
+	for index, segment in ipairs(segments) do
+		local startPoint = segment.Start
+		local endPoint = segment.End
+		local dir = Vector3.new(endPoint.X - startPoint.X, 0, endPoint.Y - startPoint.Y)
+		local part, highlight = ensureEdgePreview(edgeList, highlightList, index, nameSuffix)
+
+		part.Color = color
+		highlight.FillColor = color
+		highlight.OutlineColor = color
+
+		if dir.Magnitude <= Constants.Epsilon then
+			part.Size = Vector3.new(0, 0, 0)
+			part.CFrame = plotInfo.PlotPart.CFrame * CFrame.new(0, -10000, 0)
+			continue
+		end
+
+		local mid = Vector3.new((startPoint.X + endPoint.X) / 2, y, (startPoint.Y + endPoint.Y) / 2)
+		local up = dir.Unit
+		local right = Vector3.yAxis:Cross(up)
+		if right.Magnitude <= Constants.Epsilon then
+			right = Vector3.xAxis
+		else
+			right = right.Unit
+		end
+		local back = up:Cross(right)
+
+		part.Size = Vector3.new(thickness, dir.Magnitude, thickness)
+		part.CFrame = plotInfo.PlotPart.CFrame * CFrame.fromMatrix(mid, right, up, back)
+	end
+
+	for index = #segments + 1, #edgeList do
+		local part = edgeList[index]
+		if part and part.Parent then
+			part:Destroy()
+		end
+		local highlight = highlightList[index]
+		if highlight and highlight.Parent then
+			highlight:Destroy()
+		end
+		edgeList[index] = nil
+		highlightList[index] = nil
+	end
+end
+
 function FormexDesignHighlights.UpdateFloorEdgePreview(
 	plotInfo: any,
 	levelIndex: number,
@@ -253,6 +319,11 @@ end
 
 function FormexDesignHighlights.UpdateWallEdgePreview(plotInfo: any, levelIndex: number, startPoint: Vector2int16, endPoint: Vector2int16, isValid: boolean)
 	updateEdgePreview(plotInfo, levelIndex, { startPoint, endPoint }, isValid, false, nil, edgeParts, edgeHighlights, "Wall")
+end
+
+function FormexDesignHighlights.UpdateMergeEdgePreview(plotInfo: any, levelIndex: number, segments: {{Start: Vector2int16, End: Vector2int16}}, color: Color3?)
+	local resolved = color or Constants.HandleAddColor
+	updateSegmentPreview(plotInfo, levelIndex, segments, resolved, mergeEdgeParts, mergeEdgeHighlights, "Merge")
 end
 
 function FormexDesignHighlights.ClearFloorEdgePreview()
@@ -270,6 +341,10 @@ end
 
 function FormexDesignHighlights.ClearFloorHolePreview()
 	clearEdgePreviews(holeEdgeParts, holeEdgeHighlights)
+end
+
+function FormexDesignHighlights.ClearMergeEdgePreview()
+	clearEdgePreviews(mergeEdgeParts, mergeEdgeHighlights)
 end
 
 return FormexDesignHighlights

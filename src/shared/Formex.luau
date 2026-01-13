@@ -27,8 +27,21 @@ export type PlotSaveInfo = {
 
 export type LevelArray = {[number]: LevelData}
 
+--[[
+	PlotData representations the full data structure of a Formex plot,
+	including all levels, walls, floors, objects, and rooms.
+
+	It is synchronized between the client and server.
+	Client-side uses Attribute subscriptions to maintain the in-memory structures.
+
+	The new helper properties (WallFolder, FloorFolder, ObjectFolder, ConnectedWalls, LevelData, etc.)
+	are not serialized and are only used at runtime to reference the actual Roblox instances.
+    - TODO: These are not implemented yet
+]]
+
 -- Stored representation
 export type PlotData = {
+	-- Serialized properties
 	PlotId: number,
 	UserId: number,
 	SaveId: number,
@@ -44,13 +57,22 @@ export type PlotData = {
 }
 
 export type LevelData = {
+	-- Serialized properties
+	LevelIndex: number,
 	Walls: {[number]: WallData}, -- {[WallId]: WallData}
 	Floors: {[number]: FloorData}, -- {[FloorId]: FloorData}
 	Objects: {[number]: ObjectData}, -- {[ObjectId]: ObjectData}
-	Part: Part?
+	Rooms: {[number]: RoomData}, -- {[RoomId]: RoomData}
+
+	-- Runtime properties
+	Part: Part,
+	WallFolder: Folder,
+	FloorFolder: Folder,
+	ObjectFolder: Folder,
 }
 
 export type WallData = {
+	-- Serialized properties
 	WallId: number,
 	Level: number,
 	Start: Vector2int16,
@@ -66,14 +88,22 @@ export type WallData = {
 	BackTopMaterial: number?, -- Formex.Materials[index]
 	BackBottomColor: Color3?,
 	BackBottomMaterial: number?, -- Formex.Materials[index]
+
+	-- Runtime properties
 	Part: Model?,
 	FrontPart: Part?,
 	BackPart: Part?,
 	FrontTopPart: Part?,
-	BackTopPart: Part?
+	BackTopPart: Part?,
+	LevelData: number?, -- HELPER: LevelIndex
+	ConnectedWalls: {number}, -- HELPER: walls connected to start or end point
+	ConnectedFloors: {number}, -- HELPER: floors connected to start or end point
+	ConnectedRoomFront: number?, -- HELPER: rooms on either side of wall
+	ConnectedRoomBack: number?, -- HELPER: rooms on either side of wall
 }
 
 export type FloorData = {
+	-- Serialized properties
 	FloorId: number,
 	LevelIndex: number,
 	Points: {Vector2int16},
@@ -84,6 +114,8 @@ export type FloorData = {
 	CeilingColor: Color3?,
 	FoundationMaterial: number?, -- Formex.Materials[index]
 	FoundationColor: Color3?,
+
+	-- Runtime properties
 	Model: Model?,
 	FloorPart: BasePart?,
 	FoundationPart: BasePart?,
@@ -91,9 +123,14 @@ export type FloorData = {
 	FloorClientPart: BasePart?,
 	FoundationClientPart: BasePart?,
 	CeilingClientPart: BasePart?,
+	LevelData: number?, -- HELPER: LevelIndex
+	ConnectedWalls: {number}, -- HELPER: walls connected to start or end point
+	ConnectedFloors: {number}, -- HELPER: floors connected to start or end point
+	ConnectedRooms: {number}, -- HELPER: rooms on either side of wall
 }
 
 export type ObjectData = {
+	-- Serialized properties
 	ObjectId: number,
 	Level: number,
 	Position: Vector3,
@@ -102,15 +139,17 @@ export type ObjectData = {
 	WallId: number?, -- if mounted to a wall
 	Design: {[number]: number}, -- [part index]: material index
 	DesignColors: {[number]: Color3},
-	IsPortal: boolean, -- calculated from Prefab.ObjectMount=Door, indicates a doorway into adjacent room
-	Prefab: ObjectPrefab,
 	PrefabName: string?,
 	Properties: {[string]: any}?,
+
+	-- Runtime properties
+	IsPortal: boolean, -- calculated from Prefab.ObjectMount=Door, indicates a doorway into adjacent room
+	Prefab: ObjectPrefab,
 	Part: Model?,
 	Subtract: Model?,
 	ObjectModel: Model?,
 	SubtractModel: Model?,
-	DesignParts: {[number]: {BasePart}}, -- [part index]: {parts}
+	DesignParts: {[number]: {BasePart}}, -- [part index]: {parts}	
 }
 
 export type BuildChange = {
@@ -149,9 +188,10 @@ export type RoomData = {
 	RoomId: number,
 	LevelIndex: number,
 	Points: {Vector2int16},
-	Wall: {[number]: WallData}, -- [WallId]: WallData
-	Floor: {[number]: FloorData}, -- [FloorId]: FloorData
-	Object: {[number]: ObjectData}, -- [ObjectId]: ObjectData
+	EdgeWalls: {number?},
+	Walls: {number},  -- HELPER: [WallId]
+	Floors: {number}, -- HELPER: [FloorId]
+	Objects: {number}, -- HELPER: [ObjectId]
 	NeighboringRooms: {[number]: RoomConnection}, -- [RoomId]: RoomData
 	Area: number,
 	IsExterior: boolean,
@@ -162,7 +202,7 @@ export type RoomConnection = {
 	Room1: RoomData,
 	Room2: RoomData,
 	IsConnected: boolean,
-	Portals: {[number]: ObjectData}
+	Portals: {number} -- HELPER: [ObjectId]
 }
 
 export type SelectionSnapshot = {
@@ -297,6 +337,9 @@ Formex.Materials = {} :: {number: MaterialInfo}
 Formex.Walls = {} :: {}
 Formex.Floors = {} :: {}
 Formex.Furniture = {} :: {ObjectPrefab}
+Formex.Poly = {} :: {}
+Formex.Rooms = {} :: {}
+Formex.Transaction = {} :: {}
 
 -- Network function names
 Formex.Function = table.freeze({

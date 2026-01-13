@@ -909,7 +909,7 @@ local function shouldCarve(prefab: Formex.ObjectPrefab?): boolean
 	return prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window
 end
 
-function Formex.Objects.CarveWallObjects(plotData: Formex.PlotData, wallData: Formex.WallData)
+function Formex.Objects.CarveWallObjects(plotData: Formex.PlotData, wallData: Formex.WallData, plotPart: BasePart?)
 	if not plotData or not wallData or not wallData.Part then
 		return
 	end
@@ -946,10 +946,6 @@ function Formex.Objects.CarveWallObjects(plotData: Formex.PlotData, wallData: Fo
 		end
 	end
 
-	if #subtractParts == 0 then
-		return
-	end
-
 	local wallModel = wallData.Part
 	local partNames = {
 		Formex.Walls and Formex.Walls.FrontPartName or "Front",
@@ -958,13 +954,43 @@ function Formex.Objects.CarveWallObjects(plotData: Formex.PlotData, wallData: Fo
 		"BackTop",
 	}
 
+	local function hasCarvedParts(): boolean
+		for _, name in ipairs(partNames) do
+			local part = wallModel:FindFirstChild(name)
+			if part and part:IsA("BasePart") and part:IsA("PartOperation") then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function resetWallParts()
+		for _, name in ipairs(partNames) do
+			local part = wallModel:FindFirstChild(name)
+			if part and part:IsA("BasePart") then
+				part:Destroy()
+			end
+		end
+		Formex.Walls.Edit(wallData, plotPart)
+	end
+
+	if plotPart then
+		if #subtractParts > 0 or hasCarvedParts() then
+			resetWallParts()
+		end
+	end
+
+	if #subtractParts == 0 then
+		return
+	end
+
 	for _, name in ipairs(partNames) do
 		local wallPart = wallModel:FindFirstChild(name)
 		if wallPart and wallPart:IsA("BasePart") then
 			local carved = wallPart:SubtractAsync(subtractParts)
 			if carved then
 				carved.Name = wallPart.Name
-				carved.Anchored = wallPart.Anchored
+				carved.Anchored = true
 				carved.Material = wallPart.Material
 				carved.MaterialVariant = wallPart.MaterialVariant
 				carved.Color = wallPart.Color
@@ -1006,6 +1032,7 @@ function Formex.Objects.CreateObject(parent: Instance, objectData: Formex.Object
 	objectData.Prefab = prefab
 	objectData.PrefabName = prefab.PrefabName
 	objectData.Side = resolveObjectSide(objectData.Side)
+	objectData.IsPortal = prefab.ObjectMount == Formex.MountType.Door
 
 	local objectModel = objectModelTemplate:Clone()
 	objectModel.Name = "Object"
@@ -1051,6 +1078,7 @@ function Formex.Objects.EditObject(objectData: Formex.ObjectData, plotPart: Base
 	end
 
 	if prefab then
+		objectData.IsPortal = prefab.ObjectMount == Formex.MountType.Door
 		Formex.Objects.EnsureDesignDefaults(objectData, prefab)
 	end
 

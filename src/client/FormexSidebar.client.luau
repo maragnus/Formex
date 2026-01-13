@@ -741,6 +741,9 @@ local function buildSidebar()
 		Select = createIconButton(modeRow, "Select", Formex.Icons.DesignSelect, function()
 			FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Select })
 		end),
+		Room = createIconButton(modeRow, "Room", Formex.Icons.DesignRoom, function()
+			FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Room })
+		end),
 		Wall = createIconButton(modeRow, "Wall", Formex.Icons.DesignWalls, function()
 			FormexDesign.UpdateDesignState({ Mode = FormexDesign.DesignMode.Wall })
 		end),
@@ -1465,6 +1468,7 @@ local function refreshUI()
     setIconButtonActive(ui.DesignModeButtons.Wall, designMode == FormexDesign.DesignMode.Wall)
     setIconButtonActive(ui.DesignModeButtons.Floor, designMode == FormexDesign.DesignMode.Floor)
     setIconButtonActive(ui.DesignModeButtons.Object, designMode == FormexDesign.DesignMode.Object)
+    setIconButtonActive(ui.DesignModeButtons.Room, designMode == FormexDesign.DesignMode.Room)
     setIconButtonActive(ui.DesignModeButtons.Select, designMode == FormexDesign.DesignMode.Select)
 
     local showSubModes = designMode == FormexDesign.DesignMode.Wall
@@ -1476,7 +1480,8 @@ local function refreshUI()
     setIconButtonActive(ui.SubModeButtons.Dropper, designSubMode == FormexDesign.DesignSubMode.Dropper)
     if ui.FloorModeButtons then
         local floorMode = designState.Floor.Mode
-        local showFloorModes = designMode == FormexDesign.DesignMode.Floor and designSubMode == FormexDesign.DesignSubMode.Normal
+        local showFloorModes = (designMode == FormexDesign.DesignMode.Floor or designMode == FormexDesign.DesignMode.Room)
+            and designSubMode == FormexDesign.DesignSubMode.Normal
         ui.FloorModeButtons.Manual.Button.Visible = showFloorModes
         ui.FloorModeButtons.Autofill.Button.Visible = showFloorModes
         setIconButtonActive(ui.FloorModeButtons.Manual, floorMode == FormexDesign.FloorMode.Manual)
@@ -1484,7 +1489,7 @@ local function refreshUI()
     end
 	if ui.EditModeButtons and ui.EditModeRow then
 		local editMode = designState.EditMode
-		local showEditModes = (designMode == FormexDesign.DesignMode.Wall or designMode == FormexDesign.DesignMode.Floor)
+		local showEditModes = (designMode == FormexDesign.DesignMode.Wall or designMode == FormexDesign.DesignMode.Floor or designMode == FormexDesign.DesignMode.Room)
 			and designSubMode == FormexDesign.DesignSubMode.Normal
 		ui.EditModeRow.Visible = inDesign and showEditModes
 		setIconButtonActive(ui.EditModeButtons.PointMove, editMode == FormexDesign.EditMode.PointMove)
@@ -1623,6 +1628,9 @@ local function refreshUI()
         ui.DesignContentHint.Visible = true
     elseif designMode == FormexDesign.DesignMode.Floor then
         ui.DesignContentTitle.Text = "Floor Materials"
+        ui.FloorContent.Visible = true
+    elseif designMode == FormexDesign.DesignMode.Room then
+        ui.DesignContentTitle.Text = "Room Materials"
         ui.FloorContent.Visible = true
     elseif designMode == FormexDesign.DesignMode.Object then
         ui.DesignContentTitle.Text = "Objects"

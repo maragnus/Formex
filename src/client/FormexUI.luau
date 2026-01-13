@@ -1206,7 +1206,7 @@ function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((ma
         local materialInfo = materialList[selectedMaterialId]
         if materialInfo then
             selectedLabel.Text = materialInfo.Name
-            local previewId = (materialInfo :: any)[previewKey]
+            local previewId = materialInfo[previewKey]
             preview.ImageContent = Content.fromAssetId(previewId or 0)
         else
             selectedLabel.Text = "None"
@@ -1269,7 +1269,7 @@ function FormexUI.MaterialSelect(options: MaterialSelectOptions, onChanged: ((ma
                 image.Name = "Preview"
                 image.BackgroundTransparency = 1
                 image.Size = UDim2.new(0, 64, 0, 64)
-                local previewId = (materialInfo :: any)[previewKey]
+                local previewId = materialInfo[previewKey]
                 image.ImageContent = Content.fromAssetId(previewId or 0)
                 image.ScaleType = Enum.ScaleType.Fit
 

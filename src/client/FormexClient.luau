@@ -9,6 +9,9 @@ Formex.Util = require(FormexFolder:WaitForChild("FormexUtil"))
 Formex.Floors = require(FormexFolder:WaitForChild("FormexFloors"))
 Formex.Walls = require(FormexFolder:WaitForChild("FormexWalls"))
 Formex.Objects = require(FormexFolder:WaitForChild("FormexObjects"))
+Formex.Poly = require(FormexFolder:WaitForChild("FormexPoly"))
+Formex.Rooms = require(FormexFolder:WaitForChild("FormexRooms"))
+Formex.Transaction = require(FormexFolder:WaitForChild("FormexTransaction"))
 require(FormexFolder:WaitForChild("FormexData"))
 
 local FormexFunctions: RemoteFunction = FormexFolder:WaitForChild("FormexFunctions")
@@ -41,6 +44,7 @@ local EmptyPlotData: Formex.PlotData = {
     NextId = 1,
     FoundationMaterial = Formex.DefaultFoundationMaterial,
     Levels = {},
+    Rooms = {},
     LevelsUnlocked = 0,
     SegmentsUnlocked = 0,
     Permissions = {},
@@ -130,6 +134,31 @@ type PlotSubscription = {
 
 local plotSubscriptions = {} :: {[BasePart]: PlotSubscription}
 
+type PredictionState = {
+	PlotInfo: PlotInfo,
+	PlotState: PlotSubscription,
+	LevelsTouched: {number},
+	OriginalLevels: {[number]: Formex.LevelData?},
+	OriginalLevelMissing: {[number]: boolean},
+	UsedLevelSwap: boolean,
+	SnapshotWalls: {[number]: {[number]: Formex.WallData}},
+	SnapshotFloors: {[number]: {[number]: Formex.FloorData}},
+	SnapshotObjects: {[number]: {[number]: Formex.ObjectData}},
+	RemovedWalls: {[number]: {[number]: Formex.WallData}},
+	RemovedFloors: {[number]: {[number]: Formex.FloorData}},
+	RemovedObjects: {[number]: {[number]: Formex.ObjectData}},
+	HiddenParts: {[BasePart]: {Transparency: number, CanCollide: boolean, CanQuery: boolean, CanTouch: boolean}},
+	CreatedModels: {Instance},
+	PredictedModels: {[string]: Model},
+	OriginalNextId: number?,
+}
+
+local predictedModelsByType = {
+	Wall = {} :: {[string]: Model},
+	Floor = {} :: {[string]: Model},
+	Object = {} :: {[string]: Model},
+}
+
 local defaultColor = Color3.new(1, 1, 1)
 local meshClientSuffix = " (Client)"
 
@@ -157,7 +186,551 @@ for _, name in ipairs(floorGeometryAttributeNames) do
     floorGeometryAttributes[name] = true
 end
 
+local function getPredictionKey(levelIndex: number, partId: number | string): string
+	return tostring(levelIndex) .. ":" .. tostring(partId)
+end
+
+local function isPredictionModel(model: Instance?): boolean
+	if not model or not model:IsA("Model") then
+		return false
+	end
+	return model:GetAttribute("IsPrediction") == true
+end
+
+local function reconcilePredictedModel(kind: "Wall" | "Floor" | "Object", levelIndex: number, partId: number | string, incoming: Model)
+	local map = predictedModelsByType[kind]
+	if not map then
+		return
+	end
+	local key = getPredictionKey(levelIndex, partId)
+	local predicted = map[key]
+	if predicted and predicted ~= incoming then
+		map[key] = nil
+		if predicted.Parent then
+			predicted:Destroy()
+		end
+	end
+end
+
+local function registerPredictedModel(state: PredictionState, kind: "Wall" | "Floor" | "Object", levelIndex: number, partId: number | string, model: Model)
+	local map = predictedModelsByType[kind]
+	if not map then
+		return
+	end
+	local key = getPredictionKey(levelIndex, partId)
+	map[key] = model
+	state.PredictedModels[kind .. ":" .. key] = model
+end
+
+local function getPlotState(plotInfo: PlotInfo?): PlotSubscription?
+	if not plotInfo or not plotInfo.PlotPart then
+		return nil
+	end
+	return plotSubscriptions[plotInfo.PlotPart]
+end
+
+local function getLevelPart(plotPart: BasePart?, levelIndex: number): BasePart?
+	if not plotPart then
+		return nil
+	end
+	local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
+	if levelPart and levelPart:IsA("BasePart") then
+		return levelPart
+	end
+	return nil
+end
+
+local function getLevelFolder(plotPart: BasePart?, levelIndex: number, name: string): Folder?
+	local levelPart = getLevelPart(plotPart, levelIndex)
+	if not levelPart then
+		return nil
+	end
+	local folder = levelPart:FindFirstChild(name)
+	if folder and folder:IsA("Folder") then
+		return folder
+	end
+	return nil
+end
+
+local function cloneWallData(wall: Formex.WallData): Formex.WallData
+	return table.clone(wall)
+end
+
+local function cloneFloorData(floor: Formex.FloorData): Formex.FloorData
+	local clone = table.clone(floor)
+	if floor.Points then
+		clone.Points = table.clone(floor.Points)
+	end
+	return clone
+end
+
+local function cloneObjectData(objectData: Formex.ObjectData): Formex.ObjectData
+	local clone = table.clone(objectData)
+	if objectData.Design then
+		clone.Design = table.clone(objectData.Design)
+	end
+	if objectData.DesignColors then
+		clone.DesignColors = table.clone(objectData.DesignColors)
+	end
+	if objectData.Properties then
+		clone.Properties = table.clone(objectData.Properties)
+	end
+	return clone
+end
+
+local function capturePredictionSnapshot(plotData: Formex.PlotData, levelsTouched: {number})
+	local snapshotWalls = {} :: {[number]: {[number]: Formex.WallData}}
+	local snapshotFloors = {} :: {[number]: {[number]: Formex.FloorData}}
+	local snapshotObjects = {} :: {[number]: {[number]: Formex.ObjectData}}
+	for _, levelIndex in ipairs(levelsTouched) do
+		local levelData = plotData.Levels and plotData.Levels[levelIndex]
+		if levelData then
+			local walls = {}
+			for wallId, wall in pairs(levelData.Walls or {}) do
+				walls[wallId] = cloneWallData(wall)
+			end
+			snapshotWalls[levelIndex] = walls
+
+			local floors = {}
+			for floorId, floor in pairs(levelData.Floors or {}) do
+				floors[floorId] = cloneFloorData(floor)
+			end
+			snapshotFloors[levelIndex] = floors
+
+			local objects = {}
+			for objectId, objectData in pairs(levelData.Objects or {}) do
+				objects[objectId] = cloneObjectData(objectData)
+			end
+			snapshotObjects[levelIndex] = objects
+		end
+	end
+	return snapshotWalls, snapshotFloors, snapshotObjects
+end
+
+local function setModelHidden(state: PredictionState, model: Model, hidden: boolean)
+	for _, child in ipairs(model:GetDescendants()) do
+		if child:IsA("BasePart") then
+			if hidden then
+				if not state.HiddenParts[child] then
+					state.HiddenParts[child] = {
+						Transparency = child.Transparency,
+						CanCollide = child.CanCollide,
+						CanQuery = child.CanQuery,
+						CanTouch = child.CanTouch,
+					}
+				end
+				child.Transparency = 1
+				child.CanCollide = false
+				child.CanQuery = false
+				child.CanTouch = false
+			else
+				local original = state.HiddenParts[child]
+				if original then
+					child.Transparency = original.Transparency
+					child.CanCollide = original.CanCollide
+					child.CanQuery = original.CanQuery
+					child.CanTouch = original.CanTouch
+					state.HiddenParts[child] = nil
+				end
+			end
+		end
+	end
+end
+
+local function restoreHiddenParts(state: PredictionState)
+	for part, original in pairs(state.HiddenParts) do
+		if part and part.Parent then
+			part.Transparency = original.Transparency
+			part.CanCollide = original.CanCollide
+			part.CanQuery = original.CanQuery
+			part.CanTouch = original.CanTouch
+		end
+	end
+	table.clear(state.HiddenParts)
+end
+
+local function findWallModel(plotInfo: PlotInfo, levelIndex: number, wallId: number): Model?
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
+	local wallData = levelData and levelData.Walls and levelData.Walls[wallId]
+	if wallData and wallData.Part and wallData.Part:IsA("Model") then
+		return wallData.Part
+	end
+	local folder = getLevelFolder(plotInfo.PlotPart, levelIndex, "Walls")
+	if folder then
+		local model = folder:FindFirstChild(tostring(wallId))
+		if model and model:IsA("Model") then
+			return model
+		end
+	end
+	return nil
+end
+
+local function findFloorModel(plotInfo: PlotInfo, levelIndex: number, floorId: number): Model?
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
+	local floorData = levelData and levelData.Floors and levelData.Floors[floorId]
+	if floorData and floorData.Model and floorData.Model:IsA("Model") then
+		return floorData.Model
+	end
+	local folder = getLevelFolder(plotInfo.PlotPart, levelIndex, "Floors")
+	if folder then
+		local model = folder:FindFirstChild(tostring(floorId))
+		if model and model:IsA("Model") then
+			return model
+		end
+	end
+	return nil
+end
+
+local function findObjectModel(plotInfo: PlotInfo, levelIndex: number, objectId: number | string): Model?
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
+	local objectData = levelData and levelData.Objects and levelData.Objects[objectId]
+	if objectData and objectData.Part and objectData.Part:IsA("Model") then
+		return objectData.Part
+	end
+	local folder = getLevelFolder(plotInfo.PlotPart, levelIndex, "Objects")
+	if folder then
+		local model = folder:FindFirstChild(tostring(objectId))
+		if model and model:IsA("Model") then
+			return model
+		end
+	end
+	return nil
+end
+
+local function applyPrediction(plotInfo: PlotInfo, validation: any): PredictionState?
+	local plotState = getPlotState(plotInfo)
+	if not plotState then
+		return nil
+	end
+
+	local plotData = plotState.Data
+	local levelsTouched = validation.LevelsTouched or {}
+	local snapshotWalls, snapshotFloors, snapshotObjects = capturePredictionSnapshot(plotData, levelsTouched)
+
+	local state: PredictionState = {
+		PlotInfo = plotInfo,
+		PlotState = plotState,
+		LevelsTouched = levelsTouched,
+	SnapshotWalls = snapshotWalls,
+	SnapshotFloors = snapshotFloors,
+	SnapshotObjects = snapshotObjects,
+	OriginalLevels = {},
+	OriginalLevelMissing = {},
+	UsedLevelSwap = false,
+	RemovedWalls = {},
+	RemovedFloors = {},
+	RemovedObjects = {},
+	HiddenParts = {},
+	CreatedModels = {},
+		PredictedModels = {},
+		OriginalNextId = plotData.NextId,
+	}
+
+	if validation.NextId then
+		plotData.NextId = validation.NextId
+	end
+
+	if validation.Levels then
+		plotData.Levels = plotData.Levels or {}
+		for _, levelIndex in ipairs(levelsTouched) do
+			local originalLevel = plotData.Levels[levelIndex]
+			if originalLevel == nil then
+				state.OriginalLevelMissing[levelIndex] = true
+			else
+				state.OriginalLevels[levelIndex] = originalLevel
+			end
+			local validatedLevel = validation.Levels[levelIndex]
+			if validatedLevel then
+				plotData.Levels[levelIndex] = validatedLevel
+			end
+		end
+		state.UsedLevelSwap = true
+	end
+
+	local plotPart = plotInfo.PlotPart
+
+	local function getValidatedWall(levelIndex: number, wallId: number): Formex.WallData?
+		local levelData = validation.Levels and validation.Levels[levelIndex]
+		return levelData and levelData.Walls and levelData.Walls[wallId] or nil
+	end
+
+	local function getValidatedFloor(levelIndex: number, floorId: number): Formex.FloorData?
+		local levelData = validation.Levels and validation.Levels[levelIndex]
+		return levelData and levelData.Floors and levelData.Floors[floorId] or nil
+	end
+
+	local function getValidatedObject(levelIndex: number, objectId: number | string): Formex.ObjectData?
+		local levelData = validation.Levels and validation.Levels[levelIndex]
+		return levelData and levelData.Objects and levelData.Objects[objectId] or nil
+	end
+
+	for _, entry in ipairs(validation.UpdatedWalls or {}) do
+		local levelIndex = entry.Level
+		local wallId = entry.WallId
+		local wall = getValidatedWall(levelIndex, wallId)
+		if wall then
+			local model = wall.Part or findWallModel(plotInfo, levelIndex, wallId)
+			if model then
+				wall.Part = model
+				Formex.Walls.Edit(wall, plotPart, false)
+			end
+		end
+	end
+
+	for _, entry in ipairs(validation.AddedWalls or {}) do
+		local levelIndex = entry.Level
+		local wallId = entry.WallId
+		local wall = getValidatedWall(levelIndex, wallId)
+		if wall then
+			local folder = getLevelFolder(plotPart, levelIndex, "Walls")
+			if folder then
+				local model = Formex.Walls.Create(wall, plotPart)
+				if model then
+					model:SetAttribute("IsPrediction", true)
+					model.Parent = folder
+					table.insert(state.CreatedModels, model)
+					registerPredictedModel(state, "Wall", levelIndex, wallId, model)
+				end
+			end
+		end
+	end
+
+	for _, entry in ipairs(validation.RemovedWalls or {}) do
+		local levelIndex = entry.Level
+		local wallId = entry.WallId
+		local model = findWallModel(plotInfo, levelIndex, wallId)
+		if model then
+			setModelHidden(state, model, true)
+		end
+		local levelData = plotData.Levels and plotData.Levels[levelIndex]
+		if levelData and levelData.Walls and levelData.Walls[wallId] then
+			state.RemovedWalls[levelIndex] = state.RemovedWalls[levelIndex] or {}
+			state.RemovedWalls[levelIndex][wallId] = levelData.Walls[wallId]
+			levelData.Walls[wallId] = nil
+		end
+	end
+
+	for _, entry in ipairs(validation.UpdatedFloors or {}) do
+		local levelIndex = entry.Level
+		local floorId = entry.FloorId
+		local floor = getValidatedFloor(levelIndex, floorId)
+		if floor then
+			local model = floor.Model or findFloorModel(plotInfo, levelIndex, floorId)
+			if model then
+				floor.Model = model
+				Formex.Floors.Edit(floor, plotPart, nil, plotData)
+			end
+		end
+	end
+
+	for _, entry in ipairs(validation.AddedFloors or {}) do
+		local levelIndex = entry.Level
+		local floorId = entry.FloorId
+		local floor = getValidatedFloor(levelIndex, floorId)
+		if floor then
+			local folder = getLevelFolder(plotPart, levelIndex, "Floors")
+			if folder then
+				local model = Formex.Floors.Create(floor, plotPart, folder, plotData)
+				if model then
+					model:SetAttribute("IsPrediction", true)
+					table.insert(state.CreatedModels, model)
+					registerPredictedModel(state, "Floor", levelIndex, floorId, model)
+				end
+			end
+		end
+	end
+
+	for _, entry in ipairs(validation.RemovedFloors or {}) do
+		local levelIndex = entry.Level
+		local floorId = entry.FloorId
+		local model = findFloorModel(plotInfo, levelIndex, floorId)
+		if model then
+			setModelHidden(state, model, true)
+		end
+		local levelData = plotData.Levels and plotData.Levels[levelIndex]
+		if levelData and levelData.Floors and levelData.Floors[floorId] then
+			state.RemovedFloors[levelIndex] = state.RemovedFloors[levelIndex] or {}
+			state.RemovedFloors[levelIndex][floorId] = levelData.Floors[floorId]
+			levelData.Floors[floorId] = nil
+		end
+	end
+
+	for _, entry in ipairs(validation.UpdatedObjects or {}) do
+		local levelIndex = entry.Level
+		local objectId = entry.ObjectId
+		local objectData = getValidatedObject(levelIndex, objectId)
+		if objectData then
+			local model = objectData.Part or findObjectModel(plotInfo, levelIndex, objectId)
+			if model then
+				objectData.Part = model
+				Formex.Objects.EditObject(objectData, plotPart, plotData)
+			end
+		end
+	end
+
+	for _, entry in ipairs(validation.AddedObjects or {}) do
+		local levelIndex = entry.Level
+		local objectId = entry.ObjectId
+		local objectData = getValidatedObject(levelIndex, objectId)
+		if objectData then
+			local folder = getLevelFolder(plotPart, levelIndex, "Objects")
+			if folder then
+				local model = Formex.Objects.CreateObject(folder, objectData, plotPart, plotData)
+				if model then
+					model:SetAttribute("IsPrediction", true)
+					table.insert(state.CreatedModels, model)
+					registerPredictedModel(state, "Object", levelIndex, objectId, model)
+				end
+			end
+		end
+	end
+
+	for _, entry in ipairs(validation.RemovedObjects or {}) do
+		local levelIndex = entry.Level
+		local objectId = entry.ObjectId
+		local model = findObjectModel(plotInfo, levelIndex, objectId)
+		if model then
+			setModelHidden(state, model, true)
+		end
+		local levelData = plotData.Levels and plotData.Levels[levelIndex]
+		if levelData and levelData.Objects and levelData.Objects[objectId] then
+			state.RemovedObjects[levelIndex] = state.RemovedObjects[levelIndex] or {}
+			state.RemovedObjects[levelIndex][objectId] = levelData.Objects[objectId]
+			levelData.Objects[objectId] = nil
+		end
+	end
+
+	for _, levelIndex in ipairs(levelsTouched) do
+		local levelData = plotData.Levels and plotData.Levels[levelIndex]
+		local validatedLevel = validation.Levels and validation.Levels[levelIndex]
+		if levelData and levelData.Objects and validatedLevel and validatedLevel.Objects then
+			for objectId, objectData in pairs(validatedLevel.Objects) do
+				local current = levelData.Objects[objectId]
+				if current and current.Part then
+					objectData.Part = current.Part
+					objectData.ObjectModel = current.ObjectModel
+					objectData.SubtractModel = current.SubtractModel
+					objectData.DesignParts = current.DesignParts
+					Formex.Objects.EditObject(objectData, plotPart, plotData)
+				end
+			end
+		end
+	end
+
+	if Formex.Rooms and Formex.Rooms.RebuildPlotRooms then
+		Formex.Rooms.RebuildPlotRooms(Formex, plotData)
+	end
+
+	return state
+end
+
+local function rollbackPrediction(state: PredictionState?)
+	if not state then
+		return
+	end
+	local plotInfo = state.PlotInfo
+	local plotData = plotInfo.PlotData
+	local plotPart = plotInfo.PlotPart
+
+	if state.OriginalNextId then
+		plotData.NextId = state.OriginalNextId
+	end
+
+	if state.UsedLevelSwap then
+		plotData.Levels = plotData.Levels or {}
+		for _, levelIndex in ipairs(state.LevelsTouched or {}) do
+			if state.OriginalLevelMissing[levelIndex] then
+				plotData.Levels[levelIndex] = nil
+			else
+				local originalLevel = state.OriginalLevels[levelIndex]
+				if originalLevel then
+					plotData.Levels[levelIndex] = originalLevel
+				end
+			end
+		end
+	else
+		for levelIndex, walls in pairs(state.RemovedWalls) do
+			local levelData = plotData.Levels and plotData.Levels[levelIndex]
+			if levelData then
+				levelData.Walls = levelData.Walls or {}
+				for wallId, wallData in pairs(walls) do
+					levelData.Walls[wallId] = wallData
+				end
+			end
+		end
+
+		for levelIndex, floors in pairs(state.RemovedFloors) do
+			local levelData = plotData.Levels and plotData.Levels[levelIndex]
+			if levelData then
+				levelData.Floors = levelData.Floors or {}
+				for floorId, floorData in pairs(floors) do
+					levelData.Floors[floorId] = floorData
+				end
+			end
+		end
+
+		for levelIndex, objects in pairs(state.RemovedObjects) do
+			local levelData = plotData.Levels and plotData.Levels[levelIndex]
+			if levelData then
+				levelData.Objects = levelData.Objects or {}
+				for objectId, objectData in pairs(objects) do
+					levelData.Objects[objectId] = objectData
+				end
+			end
+		end
+	end
+
+	restoreHiddenParts(state)
+
+	for _, model in ipairs(state.CreatedModels) do
+		if model and model.Parent then
+			model:Destroy()
+		end
+	end
+
+	for _, model in pairs(state.PredictedModels) do
+		for kind, map in pairs(predictedModelsByType) do
+			for key, entry in pairs(map) do
+				if entry == model then
+					map[key] = nil
+				end
+			end
+		end
+	end
+
+	for _, walls in pairs(state.SnapshotWalls) do
+		for _, wallData in pairs(walls) do
+			if wallData.Part then
+				Formex.Walls.Edit(wallData, plotPart, false)
+			end
+		end
+	end
+
+	for _, floors in pairs(state.SnapshotFloors) do
+		for _, floorData in pairs(floors) do
+			if floorData.Model then
+				Formex.Floors.Edit(floorData, plotPart, nil, plotData)
+			end
+		end
+	end
+
+	for _, objects in pairs(state.SnapshotObjects) do
+		for _, objectData in pairs(objects) do
+			if objectData.Part then
+				Formex.Objects.EditObject(objectData, plotPart, plotData)
+			end
+		end
+	end
+
+	if Formex.Rooms and Formex.Rooms.RebuildPlotRooms then
+		Formex.Rooms.RebuildPlotRooms(Formex, plotData)
+	end
+end
+
 local function notifyPlotPartChanged(plotState: PlotSubscription, partType: Formex.PartType, levelIndex: number, partId: number?, model: Instance?, changeType: string)
+    if Formex.Rooms and Formex.Rooms.RebuildPlotRooms then
+        Formex.Rooms.RebuildPlotRooms(Formex, plotState.Data)
+    end
     FormexClient.FireEvent("PlotPartChanged", plotState.Data.PlotId, partType, levelIndex, partId, model, changeType)
 end
 
@@ -269,6 +842,7 @@ local function refreshObjectData(objectData: Formex.ObjectData, model: Model, le
     objectData.Rotation = model:GetAttribute("Rotation") or objectData.Rotation or Vector3.new(0, 0, 0)
     objectData.Side = model:GetAttribute("Side") or objectData.Side or Formex.ObjectSide.Front
     objectData.WallId = model:GetAttribute("WallId")
+    objectData.IsPortal = model:GetAttribute("IsPortal") == true
     objectData.PrefabName = model:GetAttribute("PrefabName") or objectData.PrefabName
     if objectData.PrefabName and objectData.PrefabName ~= "" then
         objectData.Prefab = Formex.Objects.GetPrefab(objectData.PrefabName)
@@ -300,6 +874,9 @@ local function subscribeWallModel(plotState: PlotSubscription, levelIndex: numbe
 
     local wallId = tonumber(model.Name)
     if not wallId then return end
+    if not isPredictionModel(model) then
+        reconcilePredictedModel("Wall", levelIndex, wallId, model)
+    end
 
     local levelData = ensureLevelData(plotState.Data, levelIndex, nil)
     local wallData = levelData.Walls[wallId] or {
@@ -361,6 +938,9 @@ local function subscribeFloorModel(plotState: PlotSubscription, levelIndex: numb
 
     local floorId = tonumber(model.Name)
     if not floorId then return end
+    if not isPredictionModel(model) then
+        reconcilePredictedModel("Floor", levelIndex, floorId, model)
+    end
 
     local levelData = ensureLevelData(plotState.Data, levelIndex, nil)
     local floorData = levelData.Floors[floorId] or {
@@ -492,6 +1072,9 @@ local function subscribeObjectModel(plotState: PlotSubscription, levelIndex: num
 
     local levelData = ensureLevelData(plotState.Data, levelIndex, nil)
     local objectKey = tonumber(model.Name) or 0
+    if not isPredictionModel(model) then
+        reconcilePredictedModel("Object", levelIndex, objectKey, model)
+    end
     local objectData = levelData.Objects[objectKey] or {
         ObjectId = model.Name,
         Level = levelIndex,
@@ -744,6 +1327,7 @@ local function subscribeToPlot(plotPart: Part)
         NextId = 1,
         FoundationMaterial = Formex.DefaultFoundationMaterial,
         Levels = {},
+        Rooms = {},
         LevelsUnlocked = levelsUnlocked,
         SegmentsUnlocked = segmentsUnlocked,
         Permissions = permissions,
@@ -828,6 +1412,9 @@ local function subscribeToPlot(plotPart: Part)
         local value = plotPart:GetAttribute("SegmentsUnlocked") or 0
         info.SegmentsUnlocked = value
         plotData.SegmentsUnlocked = value
+        if Formex.Rooms and Formex.Rooms.RebuildPlotRooms then
+            Formex.Rooms.RebuildPlotRooms(Formex, plotData)
+        end
         notifyPlotChange(plotId)
     end))
 
@@ -862,6 +1449,9 @@ local function subscribeToPlot(plotPart: Part)
     end))
 
     watchPlotStructure(plotState)
+    if Formex.Rooms and Formex.Rooms.RebuildPlotRooms then
+        Formex.Rooms.RebuildPlotRooms(Formex, plotData)
+    end
     notifyPlotChange(plotId)
 
     return info
@@ -956,20 +1546,28 @@ function FormexClient.GetSavePermissions(): {[number]: Formex.Permission}
     return FormexFunctions:InvokeServer(Formex.Function.GetPermissions)
 end
 
-function FormexClient.BuildWall(wall: Formex.WallData | {Formex.WallData}, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?): Formex.WallData | {Formex.WallData}
-    return FormexFunctions:InvokeServer(Formex.Function.BuildWall, wall, action, selection)
-end
-
-function FormexClient.BuildFloor(floor: Formex.FloorData | {Formex.FloorData}, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?): Formex.FloorData | {Formex.FloorData}
-    return FormexFunctions:InvokeServer(Formex.Function.BuildFloor, floor, action, selection)
-end
-
-function FormexClient.BuildObject(wall: Formex.ObjectData, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?): Formex.ObjectData
-    return FormexFunctions:InvokeServer(Formex.Function.BuildObject, wall, action, selection)
-end
-
 function FormexClient.BuildTransaction(changes: {Formex.BuildChange}, selection: Formex.SelectionSnapshot?): {Formex.BuildChangeResult}?
-    return FormexFunctions:InvokeServer(Formex.Function.BuildTransaction, changes, selection)
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid then
+		return nil
+	end
+	if not changes or #changes == 0 then
+		return nil
+	end
+
+	local validation = Formex.IsTransactionValid(plotInfo.PlotData, changes)
+	if not validation or validation.IsValid ~= true then
+		return nil
+	end
+
+	local prediction = applyPrediction(plotInfo, validation)
+	local results, _message = FormexFunctions:InvokeServer(Formex.Function.BuildTransaction, changes, selection)
+	if not results then
+		rollbackPrediction(prediction)
+		return nil
+	end
+
+	return results
 end
 
 function FormexClient.CanUndo(): boolean

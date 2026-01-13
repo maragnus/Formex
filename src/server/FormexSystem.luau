@@ -96,9 +96,9 @@ function FormexSystem.CreateLevelPlaceholders(plotPart: BasePart)
     for levelIndex = 1, totalLevels do
         local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
         if not (levelPart and levelPart:IsA("BasePart")) then
-            levelPart = Instance.new("Part")
+            levelPart = Instance.new("Part", plotPart)
+            levelPart.Anchored = true
             levelPart.Name = tostring(levelIndex)
-            levelPart.Parent = plotPart
         end
 
         configureLevelPart(levelPart, plotPart, levelIndex)
@@ -133,6 +133,7 @@ function FormexSystem.UnassignPlotToPlayer(player: Player)
     plotData.LastPlayed = 0
     plotData.NextId = 1
     plotData.Levels = {}
+    plotData.Rooms = {}
     plotData.LevelsUnlocked = 0
     plotData.SegmentsUnlocked = 0
     plotData.Permissions = {}
@@ -165,6 +166,7 @@ function FormexSystem.AssignPlotToPlayer(player: Player, plotId: number)
     plotData.LastPlayed = 0
     plotData.NextId = 1
     plotData.Levels = {}
+    plotData.Rooms = {}
     plotData.LevelsUnlocked = 1
     plotData.SegmentsUnlocked = 0
     plotData.Permissions = {}
@@ -208,6 +210,7 @@ function FormexSystem.RegisterPlot(plotPart: Part)
         LastPlayed = 0,
         NextId = 1,
         Levels = {},
+        Rooms = {},
         LevelsUnlocked = 0,
         SegmentsUnlocked = 0,
         Permissions = {},
@@ -359,6 +362,7 @@ function FormexSystem.LoadPlot(plotId: number, saveId: number): boolean
     plotData.LastPlayed = os.time()
     plotData.NextId = saveData.NextId or plotData.NextId or 1
     plotData.Levels = saveData.Levels or {}
+    plotData.Rooms = {}
     plotData.LevelsUnlocked = math.max(saveData.LevelsUnlocked or 1, 1)
     local segmentsUnlocked = saveData.SegmentsUnlocked
     if segmentsUnlocked == nil or segmentsUnlocked == 0 then
@@ -477,9 +481,6 @@ local function renderWalls(data: RenderState)
         else
             Formex.Walls.Edit(wallData, data.PlotPart)
         end
-		if wallData.Part then
-			Formex.Objects.CarveWallObjects(data.PlotData, wallData)
-		end
     end
 end
 
@@ -528,7 +529,9 @@ local function renderFurniture(data: RenderState)
     end
 end
 
-local function renderLevel(data: RenderState, levelIndex: number, filterPartType: Formex.PartType?)
+local carveWallsForLevel: (plotData: Formex.PlotData, plotPart: BasePart?, levelIndex: number, wallIds: {[number]: boolean}?) -> ()
+
+local function renderLevel(data: RenderState, levelIndex: number, filterPartType: Formex.PartType?, wallIds: {[number]: boolean}?)
     data.LevelIndex = levelIndex
     data.LevelData = FormexSystem.EnsureLevelData(data.PlotData, levelIndex)
 
@@ -556,26 +559,42 @@ local function renderLevel(data: RenderState, levelIndex: number, filterPartType
 
     if filterPartType == "Wall" then
         renderWalls(data)
+        carveWallsForLevel(data.PlotData, data.PlotPart, levelIndex, wallIds)
     elseif filterPartType == "Floor" or filterPartType == "Ceiling" then
         renderFloors(data)
     elseif filterPartType == "Object" then
         renderFurniture(data)
+        carveWallsForLevel(data.PlotData, data.PlotPart, levelIndex, wallIds)
     else
         renderFloors(data)
         renderWalls(data)
         renderFurniture(data)
+        carveWallsForLevel(data.PlotData, data.PlotPart, levelIndex, wallIds)
     end
 end
 
-local function carveWallsForLevel(plotData: Formex.PlotData, levelIndex: number)
+carveWallsForLevel = function(plotData: Formex.PlotData, plotPart: BasePart?, levelIndex: number, wallIds: {[number]: boolean}?)
 	local levelData = plotData.Levels and plotData.Levels[levelIndex]
 	if not levelData or not levelData.Walls then
 		return
 	end
 
+	if wallIds then
+		if next(wallIds) == nil then
+			return
+		end
+		for wallId in pairs(wallIds) do
+			local wallData = levelData.Walls[wallId]
+			if wallData and wallData.Part then
+				Formex.Objects.CarveWallObjects(plotData, wallData, plotPart)
+			end
+		end
+		return
+	end
+
 	for _, wallData in pairs(levelData.Walls) do
 		if wallData.Part then
-			Formex.Objects.CarveWallObjects(plotData, wallData)
+			Formex.Objects.CarveWallObjects(plotData, wallData, plotPart)
 		end
 	end
 end
@@ -585,14 +604,15 @@ function FormexSystem.RefreshWallCarves(plotId: number, levelIndex: number?)
 	if not plotData then
 		return
 	end
+	local plotPart = FormexSystem.Plots[plotId]
 
 	if levelIndex then
-		carveWallsForLevel(plotData, levelIndex)
+		carveWallsForLevel(plotData, plotPart, levelIndex)
 		return
 	end
 
 	for level = 1, Formex.MaxPlotSize.Levels do
-		carveWallsForLevel(plotData, level)
+		carveWallsForLevel(plotData, plotPart, level)
 	end
 end
 
@@ -606,19 +626,34 @@ function FormexSystem.QueueWallCarve(plotId: number, levelIndex: number?)
 	end)
 end
 
-function FormexSystem.RenderPlot(plotId: number, filterLevelIndex: number?, filterPartType: Formex.PartType?): Model
+function FormexSystem.RenderPlot(plotId: number, filterLevelIndex: number?, filterPartType: Formex.PartType?, carveWallIdsByLevel: {[number]: {[number]: boolean}}?): Model
     local data = {
         PlotPart = FormexSystem.Plots[plotId],
         PlotData = FormexSystem.PlotData[plotId],
     }
 
     if filterLevelIndex then
-        renderLevel(data :: RenderState, filterLevelIndex, filterPartType)
+        local wallIds = nil
+        if carveWallIdsByLevel then
+            wallIds = carveWallIdsByLevel[filterLevelIndex] or {}
+        end
+        renderLevel(data :: RenderState, filterLevelIndex, filterPartType, wallIds)
+        if data.PlotData and Formex.Rooms and Formex.Rooms.RebuildPlotRooms then
+            Formex.Rooms.RebuildPlotRooms(Formex, data.PlotData)
+        end
         return
     end
 
     for level = 1, Formex.MaxPlotSize.Levels, 1 do
-        renderLevel(data, level)
+        local wallIds = nil
+        if carveWallIdsByLevel then
+            wallIds = carveWallIdsByLevel[level] or {}
+        end
+        renderLevel(data, level, nil, wallIds)
+    end
+
+    if data.PlotData and Formex.Rooms and Formex.Rooms.RebuildPlotRooms then
+        Formex.Rooms.RebuildPlotRooms(Formex, data.PlotData)
     end
 end
 

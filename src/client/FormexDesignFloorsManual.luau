@@ -38,11 +38,12 @@ local getFloorColor: () -> Color3
 local getCeilingColor: () -> Color3
 local getFoundationMaterialId: () -> number
 local getFoundationColor: () -> Color3
+local buildFloor: (Formex.FloorData, any?) -> any?
+local selectAfterFloorBuild: (any, number, {Vector2int16}, any?) -> ()
 local updateGhostValidity: (boolean) -> ()
 local clearGhost: () -> ()
 local clearSelection: () -> ()
 local select: (Instance) -> boolean
-local selectPlotModelByIdAsync: (any, string, number, number, number?) -> ()
 local notifyDesignModeChange: () -> ()
 
 local ghostPoints = {} :: {BasePart}
@@ -77,11 +78,12 @@ function Manual.Init()
 	getCeilingColor = ctx.GetCeilingColor
 	getFoundationMaterialId = ctx.GetFoundationMaterialId
 	getFoundationColor = ctx.GetFoundationColor
+	buildFloor = ctx.BuildFloor
+	selectAfterFloorBuild = ctx.SelectAfterFloorBuild
 	updateGhostValidity = ctx.UpdateGhostValidity
 	clearGhost = ctx.ClearGhost
 	clearSelection = ctx.ClearSelection
 	select = ctx.Select
-	selectPlotModelByIdAsync = ctx.SelectPlotModelByIdAsync
 	notifyDesignModeChange = ctx.NotifyDesignModeChange
 end
 
@@ -264,14 +266,6 @@ local function getFloorModelFromTarget(target: Instance?): Model?
 	return nil
 end
 
-local function selectFloorAfterBuild(plotInfo: any, levelIndex: number, floorId: number?)
-	if not plotInfo or not floorId then
-		return
-	end
-
-	selectPlotModelByIdAsync(plotInfo, Enums.SelectionType.Floor, levelIndex, floorId)
-end
-
 local function isOverlappingExistingFloor(plotInfo: any, previewPoints: {Vector2int16}): boolean
 	if not plotInfo or not plotInfo.PlotData or not previewPoints or #previewPoints < 3 then
 		return false
@@ -310,7 +304,7 @@ local function getBaseY(levelIndex: number): number
 end
 
 local function createGhostBall(name: string, color: Color3): BasePart
-	local part = Instance.new("Part")
+	local part = Instance.new("Part", OverlayFolder)
 	part.Name = name
 	part.Shape = Enum.PartType.Ball
 	part.Size = Vector3.new(GHOST_POINT_SIZE, GHOST_POINT_SIZE, GHOST_POINT_SIZE)
@@ -323,7 +317,6 @@ local function createGhostBall(name: string, color: Color3): BasePart
 	part.Transparency = 0
 	part.Color = color
 	part.CollisionGroup = Formex.CollisionGroup.Grid
-	part.Parent = OverlayFolder
 	return part
 end
 
@@ -464,7 +457,15 @@ local function isPreviewValid(plotInfo: any, previewPoints: {Vector2int16}): boo
 		end
 		return true
 	end
-	if not Formex.Floors.IsValid(plotInfo :: any, { Points = previewPoints } :: any) then
+	local previewData = buildFloorDataFromPoints(previewPoints)
+	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
+		{
+			PartType = Formex.PartType.Floor,
+			Action = Formex.BuildAction.Add,
+			Data = previewData,
+		},
+	})
+	if not validation or validation.IsValid ~= true then
 		return false
 	end
 	if isOverlappingExistingFloor(plotInfo, previewPoints) then
@@ -520,10 +521,8 @@ local function finalizeFloor()
 		return
 	end
 
-	local result = FormexClient.BuildFloor(floorData, Formex.BuildAction.Add, getSelectionSnapshot())
-	if result and result.FloorId then
-		selectFloorAfterBuild(plotInfo, floorData.LevelIndex, result.FloorId)
-	end
+	local result = buildFloor(floorData, getSelectionSnapshot())
+	selectAfterFloorBuild(plotInfo, floorData.LevelIndex, floorData.Points, result)
 	resetManualState()
 	setActionType(Enums.ActionType.Select)
 	notifyDesignModeChange()

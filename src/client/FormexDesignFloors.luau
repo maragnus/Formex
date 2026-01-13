@@ -158,6 +158,49 @@ local function pointsEqual(a: Vector2int16, b: Vector2int16): boolean
 	return a.X == b.X and a.Y == b.Y
 end
 
+local function getResultFloorId(result: any): number?
+	if type(result) == "number" then
+		return result
+	end
+	if type(result) == "table" then
+		if result.FloorId then
+			return result.FloorId
+		end
+		if #result >= 1 then
+			return tonumber(result[1])
+		end
+	end
+	return nil
+end
+
+local function setHandlesBusy(active: boolean)
+	if Handles and Handles.SetBusy then
+		Handles.SetBusy(active)
+	end
+end
+
+local function runBuildTransaction(changes: {Formex.BuildChange}, selection: Formex.SelectionSnapshot?): {Formex.BuildChangeResult}?
+	setHandlesBusy(true)
+	local results = FormexClient.BuildTransaction(changes, selection)
+	setHandlesBusy(false)
+	return results
+end
+
+local function buildFloor(floorData: any, action: any, selection: Formex.SelectionSnapshot?): any
+	local results = runBuildTransaction({
+		{
+			PartType = Formex.PartType.Floor,
+			Action = action,
+			Data = floorData,
+		},
+	}, selection)
+	if not results then
+		return nil
+	end
+	local changeResult = results[1]
+	return changeResult and changeResult.Result or nil
+end
+
 local function toVector2(point: Vector2int16): Vector2
 	return Vector2.new(point.X, point.Y)
 end
@@ -474,7 +517,7 @@ function Floors.ApplyPaintToTarget(target: Instance): boolean
 		Model = model,
 	}
 
-	FormexClient.BuildFloor(updated, Formex.BuildAction.Edit, getSelectionSnapshot())
+	buildFloor(updated, Formex.BuildAction.Edit, getSelectionSnapshot())
 	return true
 end
 
@@ -508,7 +551,7 @@ function Floors.ApplySelectedAppearance(overrides: {[string]: any}): boolean
 		Model = model,
 	}
 
-	FormexClient.BuildFloor(updated, Formex.BuildAction.Edit, getSelectionSnapshot())
+	buildFloor(updated, Formex.BuildAction.Edit, getSelectionSnapshot())
 	return true
 end
 
@@ -555,9 +598,30 @@ local function clearFloorHandles()
 	lastHandleEditMode = nil
 end
 
-local function updateFloorEdgePreview(plotInfo: any, levelIndex: number, points: {Vector2int16})
-	local isValid = Formex.Floors.IsValid(plotInfo :: any, { Points = points } :: any)
-	Highlight.UpdateFloorEdgePreview(plotInfo, levelIndex, points, isValid, nil)
+local function getFloorValidation(plotInfo: any, floorData: Formex.FloorData, action: Formex.BuildAction?)
+	if not plotInfo or not plotInfo.PlotData then
+		return nil
+	end
+	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
+		{
+			PartType = Formex.PartType.Floor,
+			Action = action or Formex.BuildAction.Edit,
+			Data = floorData,
+		},
+	})
+	return validation
+end
+
+local function updateFloorEdgePreview(plotInfo: any, floorData: Formex.FloorData, points: {Vector2int16})
+	local preview = {
+		FloorId = floorData.FloorId,
+		LevelIndex = floorData.LevelIndex,
+		Points = points,
+		RaiseHeight = floorData.RaiseHeight,
+	} :: Formex.FloorData
+	local validation = getFloorValidation(plotInfo, preview, Formex.BuildAction.Edit)
+	local isValid = validation ~= nil and validation.IsValid == true
+	Highlight.UpdateFloorEdgePreview(plotInfo, floorData.LevelIndex, points, isValid, nil)
 end
 
 local function addFloorHandle(name: string, color: Color3, iconAsset: string, onClick: (any) -> (), argument: any): BasePart
@@ -752,7 +816,7 @@ local function finalizeMove(plotInfo: any)
 	end
 
 	if #updates > 0 then
-		FormexClient.BuildFloor(updates, Formex.BuildAction.Edit, getSelectionSnapshot())
+		buildFloor(updates, Formex.BuildAction.Edit, getSelectionSnapshot())
 	end
 
 	movePreviewPoints = nil
@@ -856,9 +920,10 @@ end
 local function createFloorFromTile(tile: Vector2int16, floorData: Formex.FloorData?)
 	local plotInfo = FormexClient.CurrentPlot
 	local data = floorData or buildFloorDataFromTile(tile)
-	local result = FormexClient.BuildFloor(data, Formex.BuildAction.Add, getSelectionSnapshot())
-	if plotInfo and result and result.FloorId then
-		selectPlotModelByIdAsync(plotInfo, Enums.SelectionType.Floor, data.LevelIndex, result.FloorId)
+	local result = buildFloor(data, Formex.BuildAction.Add, getSelectionSnapshot())
+	local resultFloorId = getResultFloorId(result)
+	if plotInfo and resultFloorId then
+		selectPlotModelByIdAsync(plotInfo, Enums.SelectionType.Floor, data.LevelIndex, resultFloorId)
 	end
 end
 
@@ -869,7 +934,8 @@ local function updateFloorGhost(plotInfo: any, tile: Vector2int16): (boolean, Fo
 
 	local floorData = buildFloorDataFromTile(tile)
 	ensureFloorGhost(plotInfo.PlotPart, getCurrentLevel(), tile, Formex.PartType.Floor)
-	local isValid = Formex.Floors.IsValid(plotInfo :: any, floorData)
+	local validation = getFloorValidation(plotInfo, floorData, Formex.BuildAction.Add)
+	local isValid = validation ~= nil and validation.IsValid == true
 	if isValid and isOverlappingExistingFloor(plotInfo, floorData.Points) then
 		isValid = false
 	end
@@ -917,7 +983,7 @@ local function onFloorHandleClicked(info: any)
 
 	local floorData = getFloorDataFromModel(floorModel)
 	if info.Kind == "Delete" then
-		FormexClient.BuildFloor({
+		buildFloor({
 			FloorId = floorData.FloorId,
 			LevelIndex = floorData.LevelIndex,
 			Points = floorData.Points,
@@ -1021,7 +1087,7 @@ local function updateFloorHandles(plotInfo: any)
 	end
 
 	clearFloorHandles()
-	updateFloorEdgePreview(plotInfo, floorData.LevelIndex, points)
+	updateFloorEdgePreview(plotInfo, floorData, points)
 	Highlight.UpdateSelectionHighlight()
 
 	local levelIndex = floorData.LevelIndex
@@ -1170,7 +1236,13 @@ function Floors.CancelAction()
 			movePreviewPoints = moveOriginalPoints
 			local plotInfo = FormexClient.CurrentPlot
 			if plotInfo and plotInfo.PlotPart and movePreviewPoints and moveLevelIndex then
-				updateFloorEdgePreview(plotInfo, moveLevelIndex, movePreviewPoints)
+				local previewData = {
+					FloorId = moveFloorId or 0,
+					LevelIndex = moveLevelIndex or getCurrentLevel(),
+					Points = movePreviewPoints,
+					RaiseHeight = moveRaiseHeight,
+				} :: Formex.FloorData
+				updateFloorEdgePreview(plotInfo, previewData, movePreviewPoints)
 			end
 		end
 		moveOriginalPoints = nil
@@ -1230,7 +1302,13 @@ function Floors.HandleUpdate(input: any)
 	if actionType == Enums.ActionType.Move then
 		handlePointMove(input.PlotInfo, input)
 		if movePreviewPoints and moveLevelIndex then
-			updateFloorEdgePreview(input.PlotInfo, moveLevelIndex, movePreviewPoints)
+			local previewData = {
+				FloorId = moveFloorId or 0,
+				LevelIndex = moveLevelIndex or getCurrentLevel(),
+				Points = movePreviewPoints,
+				RaiseHeight = moveRaiseHeight,
+			} :: Formex.FloorData
+			updateFloorEdgePreview(input.PlotInfo, previewData, movePreviewPoints)
 		end
 		Highlight.UpdateSelectionHighlight()
 	end

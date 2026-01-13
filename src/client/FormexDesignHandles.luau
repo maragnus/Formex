@@ -6,6 +6,7 @@ Exports:
 - Init(): load shared dependencies
 - CreateHandle(name, color, iconAsset, onClick, argument): BasePart
 - SetHandleVisible(handle, visible): ()
+- SetBusy(active): ()
 - Clear(): ()
 - ClearHandleHover(): ()
 - CheckHover(ray): ()
@@ -13,12 +14,16 @@ Exports:
 ]]
 local Context = require(script.Parent:WaitForChild("FormexDesignContext"))
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local HANDLE_PART_SIZE = 0.2
 local HANDLE_ICON_SIZE = 48
 local HANDLE_HOVER_SCALE = 1.2
 local HANDLE_HOVER_TINT = 0.35
+local SPINNER_STEP_DEGREES = 45
+local SPINNER_STEP_TIME = 0.2
+local BUSY_SPINNER_NAME = "HandleBusySpinner"
 
 local Handles = {}
 
@@ -27,6 +32,13 @@ local overlayFolder: Folder
 local handleIconBackground: any
 local playerGui: PlayerGui? = nil
 local useGuiInput = false
+local busy = false
+local busySpinnerColor: Color3? = nil
+local busySpinnerHandle: BasePart? = nil
+local busySpinnerIcon: ImageButton? = nil
+local spinnerRotationConnection: RBXScriptConnection? = nil
+local spinnerRotation = 0
+local spinnerRotationTimer = 0
 
 type HandleInfo = {
     Part: BasePart,
@@ -37,6 +49,10 @@ type HandleInfo = {
     IconAsset: any,
     OnClick: (any) -> nil,
     Argument: any,
+	Visible: boolean,
+	InputEnabled: boolean,
+	AllowQuery: boolean,
+	IsBusySpinner: boolean?,
 }
 
 local handles = {} :: {[string]: HandleInfo}
@@ -61,6 +77,7 @@ function Handles.Init()
 	Formex = ctx.Formex
 	overlayFolder = ctx.OverlayFolder
 	handleIconBackground = Content.fromAssetId(Formex.Icons.CircleBackground)
+	busySpinnerColor = ctx.Constants and ctx.Constants.HandleMoveColor or Color3.new(1, 1, 1)
 	local player = Players.LocalPlayer
 	if not player then
 		error("FormexDesignHandles missing LocalPlayer", 2)
@@ -128,6 +145,9 @@ local function bindHandleInput(handleInfo: HandleInfo)
 	end)
 
 	handleInfo.Icon.InputBegan:Connect(function(input)
+		if handleInfo.InputEnabled == false then
+			return
+		end
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1
 			and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
@@ -142,6 +162,9 @@ local function bindHandleInput(handleInfo: HandleInfo)
 	end)
 
 	handleInfo.Icon.InputEnded:Connect(function(input)
+		if handleInfo.InputEnabled == false then
+			return
+		end
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1
 			and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
@@ -149,6 +172,105 @@ local function bindHandleInput(handleInfo: HandleInfo)
 		setActionHeld(false)
 		handlePrimaryRelease()
 	end)
+end
+
+local function applyHandleVisible(handleInfo: HandleInfo, visible: boolean)
+	handleInfo.Part.Transparency = 1
+	handleInfo.Part.CanQuery = visible and (handleInfo.AllowQuery ~= false)
+	handleInfo.Billboard.Enabled = visible
+	handleInfo.Icon.Active = visible and (handleInfo.InputEnabled ~= false)
+	if not visible and hoveredHandle == handleInfo then
+		setHoveredHandle(nil)
+	end
+end
+
+local function getHandlesCenter(): Vector3?
+	local minX = nil :: number?
+	local minY = nil :: number?
+	local minZ = nil :: number?
+	local maxX = nil :: number?
+	local maxY = nil :: number?
+	local maxZ = nil :: number?
+
+	for _, handle in pairs(handles) do
+		if not handle.IsBusySpinner and handle.Part and handle.Part.Parent then
+			local pos = handle.Part.Position
+			if not minX then
+				minX = pos.X
+				minY = pos.Y
+				minZ = pos.Z
+				maxX = pos.X
+				maxY = pos.Y
+				maxZ = pos.Z
+			else
+				minX = math.min(minX, pos.X)
+				minY = math.min(minY, pos.Y)
+				minZ = math.min(minZ, pos.Z)
+				maxX = math.max(maxX, pos.X)
+				maxY = math.max(maxY, pos.Y)
+				maxZ = math.max(maxZ, pos.Z)
+			end
+		end
+	end
+
+	if not minX then
+		return nil
+	end
+	return Vector3.new((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2)
+end
+
+local function stopSpinnerRotation()
+	if spinnerRotationConnection then
+		spinnerRotationConnection:Disconnect()
+		spinnerRotationConnection = nil
+	end
+end
+
+local function startSpinnerRotation()
+	if spinnerRotationConnection then
+		return
+	end
+
+	spinnerRotationTimer = 0
+	spinnerRotationConnection = RunService.Heartbeat:Connect(function(dt)
+		spinnerRotationTimer += dt
+		if spinnerRotationTimer < SPINNER_STEP_TIME then
+			return
+		end
+		local steps = math.floor(spinnerRotationTimer / SPINNER_STEP_TIME)
+		spinnerRotationTimer -= steps * SPINNER_STEP_TIME
+		spinnerRotation = (spinnerRotation + (SPINNER_STEP_DEGREES * steps)) % 360
+		if busySpinnerIcon then
+			busySpinnerIcon.Rotation = spinnerRotation
+		end
+	end)
+end
+
+local function ensureBusySpinnerHandle(): HandleInfo?
+	if not Formex then
+		return nil
+	end
+
+	if not busySpinnerHandle or not busySpinnerHandle.Parent then
+		busySpinnerHandle = Handles.CreateHandle(
+			BUSY_SPINNER_NAME,
+			busySpinnerColor or Color3.new(1, 1, 1),
+			Formex.Icons.Spinner,
+			nil,
+			nil
+		)
+	end
+
+	local handleInfo = handles[BUSY_SPINNER_NAME]
+	if handleInfo then
+		handleInfo.IsBusySpinner = true
+		handleInfo.InputEnabled = false
+		handleInfo.AllowQuery = false
+		handleInfo.Visible = true
+		busySpinnerIcon = handleInfo.Icon
+	end
+
+	return handleInfo
 end
 
 function Handles.CreateHandle(name: string, color: Color3, iconAsset: number | string, onClick: (any) -> nil, argument: any): BasePart
@@ -219,6 +341,9 @@ function Handles.CreateHandle(name: string, color: Color3, iconAsset: number | s
             Billboard = billboard,
             Icon = icon,
             Background = background,
+			Visible = true,
+			InputEnabled = true,
+			AllowQuery = true,
         }
         handleInfo = handles[name]
 
@@ -229,6 +354,9 @@ function Handles.CreateHandle(name: string, color: Color3, iconAsset: number | s
     handleInfo.Argument = argument
     handleInfo.Color = color
     handleInfo.IconAsset = iconAsset
+	handleInfo.Visible = handleInfo.Visible ~= false
+	handleInfo.InputEnabled = handleInfo.InputEnabled ~= false
+	handleInfo.AllowQuery = handleInfo.AllowQuery ~= false
     handleInfo.Part.Color = color
     handleInfo.Icon.ImageColor3 = color
 	handleInfo.Icon.ImageContent = iconAsset
@@ -260,17 +388,17 @@ function Handles.SetHandleVisible(handle: string | BasePart?, visible: boolean)
 	end
 
 	if handleInfo then
-		handleInfo.Part.Transparency = 1
-		handleInfo.Part.CanQuery = visible
-		handleInfo.Billboard.Enabled = visible
-		handleInfo.Icon.Active = visible
-		if not visible and hoveredHandle == handleInfo then
-			setHoveredHandle(nil)
+		handleInfo.Visible = visible
+		if busy and not handleInfo.IsBusySpinner then
+			applyHandleVisible(handleInfo, false)
+		else
+			applyHandleVisible(handleInfo, visible)
 		end
 	end
 end
 
 function Handles.Clear()
+	Handles.SetBusy(false)
 	if hoveredHandle then
 		setHoveredHandle(nil)
 	end
@@ -318,6 +446,53 @@ function Handles.HandleClicked(ray: Ray): boolean
     end
 
     return false
+end
+
+function Handles.SetBusy(active: boolean)
+	if busy == active then
+		if active then
+			local center = getHandlesCenter()
+			local handleInfo = ensureBusySpinnerHandle()
+			if handleInfo and center then
+				handleInfo.Part.Position = center
+			end
+		end
+		return
+	end
+
+	busy = active
+
+	if busy then
+		local center = getHandlesCenter()
+		for _, handleInfo in pairs(handles) do
+			if not handleInfo.IsBusySpinner then
+				applyHandleVisible(handleInfo, false)
+			end
+		end
+		local spinnerInfo = ensureBusySpinnerHandle()
+		if spinnerInfo then
+			if center then
+				spinnerInfo.Part.Position = center
+			end
+			applyHandleVisible(spinnerInfo, true)
+		end
+		startSpinnerRotation()
+	else
+		stopSpinnerRotation()
+		spinnerRotation = 0
+		if busySpinnerIcon then
+			busySpinnerIcon.Rotation = 0
+		end
+		local spinnerInfo = handles[BUSY_SPINNER_NAME]
+		if spinnerInfo then
+			applyHandleVisible(spinnerInfo, false)
+		end
+		for _, handleInfo in pairs(handles) do
+			if not handleInfo.IsBusySpinner then
+				applyHandleVisible(handleInfo, handleInfo.Visible)
+			end
+		end
+	end
 end
 
 return Handles

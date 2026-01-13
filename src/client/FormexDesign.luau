@@ -20,7 +20,7 @@ local FormexDesign = {}
 
 FormexDesign.Handles = require(script.Parent:WaitForChild("FormexDesignHandles"))
 
-local Walls, Floors, Objects
+local Walls, Floors, Objects, Rooms
 
 FormexDesign.WallMode = Enums.WallMode
 FormexDesign.HandleLocation = Enums.HandleLocation
@@ -49,7 +49,7 @@ export type DesignSubMode = FormexDesignContext.DesignSubMode
 export type EditMode = FormexDesignContext.EditMode
 export type ActionType = FormexDesignContext.ActionType
 
-export type SelectionData = nil | Formex.WallData | Formex.FloorData | Formex.ObjectData
+export type SelectionData = nil | Formex.WallData | Formex.FloorData | Formex.ObjectData | Formex.RoomData
 
 export type SelectionType = FormexDesignContext.SelectionType
 
@@ -990,7 +990,8 @@ designModeViewSettings = {
 	Expand = expandViewSettings,
 	Wall = topDownViewSettings,
 	Floor = topDownViewSettings,
-	Object = topDownViewSettings
+	Object = topDownViewSettings,
+	Room = topDownViewSettings,
 }
 
 local function clearOverlays()
@@ -1330,6 +1331,9 @@ function FormexDesign.ClearSelection()
 	if Floors then
 		Floors.ClearSelection()
 	end
+	if Rooms then
+		Rooms.ClearSelection()
+	end
 	FormexDesignHighlights.UpdateSelectionHighlight()
 	notifyDesignModeChange()
 end
@@ -1426,7 +1430,8 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Vec
 	local useGridSegmentsOnly =
 		actionType ~= FormexDesign.ActionType.Select
 		and (designMode == FormexDesign.DesignMode.Wall
-			or designMode == FormexDesign.DesignMode.Floor)
+			or designMode == FormexDesign.DesignMode.Floor
+			or designMode == FormexDesign.DesignMode.Room)
 
 	local objectRaycastInfo = nil
 	if not useGridSegmentsOnly
@@ -1643,6 +1648,47 @@ local function buildWallData(startPoint: Vector2int16, endPoint: Vector2int16): 
 	}
 end
 
+local function pointsEqual(a: Vector2int16, b: Vector2int16): boolean
+	return a.X == b.X and a.Y == b.Y
+end
+
+local function getWallSegmentKey(startPoint: Vector2int16, endPoint: Vector2int16): string
+	local aKey = Formex.Poly.GetPointKey(startPoint)
+	local bKey = Formex.Poly.GetPointKey(endPoint)
+	if aKey < bKey then
+		return aKey .. "|" .. bKey
+	end
+	return bKey .. "|" .. aKey
+end
+
+local function buildRoomWalls(plotInfo: FormexClient.PlotInfo, levelIndex: number, points: {Vector2int16}): {Formex.WallData}
+	local walls = {}
+	local existing = {}
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
+	if levelData and levelData.Walls then
+		for _, wall in pairs(levelData.Walls) do
+			if wall.Start and wall.End then
+				existing[getWallSegmentKey(wall.Start, wall.End)] = true
+			end
+		end
+	end
+
+	for i = 1, #points do
+		local startPoint = points[i]
+		local endPoint = points[(i % #points) + 1]
+		if not pointsEqual(startPoint, endPoint) then
+			local key = getWallSegmentKey(startPoint, endPoint)
+			if not existing[key] then
+				local wallData = buildWallData(startPoint, endPoint)
+				wallData.Level = levelIndex
+				table.insert(walls, wallData)
+			end
+		end
+	end
+
+	return walls
+end
+
 local function buildFloorGhostData(levelIndex: number, tile: Vector2int16): Formex.FloorData
 	local tileSize = Formex.LayoutGridSize
 	local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
@@ -1715,9 +1761,8 @@ local function ensureFloorGhost(plotPart: BasePart, levelIndex: number, tile: Ve
 	end
 
 	if not ghost then
-		ghost = Instance.new("Part")
+		ghost = Instance.new("Part", overlayFolder)
 		ghost.Anchored = true
-		ghost.Parent = overlayFolder
 		applyGhostAppearance(ghost)
 		ghost.Transparency = 1
 	end
@@ -1773,6 +1818,9 @@ local allowedSelectionByMode = {
 	},
 	[FormexDesign.DesignMode.Object] = {
 		[FormexDesign.SelectionType.Object] = true,
+	},
+	[FormexDesign.DesignMode.Room] = {
+		[FormexDesign.SelectionType.Room] = true,
 	},
 } :: { [DesignMode]: {[SelectionType]: boolean} }
 designModeBySelectionType = {
@@ -1876,6 +1924,148 @@ local function updateSelectionHandles(plotInfo: any)
 		if Objects then
 			Objects.UpdateHandles(plotInfo)
 		end
+		return
+	end
+
+	if selectionType == FormexDesign.SelectionType.Room then
+		if Rooms then
+			Rooms.UpdateHandles(plotInfo)
+		end
+	end
+end
+
+local function setRoomSelection(roomData: Formex.RoomData?)
+	beginDesignStateBatch()
+	selectionPart = nil
+	if roomData then
+		selectionType = FormexDesign.SelectionType.Room
+		selectionData = roomData
+		currentLevel = roomData.LevelIndex
+	else
+		selectionType = FormexDesign.SelectionType.None
+		selectionData = nil
+	end
+	updateSelectionSettingsFromSelection()
+	FormexDesignHighlights.UpdateSelectionHighlight()
+	updateSelectionHandles(FormexClient.CurrentPlot)
+	notifyDesignModeChange()
+	endDesignStateBatch()
+end
+
+local function selectRoomAtPoint(plotInfo: FormexClient.PlotInfo?, levelIndex: number, point: Vector2?)
+	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Rooms or not point then
+		setRoomSelection(nil)
+		return
+	end
+
+	local selected = nil
+	for _, room in pairs(plotInfo.PlotData.Rooms) do
+		if room.LevelIndex == levelIndex and room.Points and #room.Points >= 3 then
+			if Formex.Poly.IsPointInsidePolygon(point, room.Points, true, Formex.EPSILON) then
+				if not selected or room.Area < selected.Area then
+					selected = room
+				end
+			end
+		end
+	end
+
+	setRoomSelection(selected)
+end
+
+local function setHandlesBusy(active: boolean)
+	if FormexDesign.Handles and FormexDesign.Handles.SetBusy then
+		FormexDesign.Handles.SetBusy(active)
+	end
+end
+
+local function runBuildTransaction(changes: {Formex.BuildChange}, selection: Formex.SelectionSnapshot?): {Formex.BuildChangeResult}?
+	setHandlesBusy(true)
+	local results = FormexClient.BuildTransaction(changes, selection)
+	setHandlesBusy(false)
+	return results
+end
+
+local function buildFloor(floorData: Formex.FloorData, action: Formex.BuildAction, selection: Formex.SelectionSnapshot?): any
+	local results = runBuildTransaction({
+		{
+			PartType = Formex.PartType.Floor,
+			Action = action,
+			Data = floorData,
+		},
+	}, selection)
+	if not results then
+		return nil
+	end
+	local changeResult = results[1]
+	return changeResult and changeResult.Result or nil
+end
+
+local function buildRoomFromFloor(floorData: Formex.FloorData, selectionSnapshot: Formex.SelectionSnapshot?)
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid then
+		return nil
+	end
+
+	local walls = buildRoomWalls(plotInfo, floorData.LevelIndex, floorData.Points)
+	local changes = {}
+	if #walls > 0 then
+		table.insert(changes, {
+			PartType = Formex.PartType.Wall,
+			Action = Formex.BuildAction.Add,
+			Data = walls,
+		})
+	end
+	table.insert(changes, {
+		PartType = Formex.PartType.Floor,
+		Action = Formex.BuildAction.Add,
+		Data = floorData,
+	})
+
+	return runBuildTransaction(changes, selectionSnapshot or getSelectionSnapshot())
+end
+
+local function buildFloorForMode(floorData: Formex.FloorData, selectionSnapshot: Formex.SelectionSnapshot?)
+	if designMode == FormexDesign.DesignMode.Room then
+		return buildRoomFromFloor(floorData, selectionSnapshot)
+	end
+	return buildFloor(floorData, Formex.BuildAction.Add, selectionSnapshot or getSelectionSnapshot())
+end
+
+local function selectAfterFloorBuild(plotInfo: FormexClient.PlotInfo?, levelIndex: number, points: {Vector2int16}, result: any?)
+	if not plotInfo or not plotInfo.IsValid then
+		return
+	end
+
+	if designMode == FormexDesign.DesignMode.Room then
+		local sample = Formex.Poly.GetFaceSamplePoint(points, Formex.EPSILON)
+		if sample then
+			selectRoomAtPoint(plotInfo, levelIndex, sample)
+		end
+		return
+	end
+
+	local floorId = nil
+	if type(result) == "number" then
+		floorId = result
+	elseif type(result) == "table" and result.FloorId then
+		floorId = result.FloorId
+	elseif type(result) == "table" and #result >= 1 and type(result[1]) == "number" then
+		floorId = result[1]
+	elseif type(result) == "table" then
+		for _, change in ipairs(result) do
+			if change.PartType == Formex.PartType.Floor and change.Result then
+				if type(change.Result) == "number" then
+					floorId = change.Result
+					break
+				elseif type(change.Result) == "table" and change.Result.FloorId then
+					floorId = change.Result.FloorId
+					break
+				end
+			end
+		end
+	end
+	if floorId then
+		selectPlotModelByIdAsync(plotInfo, Enums.SelectionType.Floor, levelIndex, floorId)
 	end
 end
 
@@ -2392,6 +2582,30 @@ function FormexDesign.Select(part: Instance)
 		return false
 	end
 
+	if designMode == FormexDesign.DesignMode.Room then
+		local plotInfo = FormexClient.CurrentPlot
+		if plotInfo and plotInfo.PlotPart then
+			local _, _, levelIndex = getSelectionInfoFromInstance(part)
+			local targetLevel = levelIndex or currentLevel
+			local worldPos = nil
+			if part:IsA("BasePart") then
+				worldPos = part.Position
+			elseif part:IsA("Model") then
+				worldPos = part:GetPivot().Position
+			else
+				local model = part:FindFirstAncestorOfClass("Model")
+				if model then
+					worldPos = model:GetPivot().Position
+				end
+			end
+			if worldPos then
+				local localPoint = getLocalXZ(plotInfo.PlotPart, worldPos)
+				selectRoomAtPoint(plotInfo, targetLevel, localPoint)
+				return selectionType == FormexDesign.SelectionType.Room
+			end
+		end
+	end
+
 	-- Extract levelId, selectionType, partId from the path
 	-- Workspace/Formex/Plots/PlotPlaceholder/{levelId:number}/{selectionType:SelectionType}/{partId:number}/*
 	local selectionKind, partId, level = getSelectionInfoFromInstance(part)
@@ -2481,6 +2695,9 @@ function FormexDesign.CancelAction()
 	if Floors then
 		Floors.CancelAction()
 	end
+	if Rooms then
+		Rooms.CancelAction()
+	end
 	if Objects then
 		Objects.CancelAction()
 	end
@@ -2504,6 +2721,14 @@ local function handleUpdate()
 		if Floors then
 			Floors.HandleUpdate(input)
 		end
+	elseif designMode == FormexDesign.DesignMode.Room then
+		if actionType == FormexDesign.ActionType.Start or actionType == FormexDesign.ActionType.Step then
+			if Floors then
+				Floors.HandleUpdate(input)
+			end
+		elseif Rooms then
+			Rooms.HandleUpdate(input)
+		end
 	elseif designMode == FormexDesign.DesignMode.Object then
 		if Objects then
 			Objects.HandleUpdate(input)
@@ -2522,6 +2747,14 @@ local function handlePrimaryRelease()
 	elseif designMode == FormexDesign.DesignMode.Floor then
 		if Floors then
 			Floors.HandlePrimaryRelease(input)
+		end
+	elseif designMode == FormexDesign.DesignMode.Room then
+		if actionType == FormexDesign.ActionType.Start or actionType == FormexDesign.ActionType.Step then
+			if Floors then
+				Floors.HandlePrimaryRelease(input)
+			end
+		elseif Rooms then
+			Rooms.HandlePrimaryRelease(input)
 		end
 	elseif designMode == FormexDesign.DesignMode.Object then
 		if Objects then
@@ -2566,6 +2799,17 @@ local function handlePrimaryClick()
 		if Floors then
 			Floors.HandlePrimaryClick(input)
 		end
+	elseif designMode == FormexDesign.DesignMode.Room then
+		if actionType == FormexDesign.ActionType.Start or actionType == FormexDesign.ActionType.Step then
+			if Floors then
+				Floors.HandlePrimaryClick(input)
+			end
+		elseif actionType == FormexDesign.ActionType.Select then
+			local selectedRoom = Rooms and Rooms.HandlePrimaryClick(input)
+			if not selectedRoom and input.LayoutTile and Floors then
+				Floors.StartFloor()
+			end
+		end
 	elseif designMode == FormexDesign.DesignMode.Object then
 		if Objects then
 			Objects.HandlePrimaryClick(input)
@@ -2608,7 +2852,7 @@ function FormexDesign.SetDesignMode(mode: DesignMode?, preserveSelection: boolea
 		altDropperUsed = false
 		lastSubModeBeforeAlt = nil
 	end
-	if designMode ~= FormexDesign.DesignMode.Floor then
+	if designMode ~= FormexDesign.DesignMode.Floor and designMode ~= FormexDesign.DesignMode.Room then
 		designTipMessage = nil
 	end
 	viewSettings = designModeViewSettings[mode]
@@ -2677,6 +2921,12 @@ FormexDesignContext.Init({
 	GetSelectionPart = function()
 		return selectionPart
 	end,
+	GetSelectionData = function()
+		return selectionData
+	end,
+	SetRoomSelection = function(roomData: Formex.RoomData?)
+		setRoomSelection(roomData)
+	end,
 	GetSelectionSnapshot = getSelectionSnapshot,
 	GetLastInputInfo = function()
 		return inputInfo
@@ -2687,6 +2937,8 @@ FormexDesignContext.Init({
 	SnapWallEndPoint = snapWallEndPoint,
 	ToSnappedVector2int16 = toSnappedVector2int16,
 	GetLocalXZ = getLocalXZ,
+	BuildFloor = buildFloorForMode,
+	SelectAfterFloorBuild = selectAfterFloorBuild,
 	IsPointInOwnedSegments = isPointInOwnedSegments,
 	BuildWallData = buildWallData,
 	UpdateGhostValidity = updateGhostValidity,
@@ -2772,14 +3024,17 @@ FormexDesignHighlights.Init()
 Walls = require(script.Parent:WaitForChild("FormexDesignWalls"))
 Floors = require(script.Parent:WaitForChild("FormexDesignFloors"))
 Objects = require(script.Parent:WaitForChild("FormexDesignObjects"))
+Rooms = require(script.Parent:WaitForChild("FormexDesignRooms"))
 
 Walls.Init()
 Floors.Init()
 Objects.Init()
+Rooms.Init()
 
 FormexDesignContext.RegisterModule("Walls", Walls)
 FormexDesignContext.RegisterModule("Floors", Floors)
 FormexDesignContext.RegisterModule("Objects", Objects)
+FormexDesignContext.RegisterModule("Rooms", Rooms)
 FormexDesignContext.RegisterModule("Handles", FormexDesign.Handles)
 FormexDesignContext.RegisterModule("Highlights", FormexDesignHighlights)
 
@@ -2804,6 +3059,20 @@ FormexClient.ClientEvents:Connect(function(eventName, plotId, _partType, _levelI
 			lastPlotId = currentPlotId
 			resetDesignForPlotChange()
 		end
+		return
+	end
+
+	if eventName == "PlotPartChanged" and selectionType == FormexDesign.SelectionType.Room then
+		local room = selectionData
+		local plotInfo = FormexClient.CurrentPlot
+		if room and plotInfo and plotInfo.IsValid and room.Points and #room.Points >= 3 then
+			local sample = Formex.Poly.GetFaceSamplePoint(room.Points, Formex.EPSILON)
+			if sample then
+				selectRoomAtPoint(plotInfo, room.LevelIndex, sample)
+				return
+			end
+		end
+		FormexDesign.ClearSelection()
 		return
 	end
 
@@ -2842,7 +3111,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
-		if designMode == FormexDesign.DesignMode.Floor and Floors then
+		if (designMode == FormexDesign.DesignMode.Floor or designMode == FormexDesign.DesignMode.Room) and Floors then
 			local info = getInputInfo(true)
 			if info and Floors.HandleSecondaryClick(info) then
 				return

@@ -15,6 +15,8 @@ Do not use `pcall`. While developing, errors need to propogate normally to find 
     - Move the usage below the declaration
     - Move the function and it's dependencies up
 
+- Luau type casting for assigments is not valid syntax `(value :: any).Levels = ...` just use `value.Levels = ...` instead
+
 - World has predefined `Part` instances named "PlotPlaceholder" created in the `Workspace/Formex/Plots` Folder to define the **Plots** that a player can claim.
 - Players can claim only one **Plot** on a server
 - A **Plot** requires that the player selects a **Save Slot** before a building can be created.
@@ -23,6 +25,7 @@ Do not use `pcall`. While developing, errors need to propogate normally to find 
 - A **Save Slot** defines the building on a plot. If no **Save** is loaded, then the PlotPlaceholder is empty and cannot be updating until a **Save** is loaded or new one is created.
 - Implement with an emphasis on KISS and DRY principals. 
 - Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
+- When handles must be disabled while waiting for server confirmation, wrap the call with `Handles.SetBusy(true)` and `Handles.SetBusy(false)` to show the spinner.
 - Implement with an emphasis on KISS and DRY principals. 
 - Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
 
@@ -169,3 +172,7 @@ Design flow: `FormexDesign` initializes the context with Formex client/camera de
 ## Communication
 - `FormexClient` has methods that call methods named in `Formex.Function`
 - `FormexServerFunctions` is the receiver for client functions and dispatches them to `FormexBuild`, `FormexServer`, etc
+
+## Large Changes Check-In
+- For large, multi-file changes, pause to confirm assumptions and present a brief proposed approach before implementing.
+- Use short clarification questions when requirements are ambiguous or likely to affect architecture.
