@@ -248,10 +248,10 @@ function FormexPrompts.PlotLoad()
                     Parent = actions,
                     Name = "Load_" .. tostring(save.SaveId),
                     Icon = Formex.Icons.PlotLoad,
-                    Type = "Primary",
-                    Style = "Solid",
+                    Type = FormexUI.ButtonType.Primary,
+                    Style = FormexUI.ButtonStyle.Solid,
                     Size = UDim2.new(0, 44, 0, 44),
-                }, function()
+                } :: FormexUI.ButtonOptions, function()
                     local success, message = FormexClient.PlotLoad(save.SaveId)
                     if success == false then
                         warn("Failed to load save:", message)
@@ -266,7 +266,7 @@ function FormexPrompts.PlotLoad()
                     Parent = actions,
                     Name = "Delete_" .. tostring(save.SaveId),
                     Icon = Formex.Icons.DeleteItem,
-                    Type = "Danger",
+                    Type = FormexUI.ButtonType.Danger,
                     Style = FormexUI.ButtonStyle.Outline,
                     Size = UDim2.new(0, 44, 0, 44),
                 }, function()

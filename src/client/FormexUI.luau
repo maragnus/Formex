@@ -36,7 +36,7 @@ end
 export type FlexItemOptions = {
     FlexMode: Enum.UIFlexMode,
     GrowRatio: number?,
-    StrinkRatio: number?,
+    ShrinkRatio: number?,
     ItemLineAlignment: Enum.ItemLineAlignment?,
 }
 
@@ -45,7 +45,7 @@ function FormexUI.FlexItem(item: Instance, flexMode: Enum.UIFlexMode | FlexItemO
     if type(flexMode) == "table" then
         flexItem.FlexMode = flexMode.FlexMode
         if flexMode.GrowRatio ~= nil then flexItem.GrowRatio = flexMode.GrowRatio end
-        if flexMode.ShrinkRatio ~= nil then flexItem.ShrinkRatio = flexMode.StrinkRatio end
+        if flexMode.ShrinkRatio ~= nil then flexItem.ShrinkRatio = flexMode.ShrinkRatio end
         if flexMode.ItemLineAlignment ~= nil then flexItem.ItemLineAlignment = flexMode.ItemLineAlignment end
     elseif flexMode ~= nil then
         flexItem.FlexMode = flexMode
@@ -67,7 +67,7 @@ export type CommonOptions = {
     FlexGrowRatio: number?,
     FlexShrinkRatio: number?,
     ItemLineAlignment: Enum.ItemLineAlignment,
-}
+} & FlexItemOptions
 
 local function updateGUIObject(instance: GuiObject, options: CommonOptions)
     if options.Name ~= nil then instance.Name = options.Name end
@@ -84,7 +84,7 @@ local function updateGUIObject(instance: GuiObject, options: CommonOptions)
     end
     if options.Padding ~= nil then
         local padding = Instance.new("UIPadding", instance)
-        padding.PaddingRight = type(options.Padding) == "number" and UDim.new(0, options.Padding) or options.Padding
+        padding.PaddingRight = type(options.Padding) == "number" and UDim.new(0, options.Padding) or UDim.new()
     end
     if options.FlexMode then FormexUI.FlexItem(instance, options) end
 end
@@ -103,7 +103,7 @@ export type LabelOptions = {
     FlexShrinkRatio: number?,
     ItemLineAlignment: Enum.ItemLineAlignment,
     TextWrapped: boolean?
-} | CommonOptions
+} & CommonOptions
 
 function FormexUI.CreateLabel(options: LabelOptions)
     local label = Instance.new("TextLabel", options.Parent)
@@ -126,7 +126,7 @@ export type FlexOptions = {
     VerticalAlignment: Enum.VerticalAlignment?,
     AutomaticSize: Enum.AutomaticSize?,
     Wraps: boolean?,
-} | CommonOptions
+} & CommonOptions
 
 function FormexUI.CreateRow(options: FlexOptions)
     local header = Instance.new("Frame", options.Parent)
@@ -185,9 +185,9 @@ export type ButtonOptions = {
     Type: ButtonType?,
     Style: ButtonStyle?,
     IsPressed: boolean?, -- Appears pressed for toggle button style
-} | CommonOptions
+} & CommonOptions
 
-function FormexUI.CreateButton(options: ButtonOptions, action: (GuiButton) -> boolean)
+function FormexUI.CreateButton(options: ButtonOptions, action: (GuiButton) -> ())
     local palette = buttonPalette[options.Type] or buttonPalette.Primary
     local baseColor = palette.Base
     local outlineTextColor = (options.Type == "Secondary" or options.Type == "Warn") and darken(baseColor, 0.35) or baseColor
@@ -230,9 +230,8 @@ function FormexUI.CreateButton(options: ButtonOptions, action: (GuiButton) -> bo
     local contentSpacing = hasLabel and (options.Icon and 8 or 4) or 0
     contentLayout.Padding = UDim.new(0, contentSpacing)
 
-    local iconImage: ImageLabel? = nil
-    if options.Icon then
-        iconImage = Instance.new("ImageLabel", button)
+    local iconImage: ImageLabel? = options.Icon and Instance.new("ImageLabel", button) or nil
+    if iconImage then
         iconImage.Name = "Icon"
         iconImage.BackgroundTransparency = 1
         iconImage.Size = UDim2.new(0, 18, 0, 18)
@@ -240,9 +239,8 @@ function FormexUI.CreateButton(options: ButtonOptions, action: (GuiButton) -> bo
         iconImage.ScaleType = Enum.ScaleType.Fit
     end
 
-    local labelText: TextLabel? = nil
-    if hasLabel then
-        labelText = Instance.new("TextLabel", button)
+    local labelText: TextLabel? = hasLabel and Instance.new("TextLabel", button) or nil
+    if labelText then
         labelText.Name = "Label"
         labelText.BackgroundTransparency = 1
         labelText.Size = UDim2.new(0, 0, 1, 0)
@@ -328,10 +326,15 @@ function FormexUI.CreateButton(options: ButtonOptions, action: (GuiButton) -> bo
 end
 
 export type DialogSize = "Small" | "Medium" | "Large"
+FormexUI.DialogSize = table.freeze({
+    Small = "Small",
+    Medium = "Medium",
+    Large = "Large",
+}) :: {[DialogSize]: DialogSize}
 
 export type ButtonInfo = {
     Result: any?, -- if nil, returns Dialog.Result
-} | ButtonOptions
+} & ButtonOptions
 
 export type Dialog = {
     Name: string,
@@ -354,7 +357,7 @@ export type TextInputOptions = {
     Parent: Instance,
     Label: string?,
     Text: string?,
-} | CommonOptions
+} & CommonOptions
 
 
 function FormexUI.CreateTextInput(options: TextInputOptions, onChanged: ((value: string) -> nil)?): TextBox
@@ -463,7 +466,7 @@ export type SliderOptions = {
     Value: number?,
     AllowEmpty: boolean?,
     PlaceholderText: string?,
-} | CommonOptions
+} & CommonOptions
 
 export type SliderHandle = {
     Frame: Frame,
@@ -824,7 +827,7 @@ export type ColorSelectOptions = {
     Colors: {ColorOption}?,
     SelectedColor: Color3?,
     AllowNone: boolean?,
-} | CommonOptions
+} & CommonOptions
 
 export type ColorSelectHandle = {
     Frame: ImageButton,
@@ -872,9 +875,8 @@ function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: C
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Padding = UDim.new(0, 4)
 
-    local labelText: TextLabel? = nil
-    if showLabel then
-        labelText = Instance.new("TextLabel", container)
+    local labelText: TextLabel? = showLabel and Instance.new("TextLabel", container) or nil
+    if labelText then
         labelText.Name = "Label"
         labelText.BackgroundTransparency = 1
         labelText.Size = UDim2.new(1, 0, 0, 16)
@@ -911,8 +913,7 @@ function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: C
     previewStroke.Color = Color3.fromRGB(180, 190, 210)
     previewStroke.Thickness = 1.6
 
-    local chevron: ImageLabel? = nil
-    chevron = Instance.new("ImageLabel", row)
+    local chevron: ImageLabel = Instance.new("ImageLabel", row)
     chevron.Name = "Chevron"
     chevron.BackgroundTransparency = 1
     chevron.Size = UDim2.new(0, 14, 0, 14)
@@ -1082,7 +1083,7 @@ export type MaterialSelectOptions = {
     Label: string?,
     PartType: MaterialPartType?,
     SelectedMaterial: number?,
-} | CommonOptions
+} & CommonOptions
 
 export type MaterialSelectHandle = {
     Frame: ImageButton,
@@ -1355,6 +1356,8 @@ function FormexUI.Footer(parent: ScreenGui)
 end
 
 
+export type ButtonList = {[number]: ButtonInfo}
+
 export type DialogOptions = {
     Name: string,
     Title: string,
@@ -1363,23 +1366,18 @@ export type DialogOptions = {
     CloseResult: any?,
     AutoSize: boolean?,
     Scrolling: Enum.ScrollingDirection?,
-    Buttons: {[number]: ButtonInfo}?
+    Buttons: ButtonList?
 }
 
 function FormexUI.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> nil))
     local result: any = nil
     local closed = false
-    local dialog: Dialog = {
-        Name = options.Name or "Dialog",
-        Title = options.Title or "Dialog",
-        Size = options.Size or "Small",
-        Buttons = options.Buttons or { {Label = "OK" } },
-        CanClose = options.CanClose ~= nil and options.CanClose or true,
-        Result = nil
-    }
-    local size = dialogSizes[options.Size or "Small"] or dialogSizes.Small
+    local name = options.Name or "Dialog"
+    local title = options.Title or "Dialog"
+    local dialog: Dialog
+    local size = dialogSizes[options.Size] or dialogSizes.Small
 
-    dialog.Close = function(dialogResult)
+    local close = function(dialogResult)
         if closed then return end
         closed = true
         if dialogResult ~= nil then
@@ -1389,7 +1387,7 @@ function FormexUI.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> 
     end
 
     local overlay = Instance.new("Frame", screenGui)
-    overlay.Name = dialog.Name .. "Overlay"
+    overlay.Name = name .. "Overlay"
     overlay.Active = true
     overlay.BackgroundTransparency = 0.45
     overlay.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
@@ -1398,7 +1396,7 @@ function FormexUI.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> 
     overlay.ZIndex = 20
 
     local dialogFrame = Instance.new("Frame", overlay)
-    dialogFrame.Name = dialog.Name
+    dialogFrame.Name = name .. "Frame"
     dialogFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     dialogFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     dialogFrame.Size = UDim2.new(0, size, 0, 0)
@@ -1438,7 +1436,7 @@ function FormexUI.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> 
     titleText.BackgroundTransparency = 1
     titleText.Size = UDim2.new(1, options.CanClose and -36 or 0, 1, 0)
     titleText.Font = Enum.Font.GothamBold
-    titleText.Text = dialog.Title
+    titleText.Text = title
     titleText.TextColor3 = Color3.fromRGB(50, 55, 80)
     titleText.TextSize = 20
     titleText.TextXAlignment = Enum.TextXAlignment.Left
@@ -1509,9 +1507,19 @@ function FormexUI.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> 
     contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
     contentLayout.Padding = UDim.new(0, 8)
 
-    dialog.Frame = dialogFrame
-    dialog.ContentFrame = contentFrame
-    dialog.ButtonsFrame = nil
+
+    dialog = {
+        Name = options.Name or "Dialog",
+        Title = options.Title or "Dialog",
+        Size = options.Size or FormexUI.DialogSize.Small,
+        Buttons = options.Buttons or { {Label = "OK" } } :: ButtonList,
+        CanClose = options.CanClose ~= nil and options.CanClose or true,
+        Result = nil,
+        Close = close,
+        Frame = dialogFrame,
+        ContentFrame = contentFrame,
+        ButtonsFrame = nil,
+    }
 
     local blur = BlurController.new(dialogFrame, "Rectangle")
     overlay.Destroying:Connect(function()

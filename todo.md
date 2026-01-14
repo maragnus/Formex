@@ -64,22 +64,27 @@ See @DESIGN_MODES.md for details.
 
 ---
 
-I have a bunch of HELPERS on my Data classes in [Formex.luau](src/shared/Formex.luau) 
+I have a bunch of HELPERS on my Data classes in [Formex.luau](src/shared/Formex.luau)
+
+Walls:
+- `ConnectedStartWalls` and `ConnectedEndWalls` to preaggregate 
+- `ConnectedStartFloors` and `ConnectedEndFloors`
+- `ConnectedRoomFront` and `ConnectedRoomBack`
+Floors: `ConnectedRoom`
+Objects: `ConnectedRoom`, `PortalRoom`
+
 
 My original goal was to include helpers to speed up FormexDesign queries, Sidebar queries, and Room calculation. But maintaining these on both client and server is costly and quirky. It's actually faster to query at this point.
 
 Change up this helper system to make it count where it matters. Remove unnecessary helpers, add any that would be really helpful. Rooms are the magic bullet here. Users will be mostly managing Floors, Walls, and Objects using room tools. So we need to make Room calculation really efficient and reliable.
 
-Walls: `ConnectedRoomFront` and `ConnectedRoomBack`
 - Walls need to know which side (front/back) relates to which room.
 - If one side of a wall is exposed to more than one room, it needs to automatically split. The rule is, one room per wall side.
 - Remove other helpers
 
-Floors: `ConnectedRoom`
 - If a floor is exposed to more than one room, it needs to automatically split. The rule is, one room per floor. But a room can contain many floors.
 - Remove other helpers
 
-Objects: `ConnectedRoom`, `PortalRoom`
 - It would be helpful to know which room an object belongs to. Maybe not for the Formex system itself, but for the game that will be built on top of Formex. For doors, it may also be helpful to know which room the door enters into. Let's track these
 - Remove other helpers
 
@@ -93,3 +98,24 @@ Queries that happen and we need to review, update, and optimize:
   - We need to query floors
 
 NOTE: Right now, t
+
+---
+
+Room editor needs to add missing points to floor and walls when moving points.
+
+For example, a single rectangular floor fills a square room, it has four points, one at each corner.
+There the user has splits the wall in half, now its two walls. But the floor doesnt have that extra point.
+In room mode, right now, if the user drags that new handle, the floor will stay square and not move.
+What I am proposing, is that the floor should automatically create that missing point when the user tries to moce it.
+But the same thing the other way. If the floor is divided, the Wall should automatically divide too.
+
+---
+
+@FormexDesign.luau
+
+`getDataFromPart`
+
+`FormexDesign.Select` is calling `getSelectionFromInstance` which calls `getDataFromPart`
+
+Those methods should not exist under the new rule that `InputInfo
+

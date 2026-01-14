@@ -856,89 +856,68 @@ function Formex.Objects.GetObjectCFrame(
 end
 
 local function shouldCarve(prefab: Formex.ObjectPrefab?): boolean
-	if not prefab then return false end
 	return prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window
 end
 
 function Formex.Objects.CarveWallObjects(plotData: Formex.PlotData, wallData: Formex.WallData, plotPart: BasePart?)
-	if not plotData or not wallData or not wallData.Part then return end
 	local levelData = plotData.Levels and plotData.Levels[wallData.Level or 1]
-	if not levelData or not levelData.Objects then return end
 	local subtractParts = {}
+
 	for _, objectData in pairs(levelData.Objects) do
 		if objectData.WallId == wallData.WallId then
 			local prefab = objectData.Prefab
-			if not prefab and objectData.PrefabName then
-				prefab = Formex.Objects.GetPrefab(objectData.PrefabName)
-				objectData.Prefab = prefab
-			end
 			if shouldCarve(prefab) then
 				local subtractModel = objectData.SubtractModel
-				if not subtractModel and objectData.Part then
-					local found = objectData.Part:FindFirstChild("Subtract")
-					if found and found:IsA("Model") then
-						subtractModel = found
-						objectData.SubtractModel = subtractModel
-					end
-				end
 				if subtractModel then
-					for _, child in ipairs(subtractModel:GetChildren()) do
+					for _, child in ipairs(subtractModel:GetDescendants()) do
 						if child:IsA("BasePart") then
 							table.insert(subtractParts, child)
 						end
 					end
+				else
+					warn("No subtract model found for " .. prefab.PrefabName .. " on object " .. tostring(objectData.ObjectId))
 				end
 			end
 		end
 	end
 
 	local wallModel = wallData.Part
-
-	local function hasCarvedParts(): boolean
-		for _, name in ipairs(Formex.WallPart) do
-			local part = wallModel:FindFirstChild(name)
-			if part and part:IsA("BasePart") and part:IsA("PartOperation") then return true end
-		end
-		return false
+	if not wallModel then 
+		error("Wall model not found for wall ID: " .. tostring(wallData.WallId))
 	end
 
-	local function resetWallParts()
-		for _, name in ipairs(Formex.WallPart) do
-			local part = wallModel:FindFirstChild(name)
-			if part and part:IsA("BasePart") then
-				part:Destroy()
-			end
-		end
+	local hasCarvedParts = wallModel:FindFirstChildWhichIsA("PartOperation") and true or false
+
+	if #subtractParts > 0 or hasCarvedParts then
+		wallModel:ClearAllChildren()
 		Formex.Walls.Edit(wallData, plotPart)
 	end
 
-	if plotPart then
-		if #subtractParts > 0 or hasCarvedParts() then
-			resetWallParts()
-		end
-	end
-
 	if #subtractParts == 0 then return end
-	for _, name in ipairs(Formex.WallPart) do
-		local wallPart = wallModel:FindFirstChild(name)
-		if wallPart and wallPart:IsA("BasePart") then
-			local carved = wallPart:SubtractAsync(subtractParts)
-			if carved then
-				carved.Name = wallPart.Name
-				carved.Anchored = true
-				carved.Material = wallPart.Material
-				carved.MaterialVariant = wallPart.MaterialVariant
-				carved.Color = wallPart.Color
-				carved.Transparency = wallPart.Transparency
-				carved.CollisionGroup = wallPart.CollisionGroup
-				carved.CanCollide = wallPart.CanCollide
-				carved.CanTouch = wallPart.CanTouch
-				carved.CanQuery = wallPart.CanQuery
-				carved.CastShadow = wallPart.CastShadow
-				carved.Parent = wallPart.Parent
-				wallPart:Destroy()
-			end
+	
+	local children = wallModel:GetChildren() :: any
+	
+	print("Subtract parts for wall", wallData.WallId, ":", subtractParts, children)
+
+	for _, wallPart in children :: {Part} do
+		local carved = wallPart:SubtractAsync(subtractParts) :: PartOperation
+		if not carved then
+			warn("Failed to carve wall", wallData.WallId, "part:", wallPart.Name)
+			continue
 		end
+		carved.Name = wallPart.Name
+		carved.Anchored = true
+		carved.Material = wallPart.Material
+		carved.MaterialVariant = wallPart.MaterialVariant
+		carved.Color = wallPart.Color
+		carved.Transparency = wallPart.Transparency
+		carved.CollisionGroup = wallPart.CollisionGroup
+		carved.CanCollide = wallPart.CanCollide
+		carved.CanTouch = wallPart.CanTouch
+		carved.CanQuery = wallPart.CanQuery
+		carved.CastShadow = wallPart.CastShadow
+		carved.Parent = wallPart.Parent
+		wallPart:Destroy()
 	end
 end
 

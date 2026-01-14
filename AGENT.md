@@ -13,6 +13,8 @@ Always check these related documents with reviewing or updating these systems:
 
 ## Coding Standards
 
+0. Rule zero is don't be dumb. It is critical that you're not dumb or doing dumb things.
+
 1. The first line of every .luau module must be: --!strict
 
 2. Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Content.fromAssetId` and avoid unnecessary wrapper functions.
@@ -31,8 +33,16 @@ Always check these related documents with reviewing or updating these systems:
     - Move the usage below the declaration
     - Move the function and it's dependencies up
 
-6.  Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
+6. Null-checking a non-nullable property or function argument is dumb, don't do that.
+    Rely on specified type definitions to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
     - Always assume with 100% certainty that non-nullable types are strictly adhered to and DO NOT check them for nil. It is imperitive that we always get nil reference errors to find root cause issues.
+    `function example(value: string?)` value might be a nil, you can use checks
+    `function example(value: string)` value WILL NEVER BE nil, you MUST NOT check it for nil
+    In summary, NEVER EVER CHECK FOR nil IF THE TYPE INDICATES THAT IT SHOULD NOT BE nil.
+
+7. When you are trying to diagnose an error with the user, the first step is to remove ALL unnecessary nil checks first to see if this will uncover the error. Also, remove any fallbacks for values that should not be nil, because these also cover up root cause.
+
+8. When you are trying to diagnose an error with the user, if the issue isn't completely obvious, do not fuck around and find out with random changes, adding fallback behavior, or nil checks. Instead, add some useful `print()` statements and ask the user to test the behavior and see if you can triangulate it. We are always trying to find the root cause, not bandaid the issue.
 
 Note that the values in `Formex.LevelData` are assumed to NEVER be nil, never check them for nil, never treat them as nullable 
 These are BAD PRACTICE, DO NOT DO IT: `if levelData.Walls then` or `levelData.Walls or {}` or `levelData.Part or PlotData:WaitForChild(tostring(levelData.LevelIndex))`

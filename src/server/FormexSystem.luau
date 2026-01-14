@@ -518,7 +518,27 @@ local function renderFurniture(data: RenderState)
     end
 end
 
-local carveWallsForLevel: (plotData: Formex.PlotData, plotPart: BasePart?, levelIndex: number, wallIds: {[number]: boolean}?) -> ()
+local function carveWallsForLevel(plotData: Formex.PlotData, plotPart: BasePart?, levelIndex: number, wallIds: {[number]: boolean}?)
+    print("Carving walls for plot", plotData.PlotId, "level", levelIndex, wallIds)
+	local levelData = plotData.Levels and plotData.Levels[levelIndex]
+
+    if wallIds then
+		if next(wallIds) == nil then return end
+		for wallId in pairs(wallIds) do
+			local wallData = levelData.Walls[wallId]
+			if wallData and wallData.Part then
+				Formex.Objects.CarveWallObjects(plotData, wallData, plotPart)
+			end
+		end
+		return
+	end
+
+	for _, wallData in pairs(levelData.Walls) do
+		if wallData.Part then
+			Formex.Objects.CarveWallObjects(plotData, wallData, plotPart)
+		end
+	end
+end
 
 local function renderLevel(data: RenderState, levelIndex: number, filterPartType: Formex.PartType?, wallIds: {[number]: boolean}?)
     data.LevelIndex = levelIndex
@@ -560,27 +580,6 @@ local function renderLevel(data: RenderState, levelIndex: number, filterPartType
         renderFurniture(data)
         carveWallsForLevel(data.PlotData, data.PlotPart, levelIndex, wallIds)
     end
-end
-
-carveWallsForLevel = function(plotData: Formex.PlotData, plotPart: BasePart?, levelIndex: number, wallIds: {[number]: boolean}?)
-	local levelData = plotData.Levels and plotData.Levels[levelIndex]
-	if not levelData or not levelData.Walls then return end
-	if wallIds then
-		if next(wallIds) == nil then return end
-		for wallId in pairs(wallIds) do
-			local wallData = levelData.Walls[wallId]
-			if wallData and wallData.Part then
-				Formex.Objects.CarveWallObjects(plotData, wallData, plotPart)
-			end
-		end
-		return
-	end
-
-	for _, wallData in pairs(levelData.Walls) do
-		if wallData.Part then
-			Formex.Objects.CarveWallObjects(plotData, wallData, plotPart)
-		end
-	end
 end
 
 function FormexSystem.RefreshWallCarves(plotId: number, levelIndex: number?)

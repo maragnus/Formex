@@ -137,7 +137,6 @@ export type ObjectData = {
 	IsPortal: boolean, -- calculated from Prefab.ObjectMount=Door, indicates a doorway into adjacent room
 	Prefab: ObjectPrefab,
 	Part: Model?,
-	Subtract: Model?,
 	ObjectModel: Model?,
 	SubtractModel: Model?,
 	DesignParts: {[number]: {BasePart}}, -- [part index]: {parts}
@@ -252,32 +251,32 @@ Formex.DefaultFoundationMaterial = 2 -- Exterior of Level 1 floor
 Formex.SnapWallsTo45Degrees = false
 
 Formex.Permission = table.freeze({
-        Banned = "Banned",
-        Guest = "Guest",
-        VIP = "VIP",
-        Manager = "Manager",
-        Owner = "Owner"
-    }) :: { Permission: Permission }
+	Banned = "Banned",
+	Guest = "Guest",
+	VIP = "VIP",
+	Manager = "Manager",
+	Owner = "Owner"
+}) :: { [Permission]: Permission }
 
 Formex.BuildAction = table.freeze({
-        Add = "Add",
-        Delete = "Delete",
-        Edit = "Edit"
-    }) :: {BuildAction: BuildAction}
+	Add = "Add",
+	Delete = "Delete",
+	Edit = "Edit"
+}) :: {[BuildAction]: BuildAction}
 
 Formex.PartType = table.freeze({
-        Wall = "Wall",
-        Floor = "Floor",
-        Ceiling = "Ceiling",
-        Object = "Object",
-        All = nil,
-    }) :: {PartType: PartType}
+	Wall = "Wall",
+	Floor = "Floor",
+	Ceiling = "Ceiling",
+	Object = "Object",
+	All = nil,
+}) :: {[PartType]: PartType}
 
 Formex.CollisionGroup = {
 	Grid = "FormexGrids",
 	Object = "FormexObjects",
 	Structure = "FormexStructure",
-} :: {CollisionGroup: string}
+} :: {[CollisionGroup]: string}
 
 Formex.MountType = table.freeze({
 	Surface = "Surface", -- placeable on any surface, floor or table
@@ -286,19 +285,19 @@ Formex.MountType = table.freeze({
 	Wall = "Wall", -- must be placed on wall
 	Door = "Door", -- must be placed in wall opening on floor
 	Window = "Window", -- must be placed in wall opening at any height
-}) :: {ObjectMount: ObjectMount}
+}) :: {[ObjectMount]: ObjectMount}
 
 Formex.ObjectSide = table.freeze({
 	Front = "Front",
 	Back = "Back",
-}) :: {ObjectSide: ObjectSide}
+}) :: {[ObjectSide]: ObjectSide}
 
 Formex.WallPart = table.freeze({
 	FrontBottom = "FrontBottom",
 	FrontTop = "FrontTop",
 	BackBottom = "BackBottom",
 	BackTop = "BackTop",
-}) :: {WallPart: WallPart}
+}) :: {[WallPart]: WallPart}
 
 Formex.MaxPlotSize = {
 	Width = 3, -- segments
@@ -332,7 +331,7 @@ Formex.Segments.Count = Formex.Segments.GridWidth * Formex.Segments.GridHeight
 Formex.DefaultSegmentsUnlocked = 2 -- bits
 
 Formex.Icons = {} :: {[string]: number}
-Formex.Materials = {} :: {number: MaterialInfo}
+Formex.Materials = {} :: {[number]: MaterialInfo}
 Formex.Walls = {} :: {}
 Formex.Floors = {} :: {}
 Formex.Furniture = {} :: {ObjectPrefab}
@@ -361,6 +360,6 @@ Formex.Function = table.freeze({
 	CanRedo = "CanRedo",
 	Undo = "Undo",
 	Redo = "Redo",
-}) :: {Function: string}
+}) :: {[string]: string}
 
 return Formex
