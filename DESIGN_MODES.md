@@ -17,15 +17,16 @@ From `src/client/FormexDesignContext.luau`:
 
 ## Client Design System References
 
-- `src/client/FormexDesign.luau`: entry point; manages design state, selection, and input dispatch.
-- `src/client/FormexDesignContext.luau`: shared enums/types/constants and module registry.
-- `src/client/FormexDesignWalls.luau`: wall build/edit/paint/handle logic.
-- `src/client/FormexDesignFloors.luau`: floor build/edit/paint/handle logic.
-- `src/client/FormexDesignObjects.luau`: object interactions and paint/dropper.
-- `src/client/FormexDesignRooms.luau`: room overlays, selection, and wall/point move handles.
-- `src/client/FormexDesignHandles.luau`: handle creation, hover, and click behavior.
-- `src/client/FormexDesignHighlights.lua`: selection and edge previews.
-- `src/client/FormexSidebar.client.luau`: sidebar and design controls UI.
+- `src/client/Formex/Design.luau`: entry point; manages design state, selection, and input dispatch.
+- `src/client/Formex/Design/Context.luau`: shared enums/types/constants and module registry.
+- `src/client/Formex/Design/Walls.luau`: wall build/edit/paint/handle logic.
+- `src/client/Formex/Design/Floors.luau`: floor build/edit/paint/handle logic.
+- `src/client/Formex/Design/Objects.luau`: object interactions and paint/dropper.
+- `src/client/Formex/Design/Rooms.luau`: room overlays, selection, and wall/point move handles.
+- `src/client/Formex/Design/Handles.luau`: handle creation, hover, and click behavior.
+- `src/client/Formex/Design/Highlights.lua`: selection and edge previews.
+- `src/client/Gui/FormexSidebar.client.luau`: sidebar and design controls UI.
+- `src/client/Gui/FormexTips.client.luau`: design feedback, user suggestions, and tips.
 
 Design flow: `FormexDesign` initializes the context, then calls `Init()` on handles/highlights/walls/floors/objects/rooms. Submodules access each other via `FormexDesignContext.Get()`.
 

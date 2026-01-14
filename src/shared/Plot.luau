@@ -1,181 +1,162 @@
 --!strict
 
-local Formex = require(script.Parent:FindFirstChild("Formex"))
+local Formex = require(script.Parent)
 
---[[
-    Classes used to represent Plots, Levels, Walls, Floors, and Objects
-    in the Formex system. These are synced between server and client.
+local EPSILON = Formex.EPSILON
 
-    Creating a new Part is done via server-side call which returns an ID, then client WaitForChild to get the Part instance.
-    Creating a new Part starts as a ghost (IsGhost) until it is finished (Finish).
-    Ghosts are normal parts shared between other clients while building just like finished parts. They just have IsGhost = true.
+function Formex.Segments.GetRowColumn(index: number): (number, number)
+	if index < 1 or index > Formex.Segments.Count then
+		error("Segment index out of range: " .. tostring(index))
+	end
 
-    Changes use optimistic client prediction and utlize unified validation on both server and client. The call to the server waits for confirmation and can revert the change.
+	local row = math.ceil(index / Formex.Segments.GridWidth)
+	local column = ((index - 1) % Formex.Segments.GridWidth) + 1
+	return row, column
+end
 
-    Players can see what other players have selected, and two players cannot select the same part at the same time.
+function Formex.Segments.GetIndex(row: number, column: number): number
+	if row < 1 or row > Formex.Segments.GridHeight or column < 1 or column > Formex.Segments.GridWidth then
+		error("Segment row/column out of range: " .. tostring(row) .. "," .. tostring(column))
+	end
 
-    Workspace Hierarchy:
-    Plot.Part \ Level.Part \ Walls (Folder) \ Wall.Model \ Front.Part
-                                                    \ BackSide.Part
-                                                    \ FrontTop.Part
-                                                    \ BackTop.Part
-                           \ Floors (Folder) \ Floor.Part
-                           \ Objects (Folder) \ Object.Part
+	return (row - 1) * Formex.Segments.GridWidth + column
+end
 
-    Part.Name is the unique `Id` of the object.
-    Parts use Attributes to store metadata such as materials, heights, etc.
+function Formex.Segments.Bit(index: number): number
+	if index < 1 or index > Formex.Segments.Count then
+		error("Segment index out of range: " .. tostring(index))
+	end
 
-    Underlying implementation will monitor Part changes to update the data model:
-        `part.Changed:Connect` to monitor property changes
-        `part.AttributeChanged:Connect` to monitor attribute changes
-        `part.ChildAdded:Connect` on each Folder to monitor Part additions
-        `part.ChildRemoved:Connect` on each Folder to monitor Part removals
-]]
+	return bit32.lshift(1, index - 1)
+end
 
-export type DesignMode = "Play" | "Select" | "Wall" | "Floor" | "Object"
+function Formex.Segments.IsUnlocked(mask: number?, index: number): boolean
+	return bit32.band(mask or 0, Formex.Segments.Bit(index)) ~= 0
+end
 
-export type Wall = {
-    Id: number,
-    Part: Model,
-    FrontPart: Part?,
-    BackPart: Part?,
-    Level: Level,
-    Start: Vector2int16,
-    End: Vector2int16,
-    Height: number,
-    FrontSplitHeight: number?,
-    BackSplitHeight: number?,
-    FrontTopMaterial: number,
-    FrontBottomMaterial: number,
-    BackTopMaterial: number,
-    BackBottomMaterial: number,
-    FrontTopColor: Color3,
-    FrontBottomColor: Color3,
-    BackTopColor: Color3,
-    BackBottomColor: Color3,
-    IsGhost: boolean,
-    IsSelected: boolean,
+function Formex.Segments.Unlock(mask: number?, index: number): number
+	return bit32.bor(mask or 0, Formex.Segments.Bit(index))
+end
 
-    UpdatePoints: (this: Wall, newStart: Vector2int16, newEnd: Vector2int16) -> (),
-    SetHeight: (this: Wall, newHeight: number) -> (),
-    SetFrontMaterial: (this: Wall, materialId: number) -> (),
-    SetBackMaterial: (this: Wall, materialId: number) -> (),
-    Select: (this: Wall) -> (),
-    Finish: (this: Wall) -> (),
-    Delete: (this: Wall) -> (),
-}
+function Formex.Segments.CountUnlocked(mask: number?): number
+	local unlocked = 0
+	for index = 1, Formex.Segments.Count do
+		if Formex.Segments.IsUnlocked(mask, index) then
+			unlocked += 1
+		end
+	end
+	return unlocked
+end
 
-export type Floor = {
-    Id: number,
-    Part: Part,
-    Level: Level,
-    Points: {Vector2int16},
-    IsGhost: boolean,
-    IsSelected: boolean,
+function Formex.Segments.GetAllUnlocked(mask: number?): {number}
+	local unlocked = {}
+	for index = 1, Formex.Segments.Count do
+		if Formex.Segments.IsUnlocked(mask, index) then
+			table.insert(unlocked, index)
+		end
+	end
+	return unlocked
+end
 
-    UpdatePoints: (this: Floor, newPoints: {Vector2int16}) -> (),
-    SetHeight: (this: Floor, newHeight: number) -> (),
-    SetFloorMaterial: (this: Floor, materialId: number) -> (),
-    SetCeilingMaterial: (this: Floor, materialId: number) -> (),
-    SetFoundationMaterial: (this: Floor, materialId: number) -> (),
-    SetFloorColor: (this: Floor, color: Color3) -> (),
-    SetCeilingColor: (this: Floor, color: Color3) -> (),
-    SetFoundationColor: (this: Floor, color: Color3) -> (),
-    Select: (this: Floor) -> (),
-    Finish: (this: Floor) -> (),
-    Delete: (this: Floor) -> (),
-}
+function Formex.Segments.GetBounds(plotPart: BasePart, segmentIndex: number, levelsUnlocked: number?): Formex.SegmentBounds
+	local row, column = Formex.Segments.GetRowColumn(segmentIndex)
+	local xOffset = (column - (Formex.Segments.GridWidth + 1) / 2) * Formex.SegmentSize.Width
+	local zOffset = (row - (Formex.Segments.GridHeight + 1) / 2) * Formex.SegmentSize.Depth
+	local height = math.max(1, levelsUnlocked or 1) * Formex.LevelHeight
 
-export type Object = {
-    Id: number,
-    Part: Part,
-    Level: Level,
-    ModelId: number,
-    Position: Vector3,
-    Orientation: Vector3,
-    IsGhost: boolean,
-    IsSelected: boolean,
+	local segmentCFrame = plotPart.CFrame * CFrame.new(xOffset, 0, zOffset)
+	local size = Vector3.new(Formex.SegmentSize.Width, height, Formex.SegmentSize.Depth)
 
-    SetPosition: (this: Object, newPosition: Vector3) -> (),
-    SetOrientation: (this: Object, newOrientation: Vector3) -> (),
-    Select: (this: Object) -> (),
-    Finish: (this: Object) -> (),
-    Delete: (this: Object) -> (),
-}
+	return {
+		Index = segmentIndex,
+		Row = row,
+		Column = column,
+		CFrame = segmentCFrame,
+		Position = segmentCFrame.Position,
+		Size = size,
+		Extents = size / 2,
+	}
+end
 
-export type Level = {
-    Id: number,
-    Part: Part,
-    IsUnlocked: boolean,
-    IsActive: boolean,
-    CanUnlock: boolean,
-    Unlock: () -> (),
+function Formex.Plot.IsPointNear(plotCenter: Vector3, position: Vector3, border: number): boolean
+	local plotDimensions = Formex.Dimensions
+	local plotWidth = plotDimensions.Width
+	local plotDepth = plotDimensions.Depth
+	local plotHeight = plotDimensions.Height
 
-    Walls: {this: Level, number: Wall},
-    Floors: {this: Level, number: Floor},
-    Objects: {this: Level, number: Object},
+	local xDiff = math.abs(position.X - plotCenter.X)
+	local yDiff = math.abs(position.Y - plotCenter.Y)
+	local zDiff = math.abs(position.Z - plotCenter.Z)
 
-    AddWall: (this: Level, start: Vector2int16) -> Wall,
-    AddFloor: (this: Level, start: Vector2int16) -> Floor,
-    AddObject: (this: Level, start: Vector2int16, modelId: number) -> Object,
-}
+	return xDiff <= (plotWidth / 2 + border) and yDiff <= (plotHeight / 2 + border) and zDiff <= (plotDepth / 2 + border)
+end
 
-export type Segment = {
-    Position: Vector2int16,
-    IsUnlocked: boolean,
-    CanUnlock: boolean,
-    Unlock: () -> (),
-}
+function Formex.Plot.GetLevelOffset(level: number): number
+	return (math.max(level, 1) - 1) * Formex.SegmentSize.Height
+end
 
-export type PlotPlayer = {
-    UserId: number,
-    UserName: string,
-    Permission: Formex.Permission,
-    Color: Color3,
-    IsPresent: boolean,
-    DesignMode: DesignMode,
-    SortOrder: number, -- Plot.Owner = 0, Owner = 1, Manager = 2, VIP = 3, Guest = 4, Banned = 5
-}
+local function cross2(a: Vector2, b: Vector2): number
+	return a.X * b.Y - a.Y * b.X
+end
 
-export type Plot = {
-    Name: string,
-    Part: Part,
-    OwnerUserId: number?,
-    OwnerName: string?,
-    MyPermission: Formex.Permission,
-    Segments: {Segment},
-    Levels: {number: Level},
-    Players: {PlotPlayer},
-    CanUndo: boolean,
-    CanRedo: boolean,
-    DesignMode: DesignMode,
-    SelectedPart: Wall | Floor | Object | nil,
+function Formex.Plot.IsPointOnSegment(point: Vector2, startPoint: Vector2, endPoint: Vector2): boolean
+	if math.abs(cross2(endPoint - startPoint, point - startPoint)) > EPSILON then return false end
+	local minX = math.min(startPoint.X, endPoint.X) - EPSILON
+	local maxX = math.max(startPoint.X, endPoint.X) + EPSILON
+	local minY = math.min(startPoint.Y, endPoint.Y) - EPSILON
+	local maxY = math.max(startPoint.Y, endPoint.Y) + EPSILON
+	return point.X >= minX and point.X <= maxX and point.Y >= minY and point.Y <= maxY
+end
 
-    SetName: (this: Plot, newName: string) -> (),
-    SetPermission: (this: Plot, userId: number, permission: Formex.Permission) -> (),
 
-    SetDesignMode: (this: Plot, mode: DesignMode, levelIndex: number) -> (),
-    SelectPart: (this: Plot, part: Wall | Floor | Object) -> (),
-    DeselectAll: (this: Plot) -> (),
-    Undo: (this: Plot) -> (),
-    Redo: (this: Plot) -> (),
+local function getSegmentCenter(index: number): (number, number)
+	local row, column = Formex.Segments.GetRowColumn(index)
+	local xOffset = (column - (Formex.Segments.GridWidth + 1) / 2) * Formex.SegmentSize.Width
+	local zOffset = (row - (Formex.Segments.GridHeight + 1) / 2) * Formex.SegmentSize.Depth
+	return xOffset, zOffset
+end
 
-    IsPointValid: (this: Plot, point: Vector2 | Vector2int16) -> boolean,
-    IsLineValid: (this: Plot, lineStart: Vector2 | Vector2int16, lineEnd: Vector2 | Vector2int16) -> boolean,
-    IsPolygonValid: (this: Plot, points: {Vector2 | Vector2int16}) -> boolean,
-    IsPointNearBoundary: (this: Plot, point: Vector3, threshold: number) -> boolean,
+local function isPointInUnlockedSegments(point: Vector2, mask: number?): boolean
+	if not mask or mask == 0 then return false end
+	local halfWidth = Formex.SegmentSize.Width / 2
+	local halfDepth = Formex.SegmentSize.Depth / 2
 
-    -- Events
-    -- When Plot.*, Plot.Players, Plot.Segments, or Plot.Levels change (no arguments)
-    OnPlotChanged: BindableEvent,
-    -- When a Part is added, removed, or changed (part: Wall | Floor | Object)
-    OnPartChanged: BindableEvent,
-    -- When Plot.SelectedPart changes (no arguments)
-    OnSelectionChanged: BindableEvent,
-}
+	for index = 1, Formex.Segments.Count do
+		if Formex.Segments.IsUnlocked(mask, index) then
+			local centerX, centerZ = getSegmentCenter(index)
+			if math.abs(point.X - centerX) <= halfWidth + EPSILON
+			and math.abs(point.Y - centerZ) <= halfDepth + EPSILON then
+				return true
+			end
+		end
+	end
 
-local plot = {} :: Plot
+	return false
+end
 
--- Implementation will be different on client and server
+Formex.Plot.IsPointInUnlockedSegments = isPointInUnlockedSegments
 
-return plot
+function Formex.Plot.IsLineWithinUnlockedSegments(startPoint: Vector2 | Vector2int16, endPoint: Vector2 | Vector2int16, mask: number?): boolean
+	if not isPointInUnlockedSegments(startPoint, mask) or not isPointInUnlockedSegments(endPoint, mask) then return false end
+	if typeof(startPoint) ~= "Vector2" or typeof(endPoint) ~= "Vector2" then
+		startPoint = Vector2.new(startPoint.X, startPoint.Y)
+		endPoint = Vector2.new(endPoint.X, endPoint.Y)
+	end
+
+	local direction: Vector2 = endPoint - startPoint
+	local length = direction.Magnitude
+	if length <= EPSILON then return false end
+
+	local step = math.max(Formex.GridSize, 1)
+	local steps = math.floor(length / step)
+	local unit = direction / length
+
+	for i = 1, steps do
+		local point = startPoint + unit * (i * step)
+		if not isPointInUnlockedSegments(point, mask) then return false end
+	end
+
+	return true
+end
+
+return Formex.Plot

@@ -122,6 +122,7 @@ A **Plot** has a permissions list of other players that can interact with it. Th
                       Subtract: Model (optional)
                           Parts...
 - Formex entirely owns and maintains this exact hierarchy. It can be safely assumed that this will be strictly adhered to at all times.
+    - There will NEVER be unexpected objects that do not match this hierarchy, you are free to make assumptions, such as `wallPart:ClearAllChildren()` to clear all wall parts.
 - Walls are divided into front-side and back-side Block-shaped parts, and also top and bottom parts if the wall has a split height.
   - Walls use Material/MaterialVariant and Color for design
   - Wall is total thickness of `Formex.WallThickness` and maximum height of `Formex.LevelHeight`, but is user adjustable
@@ -182,7 +183,7 @@ When updating `PlotData`, `LevelData`, `WallData`, `FloorData`, or `ObjectData`:
 - `FormexBuild`: handles client functions related to building and designing
 
 ### Client-side
-- `FormexCamera`: manages camera modes
+- `DesignCamera`: manages camera modes
 - `FormexClient`: core management for the Formex state
 - `FormexDesign`: design mode functionality (floors, walls, objects) and all the 3D design tools
 - `FormexSidebar`: UI for the sidebar menu

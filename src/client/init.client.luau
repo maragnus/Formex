@@ -1,6 +1,7 @@
-local Players = game:GetService("Players")
-local FormexClient = require(script:WaitForChild("FormexClient"))
+--!strict
+local FormexClient = require(script:WaitForChild("Client"))
 
+local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
 
 -- Listen for server-driven attribute changes

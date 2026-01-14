@@ -1,4 +1,4 @@
-local FormexSystem = require(script:WaitForChild("FormexSystem"))
+local FormexSystem = require(script:WaitForChild("System"))
 
 local FormexWorkspace = workspace:WaitForChild("Formex")
 local FormexPlots = FormexWorkspace:WaitForChild("Plots")

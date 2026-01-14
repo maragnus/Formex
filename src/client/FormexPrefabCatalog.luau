@@ -1,9 +1,9 @@
 --!strict
 
-local FormexClient = require(script.Parent:WaitForChild("FormexClient"))
+local FormexClient = require(script.Parent:WaitForChild("Client"))
 local Formex = FormexClient.Formex
 local FormexUI = require(script.Parent:WaitForChild("FormexUI"))
-local FormexDesign = require(script.Parent:WaitForChild("FormexDesign"))
+local FormexDesign = require(script.Parent:WaitForChild("Design"))
 
 local screenGui: ScreenGui = FormexUI.ScreenGui
 
