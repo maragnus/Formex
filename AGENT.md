@@ -29,7 +29,10 @@ Do not use `pcall`. While developing, errors need to propogate normally to find 
 - When handles must be disabled while waiting for server confirmation, wrap the call with `Handles.SetBusy(true)` and `Handles.SetBusy(false)` to show the spinner.
 - Implement with an emphasis on KISS and DRY principals. 
 - Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
-- EditMode includes `DisconnectMove`; disconnect handles align with point handles and avoid moving shared connections for walls, floors, and rooms.
+
+## Design Modes and Tools
+
+- Read `DESIGN_MODES.md` before making changes to design modes, tools, paint/dropper logic, handles, selection, or sidebar behavior.
 
 ## Ideal flow
 
@@ -54,16 +57,25 @@ A **Plot** has a permissions list of other players that can interact with it. Th
           {levelId: number}: Part
               Walls: Folder
                   {WallId}: Model
-                      Parts...
+                      FrontBottom: Part
+                      FrontTop: Part (optional)
+                      BackBottom: Part
+                      BackTop: Part (optional)
               Floors: Folder
                   {FloorId}: Model
-                      Parts...
+                      Floor: MeshPart
+                      Foundation: MeshPart
+                      Ceiling: MeshPart (optional)
+                      Floor (Client): MeshPart (client-side)
+                      Foundation (Client): MeshPart (client-side)
+                      Ceiling (Client): MeshPart  (client-side, optional)
               Objects: Folder
                   {ObjectId}: Model
                       Object: Model
                           Parts...
-                      Subtract: Model
+                      Subtract: Model (optional)
                           Parts...
+- Formex entirely owns and maintains this exact hierarchy. It can be safely assumed that this will be strictly adhered to.
 - Walls are divided into front-side and back-side Block-shaped parts, and also top and bottom parts if the wall has a split height.
   - Walls use Material/MaterialVariant and Color for design
   - Wall is total thickness of `Formex.WallThickness` and maximum height of `Formex.LevelHeight`, but is user adjustable
@@ -94,24 +106,12 @@ Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Cont
 `imageLabel.ImageContent = Content.fromAssetId(assetId: number)`
 - `Texture`: `texture.ColorMapContent = Content.fromAssetId(assetId: number)` 
 
-## Paint/Dropper Behavior
-
-- Dropper is a full DesignMode (between Select and Room) and an Alt-only sub-mode for Wall, Floor, and Object.
-- In Dropper DesignMode, clicking a wall side/floor/object copies paint and switches to the matching DesignMode with Paint sub-mode.
-- While in Paint or Dropper, primary clicks never select or start build actions; they only attempt paint or dropper.
-- Dropper:
-  - Walls: copy wall height plus the clicked side's split height, top/bottom material, and top/bottom color into wall paint settings.
-  - Floors: copy raise height, floor/ceiling/foundation materials, and colors into floor paint settings.
-  - After a successful drop, switch to Paint unless AltMode is holding Dropper.
-- Paint:
-  - Walls: apply paint settings to the clicked side only; apply height to the whole wall; never change paint settings.
-  - Floors: apply paint settings to the clicked floor; never change paint settings.
-- Wall side detection comes from the clicked surface (front/back parts or hit position); no wall-side state is stored.
-- AltMode:
-  - Holding Alt while in Normal or Paint forces Dropper mode.
-  - While Alt is held, Dropper does not auto-switch to Paint.
-  - On Alt release, return to the last sub-mode unless the dropper was used; if used, switch to Paint.
-- Wall build settings are separate from wall paint settings; normal-mode edits update build/selection, not paint.
+Avoid multi-line simple exists:
+```lua
+		if not Walls then return true end```
+should be
+`if not Walls then return true end`
+Please fix these whenever you update a function.
 
 Always update `FormexSerialization.luau` when changing `Formex.PlotData`, `Formex.LevelData`, `Formex.WallData`, `Formex.FloorData`, `Formex.ObjectData`
 
@@ -160,19 +160,6 @@ When updating `PlotData`, `LevelData`, `WallData`, `FloorData`, or `ObjectData`:
 - `FormexSidebar`: UI for the sidebar menu
 - `FormexPrompts`: UI popups
 - `FormexUI`: custom UI component library
-
-## Design System (Client)
-- `src/client/FormexDesign.luau`: entry point; manages design state, selection, and input dispatch; initializes the context and submodules.
-- `src/client/FormexDesignContext.luau`: owns design enums/constants/shared types and stores shared dependencies/modules; submodules access each other through the context.
-- `src/client/FormexDesignWalls.luau`: wall build/edit/paint/handle logic; reads wall appearance from model attributes.
-- `src/client/FormexDesignFloors.luau`: floor build/edit/paint/handle logic; reads floor appearance from model attributes.
-- `src/client/FormexDesignObjects.luau`: object design interactions (currently minimal).
-- `src/client/FormexDesignHandles.luau`: shared handle creation, hover, and click behavior.
-- `src/client/FormexDesignHighlights.lua`: selection and edge preview highlighting.
-- Room DesignMode: exterior rooms (`IsExterior`) are not selectable; room overlays tint floors per-room and highlight doors between rooms.
-- Room sidebar: show area, connected rooms, object counts, plus replace-all lists for floor and interior wall materials.
-
-Design flow: `FormexDesign` initializes the context with Formex client/camera dependencies, then calls `Init()` on handles/highlights/walls/floors/objects. Submodules use `FormexDesignContext.Get()` for shared dependencies and for cross-module access, and all wall/floor materials/colors are sourced from model attributes.
 
 ## Communication
 - `FormexClient` has methods that call methods named in `Formex.Function`

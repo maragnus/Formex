@@ -64,10 +64,7 @@ function FormexPoly.PolygonArea(points: {Vector2int16}): number
 end
 
 local function isPointOnSegment(point: Vector2, a: Vector2, b: Vector2, epsilon: number): boolean
-	if math.abs(cross2(b - a, point - a)) > epsilon then
-		return false
-	end
-	return math.min(a.X, b.X) - epsilon <= point.X and point.X <= math.max(a.X, b.X) + epsilon
+	if math.abs(cross2(b - a, point - a)) > epsilon then return false end	return math.min(a.X, b.X) - epsilon <= point.X and point.X <= math.max(a.X, b.X) + epsilon
 		and math.min(a.Y, b.Y) - epsilon <= point.Y and point.Y <= math.max(a.Y, b.Y) + epsilon
 end
 
@@ -75,18 +72,12 @@ local function isPointOnPolygonEdge(point: Vector2, polygon: {Vector2int16}, eps
 	for i = 1, #polygon do
 		local a = toVector2(polygon[i])
 		local b = toVector2(polygon[(i % #polygon) + 1])
-		if isPointOnSegment(point, a, b, epsilon) then
-			return true
-		end
-	end
+		if isPointOnSegment(point, a, b, epsilon) then return true end	end
 	return false
 end
 
 function FormexPoly.IsPointInsidePolygon(point: Vector2, polygon: {Vector2int16}, includeBoundary: boolean?, epsilon: number): boolean
-	if #polygon < 3 then
-		return false
-	end
-
+	if #polygon < 3 then return false end
 	if isPointOnPolygonEdge(point, polygon, epsilon) then
 		return includeBoundary == true
 	end
@@ -113,10 +104,7 @@ end
 
 local function orientation(a: Vector2, b: Vector2, c: Vector2, epsilon: number): number
 	local value = (b.Y - a.Y) * (c.X - b.X) - (b.X - a.X) * (c.Y - b.Y)
-	if math.abs(value) <= epsilon then
-		return 0
-	end
-	return value > 0 and 1 or 2
+	if math.abs(value) <= epsilon then return 0 end	return value > 0 and 1 or 2
 end
 
 local function onSegment(a: Vector2, b: Vector2, c: Vector2, epsilon: number): boolean
@@ -130,10 +118,7 @@ function FormexPoly.SegmentsIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2:
 	local o3 = orientation(q1, q2, p1, epsilon)
 	local o4 = orientation(q1, q2, p2, epsilon)
 
-	if o1 ~= o2 and o3 ~= o4 then
-		return true
-	end
-
+	if o1 ~= o2 and o3 ~= o4 then return true end
 	if o1 == 0 and onSegment(p1, q1, p2, epsilon) then return true end
 	if o2 == 0 and onSegment(p1, q2, p2, epsilon) then return true end
 	if o3 == 0 and onSegment(q1, p1, q2, epsilon) then return true end
@@ -143,48 +128,30 @@ function FormexPoly.SegmentsIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2:
 end
 
 function FormexPoly.PolygonsIntersect(a: {Vector2int16}, b: {Vector2int16}, epsilon: number): boolean
-	if #a < 2 or #b < 2 then
-		return false
-	end
-
+	if #a < 2 or #b < 2 then return false end
 	for i = 1, #a do
 		local a1 = toVector2(a[i])
 		local a2 = toVector2(a[(i % #a) + 1])
 		for j = 1, #b do
 			local b1 = toVector2(b[j])
 			local b2 = toVector2(b[(j % #b) + 1])
-			if FormexPoly.SegmentsIntersect(a1, a2, b1, b2, epsilon) then
-				return true
-			end
-		end
+			if FormexPoly.SegmentsIntersect(a1, a2, b1, b2, epsilon) then return true end		end
 	end
 
 	return false
 end
 
 function FormexPoly.IsPolygonInside(outer: {Vector2int16}, inner: {Vector2int16}, epsilon: number): boolean
-	if #inner < 3 or #outer < 3 then
-		return false
-	end
-
-	if FormexPoly.PolygonsIntersect(outer, inner, epsilon) then
-		return false
-	end
-
+	if #inner < 3 or #outer < 3 then return false end
+	if FormexPoly.PolygonsIntersect(outer, inner, epsilon) then return false end
 	for _, point in ipairs(inner) do
-		if not FormexPoly.IsPointInsidePolygon(Vector2.new(point.X, point.Y), outer, false, epsilon) then
-			return false
-		end
-	end
+		if not FormexPoly.IsPointInsidePolygon(Vector2.new(point.X, point.Y), outer, false, epsilon) then return false end	end
 
 	return true
 end
 
 function FormexPoly.GetFaceSamplePoint(points: {Vector2int16}, epsilon: number): Vector2?
-	if #points == 0 then
-		return nil
-	end
-
+	if #points == 0 then return nil end
 	local sumX = 0
 	local sumY = 0
 	local minX = points[1].X
@@ -201,15 +168,9 @@ function FormexPoly.GetFaceSamplePoint(points: {Vector2int16}, epsilon: number):
 	end
 
 	local centroid = Vector2.new(sumX / #points, sumY / #points)
-	if FormexPoly.IsPointInsidePolygon(centroid, points, false, epsilon) then
-		return centroid
-	end
-
+	if FormexPoly.IsPointInsidePolygon(centroid, points, false, epsilon) then return centroid end
 	local center = Vector2.new((minX + maxX) / 2, (minY + maxY) / 2)
-	if FormexPoly.IsPointInsidePolygon(center, points, false, epsilon) then
-		return center
-	end
-
+	if FormexPoly.IsPointInsidePolygon(center, points, false, epsilon) then return center end
 	local polygon = {}
 	for _, point in ipairs(points) do
 		table.insert(polygon, Vector2.new(point.X, point.Y))
@@ -261,10 +222,7 @@ function FormexPoly.GetFaceSamplePoint(points: {Vector2int16}, epsilon: number):
 
 				if not hasPointInside then
 					local centroid2 = Vector2.new((a.X + b.X + c.X) / 3, (a.Y + b.Y + c.Y) / 3)
-					if FormexPoly.IsPointInsidePolygon(centroid2, points, false, epsilon) then
-						return centroid2
-					end
-					table.remove(indices, i)
+					if FormexPoly.IsPointInsidePolygon(centroid2, points, false, epsilon) then return centroid2 end					table.remove(indices, i)
 					earFound = true
 					break
 				end
@@ -280,10 +238,7 @@ function FormexPoly.GetFaceSamplePoint(points: {Vector2int16}, epsilon: number):
 end
 
 local function addWallSegments(levelData: any, segments: {Segment})
-	if not levelData or not levelData.Walls then
-		return
-	end
-
+	if not levelData or not levelData.Walls then return end
 	for wallId, wall in pairs(levelData.Walls) do
 		if wall.Start and wall.End and not FormexPoly.PointsEqual(wall.Start, wall.End) then
 			table.insert(segments, {
@@ -298,10 +253,7 @@ local function addWallSegments(levelData: any, segments: {Segment})
 end
 
 local function addFloorSegments(levelData: any, segments: {Segment}, cleanPolygon: (({Vector2int16}) -> {Vector2int16})?)
-	if not levelData or not levelData.Floors then
-		return
-	end
-
+	if not levelData or not levelData.Floors then return end
 	for floorId, floor in pairs(levelData.Floors) do
 		if floor.Points and #floor.Points >= 3 then
 			local cleaned = cleanPolygon and cleanPolygon(floor.Points) or floor.Points
@@ -325,15 +277,9 @@ local function addFloorSegments(levelData: any, segments: {Segment}, cleanPolygo
 end
 
 function FormexPoly.AddPlotBoundarySegments(formex: any, segments: {Segment}, segmentsUnlocked: number?): number
-	if not formex then
-		return 0
-	end
-
+	if not formex then return 0 end
 	local mask = segmentsUnlocked or 0
-	if mask == 0 then
-		return 0
-	end
-
+	if mask == 0 then return 0 end
 	local edgeMap = {} :: {[string]: Segment}
 
 	local function canonicalKey(a: Vector2int16, b: Vector2int16): string
@@ -526,10 +472,7 @@ function FormexPoly.SplitSegments(segments: {Segment}, epsilon: number): {Segmen
 			local dir = toVector2(segment.End) - start
 			local length2 = dir:Dot(dir)
 			table.sort(points, function(a, b)
-				if length2 <= epsilon then
-					return false
-				end
-				local ta = (toVector2(a) - start):Dot(dir) / length2
+				if length2 <= epsilon then return false end				local ta = (toVector2(a) - start):Dot(dir) / length2
 				local tb = (toVector2(b) - start):Dot(dir) / length2
 				return ta < tb
 			end)

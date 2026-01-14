@@ -7,23 +7,11 @@ local EPSILON = Formex.EPSILON
 
 Formex.Walls = {}
 
-local BACK_PART_NAME = "BackSide"
-Formex.Walls.BackPartName = BACK_PART_NAME
-local FRONT_PART_NAME = "Front"
-Formex.Walls.FrontPartName = FRONT_PART_NAME
-local FRONT_TOP_NAME = "FrontTop"
-local BACK_TOP_NAME = "BackTop"
-
 local function ensureChildPart(parent: Instance, name: string, allowCreate: boolean): BasePart?
+	-- TODO: Refactor to use WallData part references
 	local existing = parent:FindFirstChild(name)
-	if existing and existing:IsA("BasePart") then
-		return existing
-	end
-
-	if not allowCreate then
-		return nil
-	end
-
+	if existing and existing:IsA("BasePart") then return existing end
+	if not allowCreate then return nil end
 	local part = Instance.new("Part", parent)
 	part.Name = name
 	part.Anchored = true
@@ -31,11 +19,26 @@ local function ensureChildPart(parent: Instance, name: string, allowCreate: bool
 end
 
 local function ensureFrontPart(model: Model, allowCreate: boolean): BasePart?
-	return ensureChildPart(model, FRONT_PART_NAME, allowCreate)
+	return ensureChildPart(model, Formex.WallPart.FrontBottom, allowCreate)
 end
 
 local function ensureBackPart(model: Model, allowCreate: boolean): BasePart?
-	return ensureChildPart(model, BACK_PART_NAME, allowCreate)
+	local existing = model:FindFirstChild(Formex.WallPart.BackBottom)
+	if existing and existing:IsA("BasePart") then
+		return existing
+	end
+
+	local legacy = model:FindFirstChild("Back")
+	if legacy and legacy:IsA("BasePart") then
+		legacy.Name = Formex.WallPart.BackBottom
+		return legacy
+	end
+
+	if not allowCreate then
+		return nil
+	end
+
+	return ensureChildPart(model, Formex.WallPart.BackBottom, true)
 end
 
 local function clearTextures(part: Instance)
@@ -62,10 +65,7 @@ local function resolveWallHeight(value: number?): number
 end
 
 local function resolveSplitHeight(height: number, value: number?): number?
-	if value == nil or value <= Formex.GridSize or height <= Formex.GridSize * 2 then
-		return 0
-	end
-
+	if value == nil or value <= Formex.GridSize or height <= Formex.GridSize * 2 then return 0 end
 	local snapped = snapToGrid(value)
 	local maxSplit = height - Formex.GridSize
 	return math.clamp(snapped, Formex.GridSize, maxSplit)
@@ -76,10 +76,7 @@ local function resolveColor(primary: Color3?, fallback: Color3?): Color3
 end
 
 local function normalizeMaterialId(value: number?): number?
-	if type(value) ~= "number" or value <= 0 then
-		return nil
-	end
-	return value
+	if type(value) ~= "number" or value <= 0 then return nil end	return value
 end
 
 local function cross2(a: Vector2, b: Vector2): number
@@ -99,19 +96,7 @@ local function segmentsIntersect(a: Vector2, b: Vector2, c: Vector2, d: Vector2)
 	local cross3 = cross2(cd, ca)
 	local cross4 = cross2(cd, cb)
 
-	if math.abs(cross1) <= EPSILON and Formex.Plot.IsPointOnSegment(c, a, b) then
-		return true
-	end
-	if math.abs(cross2Value) <= EPSILON and Formex.Plot.IsPointOnSegment(d, a, b) then
-		return true
-	end
-	if math.abs(cross3) <= EPSILON and Formex.Plot.IsPointOnSegment(a, c, d) then
-		return true
-	end
-	if math.abs(cross4) <= EPSILON and Formex.Plot.IsPointOnSegment(b, c, d) then
-		return true
-	end
-
+	if math.abs(cross1) <= EPSILON and Formex.Plot.IsPointOnSegment(c, a, b) then return true end	if math.abs(cross2Value) <= EPSILON and Formex.Plot.IsPointOnSegment(d, a, b) then return true end	if math.abs(cross3) <= EPSILON and Formex.Plot.IsPointOnSegment(a, c, d) then return true end	if math.abs(cross4) <= EPSILON and Formex.Plot.IsPointOnSegment(b, c, d) then return true end
 	return (cross1 > 0 and cross2Value < 0 or cross1 < 0 and cross2Value > 0)
 		and (cross3 > 0 and cross4 < 0 or cross3 < 0 and cross4 > 0)
 end
@@ -136,33 +121,18 @@ local function isWallIntersectionDisallowed(newStart: Vector2, newEnd: Vector2, 
 		return overlap > EPSILON
 	end
 
-	if not segmentsIntersect(newStart, newEnd, existingStart, existingEnd) then
-		return false
-	end
-
-	if Formex.Plot.IsPointOnSegment(newStart, existingStart, existingEnd) or Formex.Plot.IsPointOnSegment(newEnd, existingStart, existingEnd) then
-		return false
-	end
-
+	if not segmentsIntersect(newStart, newEnd, existingStart, existingEnd) then return false end
+	if Formex.Plot.IsPointOnSegment(newStart, existingStart, existingEnd) or Formex.Plot.IsPointOnSegment(newEnd, existingStart, existingEnd) then return false end
 	return true
 end
 
 function Formex.IsWallValid(plot: Formex.PlotData, wall: Formex.WallData)
-	if not wall or not wall.Start or not wall.End then
-		return false
-	end
-
+	if not wall or not wall.Start or not wall.End then return false end
 	local dx = wall.End.X - wall.Start.X
 	local dz = wall.End.Y - wall.Start.Y
 	local length = math.sqrt(dx * dx + dz * dz)
-	if length <= EPSILON then
-		return false
-	end
-
-	if not Formex.Plot.IsLineWithinUnlockedSegments(wall.Start, wall.End, plot.SegmentsUnlocked) then
-		return false
-	end
-
+	if length <= EPSILON then return false end
+	if not Formex.Plot.IsLineWithinUnlockedSegments(wall.Start, wall.End, plot.SegmentsUnlocked) then return false end
 	local levelIndex = wall.Level or 1
 	local levels = plot.Levels
 	if levels and levels[levelIndex] then
@@ -170,10 +140,7 @@ function Formex.IsWallValid(plot: Formex.PlotData, wall: Formex.WallData)
 		if walls then
 			for wallId, existing in walls do
 				if wallId ~= wall.WallId and existing and existing.Start and existing.End then
-					if isWallIntersectionDisallowed(wall.Start, wall.End, existing.Start, existing.End) then
-						return false
-					end
-				end
+					if isWallIntersectionDisallowed(wall.Start, wall.End, existing.Start, existing.End) then return false end				end
 			end
 		end
 	end
@@ -200,13 +167,12 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?, allowCrea
 	local allowCreate = allowCreateParts ~= false
 	local frontPart = ensureFrontPart(model, allowCreate)
 	local backPart = ensureBackPart(model, allowCreate)
-	if not frontPart or not backPart then
-		return
-	end
-	frontPart.Name = FRONT_PART_NAME
+	if not frontPart or not backPart then return end
+	frontPart.Name = Formex.WallPart.FrontBottom
+	backPart.Name = Formex.WallPart.BackBottom
 	model.PrimaryPart = frontPart
-	wall.FrontPart = frontPart
-	wall.BackPart = backPart
+	wall.FrontBottomPart = frontPart
+	wall.BackBottomPart = backPart
 
 	local height = resolveWallHeight(wall.Height)
 	local frontSplitHeight = resolveSplitHeight(height, wall.FrontSplitHeight)
@@ -314,8 +280,8 @@ function Formex.Walls.Edit(wall: Formex.WallData, plotPart: BasePart?, allowCrea
 		return topPart
 	end
 
-	wall.FrontTopPart = applySide(frontSplitHeight, frontPart, FRONT_TOP_NAME, -sideOffset, frontBottomMaterial, frontTopMaterial, frontBottomColor, frontTopColor)
-	wall.BackTopPart = applySide(backSplitHeight, backPart, BACK_TOP_NAME, sideOffset, backBottomMaterial, backTopMaterial, backBottomColor, backTopColor)
+	wall.FrontTopPart = applySide(frontSplitHeight, frontPart, Formex.WallPart.FrontTop, -sideOffset, frontBottomMaterial, frontTopMaterial, frontBottomColor, frontTopColor)
+	wall.BackTopPart = applySide(backSplitHeight, backPart, Formex.WallPart.BackTop, sideOffset, backBottomMaterial, backTopMaterial, backBottomColor, backTopColor)
 end
 
 function Formex.Walls.Divide(wall: Formex.WallData, distance: number): {Formex.WallData}

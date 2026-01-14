@@ -69,10 +69,7 @@ local function readObjectSide(reader): Formex.ObjectSide?
 end
 
 function FormexSerialization.GetMaxPartId(levels: Formex.LevelArray?): number
-	if not levels then
-		return 0
-	end
-
+	if not levels then return 0 end
 	local maxId = 0
 	for _, levelData in levels do
 		if levelData then

@@ -610,10 +610,7 @@ function FormexUI.CreateSlider(options: SliderOptions, onChanged: ((value: numbe
     end
 
     local function coerceValue(value: number?): number?
-        if value == nil then
-            return nil
-        end
-        local resolved = value
+        if value == nil then return nil end        local resolved = value
         if step ~= nil and step > 0 then
             local steps = math.round((resolved - min) / step)
             resolved = min + steps * step
@@ -622,13 +619,7 @@ function FormexUI.CreateSlider(options: SliderOptions, onChanged: ((value: numbe
     end
 
     local function formatValue(value: number?): string
-        if value == nil then
-            return ""
-        end
-        if step ~= nil and step >= 1 then
-            return tostring(math.round(value))
-        end
-        return tostring(value)
+        if value == nil then return "" end        if step ~= nil and step >= 1 then return tostring(math.round(value)) end        return tostring(value)
     end
 
     local function updateVisual()
@@ -687,14 +678,8 @@ function FormexUI.CreateSlider(options: SliderOptions, onChanged: ((value: numbe
 
     local function parseInput(text: string): (number?, boolean)
         local trimmed = string.gsub(text or "", "%s", "")
-        if trimmed == "" then
-            return nil, true
-        end
-        local value = tonumber(trimmed)
-        if not value then
-            return nil, false
-        end
-        return value, true
+        if trimmed == "" then return nil, true end        local value = tonumber(trimmed)
+        if not value then return nil, false end        return value, true
     end
 
     local function applyInput(emit: boolean?)
@@ -716,10 +701,7 @@ function FormexUI.CreateSlider(options: SliderOptions, onChanged: ((value: numbe
 
     local function updateFromScreenX(x: number)
         local width = track.AbsoluteSize.X
-        if width <= 0 then
-            return
-        end
-        local alpha = (x - track.AbsolutePosition.X) / width
+        if width <= 0 then return end        local alpha = (x - track.AbsolutePosition.X) / width
         alpha = math.clamp(alpha, 0, 1)
         local value = min + (max - min) * alpha
         setValueInternal(value, true)
@@ -741,10 +723,7 @@ function FormexUI.CreateSlider(options: SliderOptions, onChanged: ((value: numbe
     end)
 
     UserInputService.InputChanged:Connect(function(inputObj)
-        if not dragging then
-            return
-        end
-        if inputObj.UserInputType == Enum.UserInputType.MouseMovement or inputObj.UserInputType == Enum.UserInputType.Touch then
+        if not dragging then return end        if inputObj.UserInputType == Enum.UserInputType.MouseMovement or inputObj.UserInputType == Enum.UserInputType.Touch then
             updateFromScreenX(inputObj.Position.X)
         end
     end)
@@ -779,13 +758,7 @@ function FormexUI.CreateSlider(options: SliderOptions, onChanged: ((value: numbe
     end)
 
     input:GetPropertyChangedSignal("Text"):Connect(function()
-        if internalUpdate then
-            return
-        end
-        if not isFocused then
-            return
-        end
-        applyInput(true)
+        if internalUpdate then return end        if not isFocused then return end        applyInput(true)
     end)
 
     track:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateVisual)
@@ -829,10 +802,7 @@ local defaultColorPalette: {ColorOption} = {
 }
 
 local function formatColorHex(color: Color3?): string
-    if not color then
-        return "None"
-    end
-    local r = math.clamp(math.round(color.R * 255), 0, 255)
+    if not color then return "None" end    local r = math.clamp(math.round(color.R * 255), 0, 255)
     local g = math.clamp(math.round(color.G * 255), 0, 255)
     local b = math.clamp(math.round(color.B * 255), 0, 255)
     return string.format("#%02X%02X%02X", r, g, b)
@@ -950,10 +920,7 @@ function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: C
 
     local function getTextColor(bg: Color3): Color3
         local luminance = 0.299 * bg.R + 0.587 * bg.G + 0.114 * bg.B
-        if luminance > 0.55 then
-            return Color3.fromRGB(35, 40, 60)
-        end
-        return Color3.fromRGB(245, 248, 255)
+        if luminance > 0.55 then return Color3.fromRGB(35, 40, 60) end        return Color3.fromRGB(245, 248, 255)
     end
 
     local function openDialog()
@@ -1046,10 +1013,7 @@ function FormexUI.ColorSelect(options: ColorSelectOptions, onChanged: ((color: C
             end
         end)
 
-        if chosen == nil then
-            return
-        end
-        if chosen == clearResult then
+        if chosen == nil then return end        if chosen == clearResult then
             applySelected(nil)
             if onChanged then
                 onChanged(nil)

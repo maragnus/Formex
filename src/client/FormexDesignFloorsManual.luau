@@ -100,18 +100,12 @@ local function cross2(a: Vector2, b: Vector2): number
 end
 
 local function isPointOnSegment(point: Vector2, a: Vector2, b: Vector2): boolean
-	if math.abs(cross2(b - a, point - a)) > Formex.EPSILON then
-		return false
-	end
-	return math.min(a.X, b.X) - Formex.EPSILON <= point.X and point.X <= math.max(a.X, b.X) + Formex.EPSILON
+	if math.abs(cross2(b - a, point - a)) > Formex.EPSILON then return false end	return math.min(a.X, b.X) - Formex.EPSILON <= point.X and point.X <= math.max(a.X, b.X) + Formex.EPSILON
 		and math.min(a.Y, b.Y) - Formex.EPSILON <= point.Y and point.Y <= math.max(a.Y, b.Y) + Formex.EPSILON
 end
 
 local function isPointInsidePolygon(point: Vector2, polygon: {Vector2int16}, includeBoundary: boolean?): boolean
-	if #polygon < 3 then
-		return false
-	end
-
+	if #polygon < 3 then return false end
 	for i = 1, #polygon do
 		local a = toVector2(polygon[i])
 		local b = toVector2(polygon[(i % #polygon) + 1])
@@ -142,10 +136,7 @@ end
 
 local function orientation(a: Vector2, b: Vector2, c: Vector2): number
 	local value = (b.Y - a.Y) * (c.X - b.X) - (b.X - a.X) * (c.Y - b.Y)
-	if math.abs(value) <= Formex.EPSILON then
-		return 0
-	end
-	return value > 0 and 1 or 2
+	if math.abs(value) <= Formex.EPSILON then return 0 end	return value > 0 and 1 or 2
 end
 
 local function onSegment(a: Vector2, b: Vector2, c: Vector2): boolean
@@ -159,10 +150,7 @@ local function segmentsIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vect
 	local o3 = orientation(q1, q2, p1)
 	local o4 = orientation(q1, q2, p2)
 
-	if o1 ~= o2 and o3 ~= o4 then
-		return true
-	end
-
+	if o1 ~= o2 and o3 ~= o4 then return true end
 	if o1 == 0 and onSegment(p1, q1, p2) then return true end
 	if o2 == 0 and onSegment(p1, q2, p2) then return true end
 	if o3 == 0 and onSegment(q1, p1, q2) then return true end
@@ -176,76 +164,49 @@ local function pointsEqualVector2(a: Vector2, b: Vector2): boolean
 end
 
 local function segmentsProperlyIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2): boolean
-	if not segmentsIntersect(p1, p2, q1, q2) then
-		return false
-	end
-	if pointsEqualVector2(p1, q1) or pointsEqualVector2(p1, q2)
+	if not segmentsIntersect(p1, p2, q1, q2) then return false end	if pointsEqualVector2(p1, q1) or pointsEqualVector2(p1, q2)
 		or pointsEqualVector2(p2, q1) or pointsEqualVector2(p2, q2) then
 		return false
 	end
 
 	local collinear = orientation(p1, p2, q1) == 0 and orientation(p1, p2, q2) == 0
-	if collinear then
-		return false
-	end
-
+	if collinear then return false end
 	return true
 end
 
 local function polygonsProperlyIntersect(a: {Vector2int16}, b: {Vector2int16}): boolean
-	if #a < 2 or #b < 2 then
-		return false
-	end
-
+	if #a < 2 or #b < 2 then return false end
 	for i = 1, #a do
 		local a1 = toVector2(a[i])
 		local a2 = toVector2(a[(i % #a) + 1])
 		for j = 1, #b do
 			local b1 = toVector2(b[j])
 			local b2 = toVector2(b[(j % #b) + 1])
-			if segmentsProperlyIntersect(a1, a2, b1, b2) then
-				return true
-			end
-		end
+			if segmentsProperlyIntersect(a1, a2, b1, b2) then return true end		end
 	end
 
 	return false
 end
 
 local function isPolygonInside(outer: {Vector2int16}, inner: {Vector2int16}): boolean
-	if #outer < 3 or #inner < 3 then
-		return false
-	end
-
+	if #outer < 3 or #inner < 3 then return false end
 	for _, point in ipairs(inner) do
-		if not isPointInsidePolygon(Vector2.new(point.X, point.Y), outer, false) then
-			return false
-		end
-	end
+		if not isPointInsidePolygon(Vector2.new(point.X, point.Y), outer, false) then return false end	end
 
 	return true
 end
 
 local function isPointOnOrInExistingFloor(plotInfo: any, point: Vector2int16): boolean
-	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Levels then
-		return false
-	end
-
+	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Levels then return false end
 	local levelIndex = getCurrentLevel()
 	local levelData = plotInfo.PlotData.Levels[levelIndex]
-	if not levelData or not levelData.Floors then
-		return false
-	end
-
+	if not levelData or not levelData.Floors then return false end
 	local testPoint = Vector2.new(point.X, point.Y)
 	for _, floor in pairs(levelData.Floors) do
 		if floor.Points and #floor.Points >= 3 then
 			local existing = Formex.Floors.CleanPolygon(floor.Points)
 			if #existing >= 3 then
-				if isPointInsidePolygon(testPoint, existing, true) then
-					return true
-				end
-			end
+				if isPointInsidePolygon(testPoint, existing, true) then return true end			end
 		end
 	end
 
@@ -253,46 +214,22 @@ local function isPointOnOrInExistingFloor(plotInfo: any, point: Vector2int16): b
 end
 
 local function getFloorModelFromTarget(target: Instance?): Model?
-	if not target then
-		return nil
-	end
-	if target:IsA("Model") and target.Parent and target.Parent:IsA("Folder") and target.Parent.Name == "Floors" then
-		return target
-	end
-	local model = target:FindFirstAncestorOfClass("Model")
-	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then
-		return model
-	end
-	return nil
+	if not target then return nil end	if target:IsA("Model") and target.Parent and target.Parent:IsA("Folder") and target.Parent.Name == "Floors" then return target end	local model = target:FindFirstAncestorOfClass("Model")
+	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then return model end	return nil
 end
 
 local function isOverlappingExistingFloor(plotInfo: any, previewPoints: {Vector2int16}): boolean
-	if not plotInfo or not plotInfo.PlotData or not previewPoints or #previewPoints < 3 then
-		return false
-	end
-
+	if not plotInfo or not plotInfo.PlotData or not previewPoints or #previewPoints < 3 then return false end
 	local levelIndex = getCurrentLevel()
 	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
-	if not levelData or not levelData.Floors then
-		return false
-	end
-
+	if not levelData or not levelData.Floors then return false end
 	local preview = Formex.Floors.CleanPolygon(previewPoints)
-	if #preview < 3 then
-		return false
-	end
-
+	if #preview < 3 then return false end
 	for _, floor in pairs(levelData.Floors) do
 		if floor.Points and #floor.Points >= 3 then
 			local existing = Formex.Floors.CleanPolygon(floor.Points)
 			if #existing >= 3 then
-				if polygonsProperlyIntersect(preview, existing) then
-					return true
-				end
-				if isPolygonInside(preview, existing) or isPolygonInside(existing, preview) then
-					return true
-				end
-			end
+				if polygonsProperlyIntersect(preview, existing) then return true end				if isPolygonInside(preview, existing) or isPolygonInside(existing, preview) then return true end			end
 		end
 	end
 
@@ -321,10 +258,7 @@ local function createGhostBall(name: string, color: Color3): BasePart
 end
 
 local function setGhostBallColor(part: BasePart?, color: Color3)
-	if not part then
-		return
-	end
-	part.Color = color
+	if not part then return end	part.Color = color
 end
 
 local function ensureGhostPoint(index: number, color: Color3): BasePart
@@ -465,20 +399,11 @@ local function isPreviewValid(plotInfo: any, previewPoints: {Vector2int16}): boo
 			Data = previewData,
 		},
 	})
-	if not validation or validation.IsValid ~= true then
-		return false
-	end
-	if isOverlappingExistingFloor(plotInfo, previewPoints) then
-		return false
-	end
-	return true
+	if not validation or validation.IsValid ~= true then return false end	if isOverlappingExistingFloor(plotInfo, previewPoints) then return false end	return true
 end
 
 local function updateGhosts(plotInfo: any, cursorPoint: Vector2int16?)
-	if not plotInfo or not plotInfo.PlotPart then
-		return
-	end
-
+	if not plotInfo or not plotInfo.PlotPart then return end
 	local isValid = isPreviewValid(plotInfo, getPreviewPoints(cursorPoint))
 	local color = isValid and Constants.GhostValidColor or Constants.GhostInvalidColor
 
@@ -507,13 +432,7 @@ end
 
 local function finalizeFloor()
 	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid then
-		return
-	end
-	if #points < 3 then
-		return
-	end
-
+	if not plotInfo or not plotInfo.IsValid then return end	if #points < 3 then return end
 	local floorData = buildFloorDataFromPoints(points)
 	local isValid = isPreviewValid(plotInfo, floorData.Points)
 	if not isValid then
@@ -570,15 +489,9 @@ function Manual.ClearSelection()
 end
 
 function Manual.HandleUpdate(input: any)
-	if not input or not input.PlotInfo then
-		return
-	end
-
+	if not input or not input.PlotInfo then return end
 	local actionType = getActionType()
-	if actionType ~= Enums.ActionType.Start and actionType ~= Enums.ActionType.Step then
-		return
-	end
-
+	if actionType ~= Enums.ActionType.Start and actionType ~= Enums.ActionType.Step then return end
 	local cursorPoint = input.SnapPoint
 	if cursorPoint and lastCursorPoint and pointsEqual(cursorPoint, lastCursorPoint) then
 		cursorPoint = lastCursorPoint
@@ -603,20 +516,14 @@ function Manual.HandleUpdate(input: any)
 end
 
 function Manual.HandlePrimaryClick(input: any)
-	if not input then
-		return
-	end
-
+	if not input then return end
 	local actionType = getActionType()
 	local targetFloor = getFloorModelFromTarget(input.Target)
 	if targetFloor and select(targetFloor) then
 		Manual.CancelAction()
 		return
 	end
-	if not input.SnapPoint then
-		return
-	end
-	if actionType == Enums.ActionType.Start then
+	if not input.SnapPoint then return end	if actionType == Enums.ActionType.Start then
 		if isPointOnOrInExistingFloor(FormexClient.CurrentPlot, input.SnapPoint) then
 			updateGhostValidity(false)
 			return
@@ -627,32 +534,20 @@ function Manual.HandlePrimaryClick(input: any)
 		return
 	end
 
-	if actionType ~= Enums.ActionType.Step then
-		return
-	end
-
-	if #points >= Formex.MaxFloorPoints then
-		return
-	end
-
+	if actionType ~= Enums.ActionType.Step then return end
+	if #points >= Formex.MaxFloorPoints then return end
 	local nextPoint = input.SnapPoint
 	if isPointOnOrInExistingFloor(FormexClient.CurrentPlot, nextPoint) then
 		updateGhostValidity(false)
 		return
 	end
-	if points[#points] and pointsEqual(points[#points], nextPoint) then
-		return
-	end
-
+	if points[#points] and pointsEqual(points[#points], nextPoint) then return end
 	table.insert(points, nextPoint)
 end
 
 function Manual.HandleSecondaryClick(input: any): boolean
 	local actionType = getActionType()
-	if actionType ~= Enums.ActionType.Start and actionType ~= Enums.ActionType.Step then
-		return false
-	end
-
+	if actionType ~= Enums.ActionType.Start and actionType ~= Enums.ActionType.Step then return false end
 	if #points > 0 then
 		table.remove(points, #points)
 		if #points == 0 then

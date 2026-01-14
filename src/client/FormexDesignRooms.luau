@@ -174,10 +174,7 @@ local function updateRoomHighlight(plotInfo: any, room: any)
 end
 
 local function getCursorLocalPoint(plotInfo: any, input: any): Vector2?
-	if not plotInfo or not plotInfo.PlotPart then
-		return nil
-	end
-	if input and input.HitPosition then
+	if not plotInfo or not plotInfo.PlotPart then return nil end	if input and input.HitPosition then
 		return getLocalXZ(plotInfo.PlotPart, input.HitPosition)
 	end
 	if input and input.LayoutTile then
@@ -227,15 +224,9 @@ end
 local function beginWallMove(wallId: number)
 	local room = getSelectionData()
 	local input = getLastInputInfo()
-	if not room or not input or not input.PlotInfo or not input.PlotInfo.PlotPart or not input.HitPosition then
-		return
-	end
-
+	if not room or not input or not input.PlotInfo or not input.PlotInfo.PlotPart or not input.HitPosition then return end
 	local wall, startPoint, endPoint = getMoveWallData(input.PlotInfo, room, wallId)
-	if not wall or not startPoint or not endPoint then
-		return
-	end
-
+	if not wall or not startPoint or not endPoint then return end
 	activeMove = {
 		Kind = "Wall",
 		WallId = wallId,
@@ -259,10 +250,7 @@ local function getWallConnectionsAtPoint(
 ): { {WallId: number, EndType: "Start" | "End"} }
 	local connections = {}
 	local levelData = plotInfo and plotInfo.PlotData and plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
-	if not levelData or not levelData.Walls then
-		return connections
-	end
-
+	if not levelData or not levelData.Walls then return connections end
 	for wallId, wall in pairs(levelData.Walls) do
 		if wallFilter and not wallFilter[wallId] then
 			continue
@@ -288,10 +276,7 @@ end
 local function beginPointMove(point: Vector2int16)
 	local room = getSelectionData()
 	local input = getLastInputInfo()
-	if not room or not input or not input.PlotInfo or not input.PlotInfo.PlotPart then
-		return
-	end
-	local editMode = getEditMode()
+	if not room or not input or not input.PlotInfo or not input.PlotInfo.PlotPart then return end	local editMode = getEditMode()
 	local roomWallSet = nil
 	local roomFloorSet = nil
 	if editMode == Enums.EditMode.DisconnectMove then
@@ -322,10 +307,7 @@ local function beginPointMove(point: Vector2int16)
 end
 
 local function updatePointMovePreview(plotInfo: any, input: any)
-	if not activeMove or activeMove.Kind ~= "Point" or not input or not input.SnapPoint then
-		return
-	end
-
+	if not activeMove or activeMove.Kind ~= "Point" or not input or not input.SnapPoint then return end
 	local newPoint = input.SnapPoint
 	movePreviewPoint = newPoint
 
@@ -388,27 +370,18 @@ local function updatePointMovePreview(plotInfo: any, input: any)
 end
 
 local function updateMovePreview(plotInfo: any, input: any)
-	if not activeMove then
-		return
-	end
-	if activeMove.Kind == "Point" then
+	if not activeMove then return end	if activeMove.Kind == "Point" then
 		updatePointMovePreview(plotInfo, input)
 		return
 	end
-	if not input or not input.PlotInfo or not input.PlotInfo.PlotPart or not input.HitPosition then
-		return
-	end
-
+	if not input or not input.PlotInfo or not input.PlotInfo.PlotPart or not input.HitPosition then return end
 	local localPos = getLocalXZ(input.PlotInfo.PlotPart, input.HitPosition)
 	local delta = localPos - activeMove.OriginLocal
 
 	local startPoint = activeMove.Start
 	local endPoint = activeMove.End
 	local dir = Vector2.new(endPoint.X - startPoint.X, endPoint.Y - startPoint.Y)
-	if dir.Magnitude <= Formex.EPSILON then
-		return
-	end
-
+	if dir.Magnitude <= Formex.EPSILON then return end
 	local normal = Vector2.new(-dir.Y, dir.X).Unit
 	local offset = delta:Dot(normal)
 	local shift = normal * offset
@@ -490,10 +463,7 @@ end
 local function buildFloorUpdates(plotInfo: any, levelIndex: number, oldStart: Vector2int16, oldEnd: Vector2int16, newStart: Vector2int16, newEnd: Vector2int16): {Formex.FloorData}
 	local updates = {}
 	local levelData = plotInfo and plotInfo.PlotData and plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
-	if not levelData or not levelData.Floors then
-		return updates
-	end
-
+	if not levelData or not levelData.Floors then return updates end
 	for floorId, floor in pairs(levelData.Floors) do
 		if floor.Points and #floor.Points >= 3 then
 			local changed = false
@@ -542,10 +512,7 @@ local function buildFloorPointUpdates(
 ): {Formex.FloorData}
 	local updates = {}
 	local levelData = plotInfo and plotInfo.PlotData and plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
-	if not levelData or not levelData.Floors then
-		return updates
-	end
-
+	if not levelData or not levelData.Floors then return updates end
 	for floorId, floor in pairs(levelData.Floors) do
 		if floorFilter and not floorFilter[floorId] then
 			continue
@@ -588,10 +555,7 @@ end
 local function buildConnectedWallUpdates(plotInfo: any, levelIndex: number, movedWallId: number, oldStart: Vector2int16, oldEnd: Vector2int16, newStart: Vector2int16, newEnd: Vector2int16): {Formex.WallData}
 	local updates = {}
 	local levelData = plotInfo and plotInfo.PlotData and plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[levelIndex]
-	if not levelData or not levelData.Walls then
-		return updates
-	end
-
+	if not levelData or not levelData.Walls then return updates end
 	for wallId, wall in pairs(levelData.Walls) do
 		if wallId ~= movedWallId and wall and wall.Start and wall.End then
 			local startPoint = wall.Start
@@ -628,14 +592,8 @@ local function buildConnectedWallUpdates(plotInfo: any, levelIndex: number, move
 end
 
 local function finalizeWallMove(plotInfo: any)
-	if not activeMove or activeMove.Kind ~= "Wall" or not movePreviewStart or not movePreviewEnd or not plotInfo then
-		return
-	end
-
-	if not moveValid then
-		return
-	end
-
+	if not activeMove or activeMove.Kind ~= "Wall" or not movePreviewStart or not movePreviewEnd or not plotInfo then return end
+	if not moveValid then return end
 	local wallUpdate = {
 		WallId = activeMove.WallId,
 		Level = activeMove.LevelIndex,
@@ -670,19 +628,10 @@ local function finalizeWallMove(plotInfo: any)
 end
 
 local function finalizePointMove(plotInfo: any)
-	if not activeMove or activeMove.Kind ~= "Point" or not movePreviewPoint or not plotInfo then
-		return
-	end
-
-	if not moveValid then
-		return
-	end
-
+	if not activeMove or activeMove.Kind ~= "Point" or not movePreviewPoint or not plotInfo then return end
+	if not moveValid then return end
 	local levelData = plotInfo.PlotData and plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[activeMove.LevelIndex]
-	if not levelData then
-		return
-	end
-
+	if not levelData then return end
 	local wallUpdates = {}
 	if activeMove.Connections then
 		for _, connection in ipairs(activeMove.Connections) do
@@ -735,10 +684,7 @@ local function finalizePointMove(plotInfo: any)
 end
 
 local function finalizeMove(plotInfo: any)
-	if not activeMove then
-		return
-	end
-	if activeMove.Kind == "Point" then
+	if not activeMove then return end	if activeMove.Kind == "Point" then
 		finalizePointMove(plotInfo)
 	else
 		finalizeWallMove(plotInfo)
@@ -808,10 +754,7 @@ function Rooms.UpdateHandles(plotInfo: any)
 
 	local wallKey = getRoomWallKey(plotInfo, room)
 	local editMode = getEditMode()
-	if room.RoomId == lastRoomId and wallKey == lastRoomWallKey and editMode == lastRoomEditMode then
-		return
-	end
-
+	if room.RoomId == lastRoomId and wallKey == lastRoomWallKey and editMode == lastRoomEditMode then return end
 	clearRoomHandles()
 	updateRoomHighlight(plotInfo, room)
 
@@ -889,14 +832,8 @@ function Rooms.HandleUpdate(input: any)
 end
 
 function Rooms.HandlePrimaryClick(input: any): boolean
-	if getActionType() ~= Enums.ActionType.Select then
-		return false
-	end
-	local plotInfo = input and input.PlotInfo or nil
-	if not plotInfo or not plotInfo.PlotPart then
-		return false
-	end
-
+	if getActionType() ~= Enums.ActionType.Select then return false end	local plotInfo = input and input.PlotInfo or nil
+	if not plotInfo or not plotInfo.PlotPart then return false end
 	local cursorPoint = getCursorLocalPoint(plotInfo, input)
 	local levelIndex = getCurrentLevel()
 	local selected = selectRoomAtPoint(plotInfo, levelIndex, cursorPoint)

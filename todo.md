@@ -35,15 +35,11 @@ Dropper's new home can be between Select and Room on the Sidebar.
 
 
 
-3. Some rooms don't have floors. Let's do something a little different. To visualize the other rooms, let's instead do standard edge highlights recessed 1 stud in from the edge of the room. Also, only display these highlights when nothing is selected. Once I select a room, hide them, and return them on deselect.
+3. Some rooms don't have floors. Let's do something a little different. To visualize the the rooms, let's instead do standard edge highlights recessed 1 stud in from the edge of the room. Also, only display these highlights when nothing is selected. Once I select a room, hide them, and return them when nothing is selected. Doors should use an edge highlight directly underneath them based on their size along the wall.
 
-4. Interior Wall materials is misbehaving. It's not corrently identify the interior walls only. There is likely and underlying issue
+4. Interior Wall materials is misbehaving. It's not corrently identifying only the interior walls only.
 
-10. Dropper has some major issues.
-- Dropper should be removed from the `DesignSubMode` list and Sidebar. Dropper is a DesignMode now, so the legacy Dropper DesignSubMode logic can go.
-- Sidebar for Wall/Paint mode doesn't allow changing the Split height, it stays locked at zero.
-
-11a. Disconnect mode needs to make sure that every point still has a handle. So if there's no connections at that point, display the normal move handle.
+11a. Disconnect mode is smart and only shows a Disconnect handle when there's connections to disconnect, but Disconnect mode needs to make sure that every point still has a move handle. So if there's no connections at that point, display the normal move handle instead.
 
 11b. Room split (unmerge) does not consistently work. Sometimes it leaves 
 
@@ -57,6 +53,13 @@ Dropper's new home can be between Select and Room on the Sidebar.
 - Room/* otherwise behaves perfectly.
 
 ---
+
+Switching to the dropper tool and clicking on a floor or wall works correctly. Clicking on a floor switch to Floor/Paint, clicking on a wall switches to Wall/Paint.
+However, when I am in Wall Mode and hold Alt and click a Floor, releasing Alt returns me to Wall mode instead of to Floor mode. Also, it never copied the Floor clicked on. Alt mode for Dropper should act like the normal dropper.
+
+There may still be legacy logic for when the dropper had invididual modes Wall/Dropper, Floor/Dropper, but this should all be removed. The Dropper DesignMode is the new replacement, and should be able to automatically switch between Wall, Floor, and Objects.
+
+See @DESIGN_MODES.md for details.
 
 
 ---

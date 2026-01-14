@@ -235,6 +235,16 @@ local function getTipData(designState)
             "- Click a part to select it.",
             "- Click empty space to clear selection.",
         }
+    elseif mode == FormexDesign.DesignMode.Dropper then
+        title = "Dropper Mode"
+        iconId = Formex.Icons.DesignDropper
+        toolLabel = "Tool: Dropper"
+        toolIcon = Formex.Icons.DesignDropper
+        lines = {
+            "- Click a wall side, floor, or object to copy materials.",
+            "- After sampling, you return to Paint unless Alt is held.",
+            "- Hold Alt in Wall/Floor/Object modes to temporarily use Dropper.",
+        }
     elseif mode == FormexDesign.DesignMode.Wall then
         iconId = Formex.Icons.DesignWalls
         if subMode == FormexDesign.DesignSubMode.Paint then
@@ -245,15 +255,6 @@ local function getTipData(designState)
                 "- Selection is off in Paint mode.",
                 "- Click a wall side to apply paint.",
                 "- Use Dropper to sample wall materials.",
-            }
-        elseif subMode == FormexDesign.DesignSubMode.Dropper then
-            title = "Wall Dropper Mode"
-            toolLabel = "Tool: Dropper"
-            toolIcon = Formex.Icons.DesignDropper
-            lines = {
-                "- Selection is off in Dropper mode.",
-                "- Click a wall side to copy materials/colors.",
-                "- After sampling, you return to Paint unless Alt is held.",
             }
         elseif actionType == FormexDesign.ActionType.Start then
             title = "Wall Start"
@@ -295,15 +296,6 @@ local function getTipData(designState)
                 "- Selection is off in Paint mode.",
                 "- Click a floor to apply paint.",
                 "- Use Dropper to sample floor settings.",
-            }
-        elseif subMode == FormexDesign.DesignSubMode.Dropper then
-            title = "Floor Dropper Mode"
-            toolLabel = "Tool: Dropper"
-            toolIcon = Formex.Icons.DesignDropper
-            lines = {
-                "- Selection is off in Dropper mode.",
-                "- Click a floor to copy its settings.",
-                "- After sampling, you return to Paint unless Alt is held.",
             }
         elseif floorMode == FormexDesign.FloorMode.Manual then
             toolLabel = "Tool: Build"
@@ -379,10 +371,6 @@ local function getTipData(designState)
             title = "Object Paint Mode"
             toolLabel = "Tool: Paint"
             toolIcon = Formex.Icons.DesignPaint
-        elseif subMode == FormexDesign.DesignSubMode.Dropper then
-            title = "Object Dropper Mode"
-            toolLabel = "Tool: Dropper"
-            toolIcon = Formex.Icons.DesignDropper
         else
             title = "Object Mode"
             toolLabel = "Tool: Select"
@@ -422,10 +410,7 @@ local function getTipData(designState)
 end
 
 local function refreshTips()
-    if not ui.Container then
-        return
-    end
-
+    if not ui.Container then return end
     local plot = FormexClient.CurrentPlot
     if not plot or not plot.IsValid then
         ui.Container.Visible = false
@@ -455,9 +440,6 @@ buildTips()
 refreshTips()
 
 FormexClient.ClientEvents:Connect(function(eventName)
-    if eventName ~= "MyPlotChanged" and eventName ~= "CurrentPlotChanged" and eventName ~= "DesignStateChanged" then
-        return
-    end
-
+    if eventName ~= "MyPlotChanged" and eventName ~= "CurrentPlotChanged" and eventName ~= "DesignStateChanged" then return end
     refreshTips()
 end)

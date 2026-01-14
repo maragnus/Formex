@@ -19,10 +19,7 @@ FormexSystem.PlotDataStore = DataStoreService:GetDataStore("FormexPlotData")
 
 function FormexSystem.GetPlayerCurrentPlot(player: Player) : (Formex.PlotData?, Formex.Permission)
     local plotId = player:GetAttribute("CurrentPlotId") or 0
-    if not plotId or plotId == 0 then
-        return nil, nil
-    end
-
+    if not plotId or plotId == 0 then return nil, nil end
     local plotData = FormexSystem.PlotData[plotId]
     return plotData, plotData.Permissions[player.UserId] or Formex.Permission.Guest
 end
@@ -69,10 +66,7 @@ end
 
 local function ensureFolder(parent: Instance, name: string): Folder
     local existing = parent:FindFirstChild(name)
-    if existing and existing:IsA("Folder") then
-        return existing
-    end
-
+    if existing and existing:IsA("Folder") then return existing end
     local folder = Instance.new("Folder")
     folder.Name = name
     folder.Parent = parent
@@ -143,10 +137,7 @@ function FormexSystem.UnassignPlotToPlayer(player: Player)
 end
 
 function FormexSystem.AssignPlotToPlayer(player: Player, plotId: number)
-    if FormexSystem.PlotToPlayer[plotId] then
-        return false, "Plot already claimed"
-    end
-
+    if FormexSystem.PlotToPlayer[plotId] then return false, "Plot already claimed" end
     FormexSystem.UnassignPlotToPlayer(player)
 
     plotId = plotId or 0
@@ -317,10 +308,7 @@ end
 local saveAccumulator = 0
 RunService.Heartbeat:Connect(function(deltaTime)
 	saveAccumulator = saveAccumulator + deltaTime
-	if saveAccumulator < SAVE_POLL_INTERVAL then
-		return
-	end
-	saveAccumulator = 0
+	if saveAccumulator < SAVE_POLL_INTERVAL then return end	saveAccumulator = 0
 
 	local now = time()
 	for plotId, queuedAt in pairs(saveQueue) do
@@ -575,15 +563,9 @@ end
 
 carveWallsForLevel = function(plotData: Formex.PlotData, plotPart: BasePart?, levelIndex: number, wallIds: {[number]: boolean}?)
 	local levelData = plotData.Levels and plotData.Levels[levelIndex]
-	if not levelData or not levelData.Walls then
-		return
-	end
-
+	if not levelData or not levelData.Walls then return end
 	if wallIds then
-		if next(wallIds) == nil then
-			return
-		end
-		for wallId in pairs(wallIds) do
+		if next(wallIds) == nil then return end		for wallId in pairs(wallIds) do
 			local wallData = levelData.Walls[wallId]
 			if wallData and wallData.Part then
 				Formex.Objects.CarveWallObjects(plotData, wallData, plotPart)
@@ -601,10 +583,7 @@ end
 
 function FormexSystem.RefreshWallCarves(plotId: number, levelIndex: number?)
 	local plotData = FormexSystem.PlotData[plotId]
-	if not plotData then
-		return
-	end
-	local plotPart = FormexSystem.Plots[plotId]
+	if not plotData then return end	local plotPart = FormexSystem.Plots[plotId]
 
 	if levelIndex then
 		carveWallsForLevel(plotData, plotPart, levelIndex)
@@ -619,10 +598,7 @@ end
 function FormexSystem.QueueWallCarve(plotId: number, levelIndex: number?)
 	task.defer(function()
 		task.wait()
-		if not FormexSystem.Plots[plotId] then
-			return
-		end
-		FormexSystem.RefreshWallCarves(plotId, levelIndex)
+		if not FormexSystem.Plots[plotId] then return end		FormexSystem.RefreshWallCarves(plotId, levelIndex)
 	end)
 end
 

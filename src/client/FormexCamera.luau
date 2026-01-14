@@ -194,10 +194,7 @@ local function setCameraUpDirection(direction: Vector3?)
 end
 
 local function getCameraUpVector(): Vector3
-	if yaw == 0 then
-		return baseUpDirection
-	end
-	local rotation = CFrame.fromAxisAngle(Vector3.new(0, 1, 0), yaw)
+	if yaw == 0 then return baseUpDirection end	local rotation = CFrame.fromAxisAngle(Vector3.new(0, 1, 0), yaw)
 	return rotation:VectorToWorldSpace(baseUpDirection)
 end
 
@@ -212,10 +209,7 @@ end
 
 local function getCameraForwardVector(): Vector3
 	local forward = Vector3.new(0, -1, 0)
-	if tilt == 0 then
-		return forward
-	end
-	local rightVector = getCameraRightVector()
+	if tilt == 0 then return forward end	local rightVector = getCameraRightVector()
 	local rotation = CFrame.fromAxisAngle(rightVector, -tilt)
 	return rotation:VectorToWorldSpace(forward)
 end
@@ -294,10 +288,7 @@ local function solveFocusForAnchor(anchorWorld: Vector3, rayDirection: Vector3, 
 end
 
 local function applyZoomDelta(delta: number, anchorScreen: Vector2?): boolean
-	if delta == 0 then
-		return false
-	end
-
+	if delta == 0 then return false end
 	local oldDistance = distance
 	local newDistance = clampDistance(oldDistance + delta)
 	if newDistance == oldDistance then
@@ -660,19 +651,13 @@ function FormexCamera.ZoomKeyboard(direction: number)
 end
 
 function FormexCamera.ZoomMouse(delta: number, screenPoint: Vector2)
-	if delta == 0 then
-		return
-	end
-	local appliedDelta = if invertMouseWheel then -delta else delta
+	if delta == 0 then return end	local appliedDelta = if invertMouseWheel then -delta else delta
 	zoomVelocity += appliedDelta * CAMERA_ZOOM_SCROLL_STRENGTH
 	zoomAnchorScreen = screenPoint
 end
 
 function FormexCamera.ZoomTouch(delta: number, screenPoint: Vector2)
-	if delta == 0 then
-		return
-	end
-	zoomVelocity += delta * CAMERA_ZOOM_TOUCH_STRENGTH
+	if delta == 0 then return end	zoomVelocity += delta * CAMERA_ZOOM_TOUCH_STRENGTH
 	zoomAnchorScreen = screenPoint
 end
 
@@ -695,13 +680,7 @@ end
 Controls.moveFunction = cameraMoveFunction
 
 UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
-	if gameProcessedEvent then
-		return
-	end
-	if cameraMode ~= FormexCamera.CameraMode.TopDown then
-		return
-	end
-
+	if gameProcessedEvent then return end	if cameraMode ~= FormexCamera.CameraMode.TopDown then return end
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		isMousePanning = true
 		lastMousePanPosition = UserInputService:GetMouseLocation()
@@ -741,13 +720,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
 end)
 
 UserInputService.InputEnded:Connect(function(input, gameProcessedEvent)
-	if gameProcessedEvent then
-		return
-	end
-	if cameraMode ~= FormexCamera.CameraMode.TopDown then
-		return
-	end
-
+	if gameProcessedEvent then return end	if cameraMode ~= FormexCamera.CameraMode.TopDown then return end
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		isMousePanning = false
 		lastMousePanPosition = nil
@@ -787,13 +760,7 @@ UserInputService.InputEnded:Connect(function(input, gameProcessedEvent)
 end)
 
 UserInputService.InputChanged:Connect(function(input, gameProcessedEvent)
-	if gameProcessedEvent then
-		return
-	end
-	if cameraMode ~= FormexCamera.CameraMode.TopDown then
-		return
-	end
-
+	if gameProcessedEvent then return end	if cameraMode ~= FormexCamera.CameraMode.TopDown then return end
 	if input.UserInputType == Enum.UserInputType.MouseWheel then
 		FormexCamera.ZoomMouse(input.Position.Z, Vector2.new(input.Position.X, input.Position.Y))
 		return
@@ -811,13 +778,7 @@ UserInputService.InputChanged:Connect(function(input, gameProcessedEvent)
 end)
 
 UserInputService.TouchStarted:Connect(function(input, gameProcessedEvent)
-	if gameProcessedEvent then
-		return
-	end
-	if cameraMode ~= FormexCamera.CameraMode.TopDown then
-		return
-	end
-
+	if gameProcessedEvent then return end	if cameraMode ~= FormexCamera.CameraMode.TopDown then return end
 	touchPoints[input] = Vector2.new(input.Position.X, input.Position.Y)
 	touchCount += 1
 	if touchCount < 2 then
@@ -827,13 +788,7 @@ UserInputService.TouchStarted:Connect(function(input, gameProcessedEvent)
 end)
 
 UserInputService.TouchEnded:Connect(function(input, gameProcessedEvent)
-	if gameProcessedEvent then
-		return
-	end
-	if cameraMode ~= FormexCamera.CameraMode.TopDown then
-		return
-	end
-
+	if gameProcessedEvent then return end	if cameraMode ~= FormexCamera.CameraMode.TopDown then return end
 	if touchPoints[input] then
 		touchPoints[input] = nil
 		touchCount -= 1
@@ -845,17 +800,8 @@ UserInputService.TouchEnded:Connect(function(input, gameProcessedEvent)
 end)
 
 UserInputService.TouchMoved:Connect(function(input, gameProcessedEvent)
-	if gameProcessedEvent then
-		return
-	end
-	if cameraMode ~= FormexCamera.CameraMode.TopDown then
-		return
-	end
-
-	if not touchPoints[input] then
-		return
-	end
-
+	if gameProcessedEvent then return end	if cameraMode ~= FormexCamera.CameraMode.TopDown then return end
+	if not touchPoints[input] then return end
 	touchPoints[input] = Vector2.new(input.Position.X, input.Position.Y)
 	if touchCount < 2 then
 		lastPinchDistance = nil
@@ -893,18 +839,12 @@ UserInputService.TouchMoved:Connect(function(input, gameProcessedEvent)
 end)
 
 local function onRenderStep(dt: number)
-	if cameraMode ~= FormexCamera.CameraMode.TopDown then
-		return
-	end
-
+	if cameraMode ~= FormexCamera.CameraMode.TopDown then return end
 	updateRotation(dt)
 	updateZoom(dt)
 	updatePan(dt)
 
-	if not isCameraDirty then
-		return
-	end
-
+	if not isCameraDirty then return end
 	applyCameraTransform()
 	isCameraDirty = false
 end

@@ -16,6 +16,7 @@ export type BuildAction = "Add" | "Delete" | "Edit"
 export type CollisionGroup = "Grid" | "Wall" | "Object"
 export type ObjectMount = "Surface" | "Ceiling" | "Floor" | "Wall" | "Door" | "Window"
 export type ObjectSide = "Front" | "Back"
+export type WallPart = "FrontBottom" | "FrontTop" | "BackBottom" | "BackTop"
 
 -- Client shared represenation
 export type PlotSaveInfo = {
@@ -91,8 +92,8 @@ export type WallData = {
 
 	-- Runtime properties
 	Part: Model?,
-	FrontPart: Part?,
-	BackPart: Part?,
+	FrontBottomPart: Part?,
+	BackBottomPart: Part?,
 	FrontTopPart: Part?,
 	BackTopPart: Part?,
 	ConnectedWalls: {number}, -- HELPER: walls connected to start or end point
@@ -299,6 +300,13 @@ Formex.ObjectSide = table.freeze({
 	Front = "Front",
 	Back = "Back",
 }) :: {ObjectSide: ObjectSide}
+
+Formex.WallPart = table.freeze({
+	FrontBottom = "FrontBottom",
+	FrontTop = "FrontTop",
+	BackBottom = "BackBottom",
+	BackTop = "BackTop",
+}) :: {WallPart: WallPart}
 
 Formex.MaxPlotSize = {
 	Width = 3, -- segments

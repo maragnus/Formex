@@ -18,14 +18,8 @@ local prefabFolder = ReplicatedStorage:FindFirstChild(PREFAB_FOLDER_NAME)
 local workspacePrefabFolder = nil :: Instance?
 
 local function resolveWorkspacePrefabFolder(): Instance?
-	if workspacePrefabFolder then
-		return workspacePrefabFolder
-	end
-	local formexFolder = Workspace:FindFirstChild(WORKSPACE_ROOT_NAME)
-	if not formexFolder then
-		return nil
-	end
-	local prefabsFolder = formexFolder:FindFirstChild(WORKSPACE_PREFABS_NAME)
+	if workspacePrefabFolder then return workspacePrefabFolder end	local formexFolder = Workspace:FindFirstChild(WORKSPACE_ROOT_NAME)
+	if not formexFolder then return nil end	local prefabsFolder = formexFolder:FindFirstChild(WORKSPACE_PREFABS_NAME)
 	if prefabsFolder then
 		workspacePrefabFolder = prefabsFolder
 	end
@@ -41,38 +35,23 @@ local function splitPath(path: string): {string}
 end
 
 local function findPrefabInFolder(root: Instance?, prefabName: string): Model?
-	if not prefabName or prefabName == "" or not root then
-		return nil
-	end
-
+	if not prefabName or prefabName == "" or not root then return nil end
 	local current: Instance = root
 	for _, segment in ipairs(splitPath(prefabName)) do
 		local child = current:FindFirstChild(segment)
-		if not child then
-			return nil
-		end
-		current = child
+		if not child then return nil end		current = child
 	end
 
-	if current:IsA("Model") then
-		return current
-	end
-	return nil
+	if current:IsA("Model") then return current end	return nil
 end
 
 local function findPrefabModel(prefabName: string): Model?
 	local found = findPrefabInFolder(prefabFolder, prefabName)
-	if found then
-		return found
-	end
-	return findPrefabInFolder(resolveWorkspacePrefabFolder(), prefabName)
+	if found then return found end	return findPrefabInFolder(resolveWorkspacePrefabFolder(), prefabName)
 end
 
 local function ensureDeterministicPrimaryPart(model: Model?)
-	if not model or model.PrimaryPart then
-		return
-	end
-
+	if not model or model.PrimaryPart then return end
 	local namedBase: BasePart? = nil
 	local firstSeat: BasePart? = nil
 	local largestPart: BasePart? = nil
@@ -164,10 +143,7 @@ local function collectDesignIndices(model: Model): {number}
 end
 
 local function ensureDefaultDesign(prefab: Formex.ObjectPrefab, model: Model?)
-	if prefab.DefaultDesign and #prefab.DefaultDesign > 0 then
-		return
-	end
-	if not model then
+	if prefab.DefaultDesign and #prefab.DefaultDesign > 0 then return end	if not model then
 		prefab.DefaultDesign = {}
 		return
 	end
@@ -235,10 +211,7 @@ local function buildPrefabCache(): ({Formex.ObjectPrefab}, {[string]: Formex.Obj
 	end
 
 	local function mergeFromRoot(root: Instance?, skipFolderName: string?)
-		if not root then
-			return
-		end
-		local discovered = {} :: {Formex.ObjectPrefab}
+		if not root then return end		local discovered = {} :: {Formex.ObjectPrefab}
 		collectPrefabModels(root, "", discovered, skipFolderName)
 		for _, prefab in ipairs(discovered) do
 			if not byName[prefab.PrefabName] then
@@ -266,10 +239,7 @@ function Formex.Objects.GetPrefabs(): {Formex.ObjectPrefab}
 end
 
 function Formex.Objects.GetPrefab(prefabName: string?): Formex.ObjectPrefab?
-	if not prefabName or prefabName == "" then
-		return nil
-	end
-	if not cachedPrefabs or not prefabByName then
+	if not prefabName or prefabName == "" then return nil end	if not cachedPrefabs or not prefabByName then
 		Formex.Objects.GetPrefabs()
 	end
 	return prefabByName and prefabByName[prefabName] or nil
@@ -364,10 +334,7 @@ end
 
 local function isPointInsidePolygon(point: Vector2, polygon: {Vector2int16}): boolean
 	local count = #polygon
-	if count < 3 then
-		return false
-	end
-
+	if count < 3 then return false end
 	local inside = false
 	local j = count
 	for i = 1, count do
@@ -375,10 +342,7 @@ local function isPointInsidePolygon(point: Vector2, polygon: {Vector2int16}): bo
 		local pj = polygon[j]
 		local a = Vector2.new(pi.X, pi.Y)
 		local b = Vector2.new(pj.X, pj.Y)
-		if isPointOnEdge(point, a, b) then
-			return true
-		end
-		local intersects = (pi.Y > point.Y) ~= (pj.Y > point.Y)
+		if isPointOnEdge(point, a, b) then return true end		local intersects = (pi.Y > point.Y) ~= (pj.Y > point.Y)
 			and (point.X < (pj.X - pi.X) * (point.Y - pi.Y) / (pj.Y - pi.Y) + pi.X)
 		if intersects then
 			inside = not inside
@@ -433,14 +397,8 @@ function Formex.Objects.GetCeilingSurfaceY(floor: Formex.FloorData): number
 end
 
 function Formex.Objects.GetFloorAtPosition(plotData: Formex.PlotData?, levelIndex: number, position: Vector2): Formex.FloorData?
-	if not plotData or not plotData.Levels then
-		return nil
-	end
-	local levelData = plotData.Levels[levelIndex]
-	if not levelData or not levelData.Floors then
-		return nil
-	end
-
+	if not plotData or not plotData.Levels then return nil end	local levelData = plotData.Levels[levelIndex]
+	if not levelData or not levelData.Floors then return nil end
 	local bestFloor = nil
 	local bestHeight = -math.huge
 	for _, floor in pairs(levelData.Floors) do
@@ -499,18 +457,12 @@ end
 local function resolveDesignColor(designColors: {[number]: Color3}?, index: number, fallback: Color3): Color3
 	if designColors then
 		local color = designColors[index]
-		if color then
-			return color
-		end
-	end
+		if color then return color end	end
 	return fallback
 end
 
 function Formex.Objects.ApplyDesign(objectData: Formex.ObjectData, objectModel: Model?)
-	if not objectData or not objectModel then
-		return
-	end
-	if not objectData.DesignParts then
+	if not objectData or not objectModel then return end	if not objectData.DesignParts then
 		objectData.DesignParts = Formex.Objects.BuildDesignParts(objectModel)
 	end
 	local design = objectData.Design or {}
@@ -598,10 +550,7 @@ function Formex.Objects.EnsureDesignDefaults(objectData: Formex.ObjectData, pref
 end
 
 local function snapToGrid(value: number, grid: number): number
-	if grid <= 0 then
-		return value
-	end
-	return math.round(value / grid) * grid
+	if grid <= 0 then return value end	return math.round(value / grid) * grid
 end
 
 function Formex.Objects.SnapVector(position: Vector3): Vector3
@@ -635,10 +584,7 @@ local function getDefaultFloorSurfaceHeights(levelIndex: number): (number, numbe
 end
 
 local function getWallSideNormal(right: Vector3, side: Formex.ObjectSide): Vector3
-	if side == Formex.ObjectSide.Back then
-		return right
-	end
-	return -right
+	if side == Formex.ObjectSide.Back then return right end	return -right
 end
 
 local function getWallYawFromNormal(normal: Vector3): number
@@ -805,10 +751,7 @@ function Formex.Objects.GetObjectCFrame(
 	plotPart: BasePart,
 	plotData: Formex.PlotData?
 ): CFrame?
-	if not objectData or not prefab or not plotPart then
-		return nil
-	end
-
+	if not objectData or not prefab or not plotPart then return nil end
 	local position = objectData.Position or Vector3.new(0, 0, 0)
 	local rotation = objectData.Rotation or Vector3.new(0, 0, 0)
 	local mount = prefab.ObjectMount or Formex.MountType.Floor
@@ -819,18 +762,12 @@ function Formex.Objects.GetObjectCFrame(
 	if mount == Formex.MountType.Wall
 		or mount == Formex.MountType.Door
 		or mount == Formex.MountType.Window then
-		if not objectData.WallId then
-			return nil
-		end
-		local wallData = nil
+		if not objectData.WallId then return nil end		local wallData = nil
 		local levelIndex = objectData.Level or 1
 		if plotData and plotData.Levels and plotData.Levels[levelIndex] then
 			wallData = plotData.Levels[levelIndex].Walls[objectData.WallId]
 		end
-		if not wallData then
-			return nil
-		end
-		local dir, _, startLocal = Formex.Objects.GetWallBasis(wallData)
+		if not wallData then return nil end		local dir, _, startLocal = Formex.Objects.GetWallBasis(wallData)
 		local anchor2 = Vector2.new(startLocal.X + dir.X * position.X, startLocal.Z + dir.Z * position.X)
 		local floorHeight = getFloorAndCeilingHeights(plotData, wallData.Level or levelIndex, anchor2)
 		local elevation = position.Y
@@ -903,21 +840,12 @@ function Formex.Objects.GetObjectCFrame(
 end
 
 local function shouldCarve(prefab: Formex.ObjectPrefab?): boolean
-	if not prefab then
-		return false
-	end
-	return prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window
+	if not prefab then return false end	return prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window
 end
 
 function Formex.Objects.CarveWallObjects(plotData: Formex.PlotData, wallData: Formex.WallData, plotPart: BasePart?)
-	if not plotData or not wallData or not wallData.Part then
-		return
-	end
-	local levelData = plotData.Levels and plotData.Levels[wallData.Level or 1]
-	if not levelData or not levelData.Objects then
-		return
-	end
-
+	if not plotData or not wallData or not wallData.Part then return end	local levelData = plotData.Levels and plotData.Levels[wallData.Level or 1]
+	if not levelData or not levelData.Objects then return end
 	local subtractParts = {}
 	for _, objectData in pairs(levelData.Objects) do
 		if objectData.WallId == wallData.WallId then
@@ -947,25 +875,17 @@ function Formex.Objects.CarveWallObjects(plotData: Formex.PlotData, wallData: Fo
 	end
 
 	local wallModel = wallData.Part
-	local partNames = {
-		Formex.Walls and Formex.Walls.FrontPartName or "Front",
-		Formex.Walls and Formex.Walls.BackPartName or "BackSide",
-		"FrontTop",
-		"BackTop",
-	}
 
 	local function hasCarvedParts(): boolean
-		for _, name in ipairs(partNames) do
+		for _, name in ipairs(Formex.WallPart) do
 			local part = wallModel:FindFirstChild(name)
-			if part and part:IsA("BasePart") and part:IsA("PartOperation") then
-				return true
-			end
+			if part and part:IsA("BasePart") and part:IsA("PartOperation") then return true end
 		end
 		return false
 	end
 
 	local function resetWallParts()
-		for _, name in ipairs(partNames) do
+		for _, name in ipairs(Formex.WallPart) do
 			local part = wallModel:FindFirstChild(name)
 			if part and part:IsA("BasePart") then
 				part:Destroy()
@@ -980,11 +900,8 @@ function Formex.Objects.CarveWallObjects(plotData: Formex.PlotData, wallData: Fo
 		end
 	end
 
-	if #subtractParts == 0 then
-		return
-	end
-
-	for _, name in ipairs(partNames) do
+	if #subtractParts == 0 then return end
+	for _, name in ipairs(Formex.WallPart) do
 		local wallPart = wallModel:FindFirstChild(name)
 		if wallPart and wallPart:IsA("BasePart") then
 			local carved = wallPart:SubtractAsync(subtractParts)
@@ -1008,23 +925,14 @@ function Formex.Objects.CarveWallObjects(plotData: Formex.PlotData, wallData: Fo
 end
 
 function Formex.Objects.CreateObject(parent: Instance, objectData: Formex.ObjectData, plotPart: BasePart?, plotData: Formex.PlotData?): Model?
-	if not objectData or not parent then
-		return nil
-	end
-
+	if not objectData or not parent then return nil end
 	local prefab = objectData.Prefab
 	if not prefab and objectData.PrefabName then
 		prefab = Formex.Objects.GetPrefab(objectData.PrefabName)
 	end
-	if not prefab then
-		return nil
-	end
-
+	if not prefab then return nil end
 	local objectModelTemplate, subtractTemplate = resolvePrefabModels(prefab)
-	if not objectModelTemplate then
-		return nil
-	end
-
+	if not objectModelTemplate then return nil end
 	local container = Instance.new("Model")
 	container.Name = tostring(objectData.ObjectId)
 	container.Parent = parent
@@ -1067,10 +975,7 @@ end
 
 function Formex.Objects.EditObject(objectData: Formex.ObjectData, plotPart: BasePart?, plotData: Formex.PlotData?)
 	local container = objectData.Part
-	if not container or not plotPart then
-		return
-	end
-
+	if not container or not plotPart then return end
 	local prefab = objectData.Prefab
 	if not prefab and objectData.PrefabName then
 		prefab = Formex.Objects.GetPrefab(objectData.PrefabName)

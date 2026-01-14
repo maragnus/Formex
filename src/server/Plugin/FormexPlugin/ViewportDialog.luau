@@ -18,10 +18,7 @@ local ViewportDialogModule = {}
 
 local function getOrCreateGui()
 	local screenGui = StarterGui:FindFirstChild("FormexPrefabGui")
-	if screenGui and screenGui:IsA("ScreenGui") then
-		return screenGui
-	end
-
+	if screenGui and screenGui:IsA("ScreenGui") then return screenGui end
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "FormexPrefabGui"
 	gui.ResetOnSpawn = false
@@ -33,10 +30,7 @@ end
 
 local function getOrCreateViewport(gui: ScreenGui)
 	local viewport = gui:FindFirstChild("PrefabPreview")
-	if viewport and viewport:IsA("ViewportFrame") then
-		return viewport
-	end
-
+	if viewport and viewport:IsA("ViewportFrame") then return viewport end
 	local frame = Instance.new("ViewportFrame")
 	frame.Name = "PrefabPreview"
 	frame.AnchorPoint = Vector2.new(1, 1)
@@ -55,10 +49,7 @@ function ViewportDialogModule.new(_plugin: Plugin): ViewportDialog
 	local currentModel: Model? = nil
 
 	local function ensureGui()
-		if screenGui and screenGui.Parent then
-			return
-		end
-		screenGui = getOrCreateGui()
+		if screenGui and screenGui.Parent then return end		screenGui = getOrCreateGui()
 		viewportFrame = getOrCreateViewport(screenGui)
 
 		camera = viewportFrame:FindFirstChildOfClass("Camera")
@@ -98,17 +89,11 @@ function ViewportDialogModule.new(_plugin: Plugin): ViewportDialog
 
 	function dialog:SetPrefab(root: Model?, _forceRecalc: boolean?)
 		ensureGui()
-		if not viewportFrame or not camera then
-			return
-		end
-		if currentModel then
+		if not viewportFrame or not camera then return end		if currentModel then
 			currentModel:Destroy()
 			currentModel = nil
 		end
-		if not root then
-			return
-		end
-
+		if not root then return end
 		local prefabModel = PrefabMetadata.GetPrefabModel(root)
 		local sourceModel = prefabModel or root
 		local clone = sourceModel:Clone()

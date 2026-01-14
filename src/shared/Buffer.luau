@@ -28,10 +28,7 @@ function Buffer.new(initialSize: number?)
 	local function ensureCapacity(needed: number)
 		local required = position + needed
 		local length = buffer.len(buf)
-		if required <= length then
-			return
-		end
-
+		if required <= length then return end
 		local newLength = math.max(required, math.max(16, length * 2))
 		local newBuf = buffer.create(newLength)
 		if maxPosition > 0 then

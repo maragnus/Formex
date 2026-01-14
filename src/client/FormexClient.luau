@@ -193,18 +193,12 @@ local function getPredictionKey(levelIndex: number, partId: number | string): st
 end
 
 local function isPredictionModel(model: Instance?): boolean
-	if not model or not model:IsA("Model") then
-		return false
-	end
-	return model:GetAttribute("IsPrediction") == true
+	if not model or not model:IsA("Model") then return false end	return model:GetAttribute("IsPrediction") == true
 end
 
 local function reconcilePredictedModel(kind: "Wall" | "Floor" | "Object", levelIndex: number, partId: number | string, incoming: Model)
 	local map = predictedModelsByType[kind]
-	if not map then
-		return
-	end
-	local key = getPredictionKey(levelIndex, partId)
+	if not map then return end	local key = getPredictionKey(levelIndex, partId)
 	local predicted = map[key]
 	if predicted and predicted ~= incoming then
 		map[key] = nil
@@ -216,42 +210,24 @@ end
 
 local function registerPredictedModel(state: PredictionState, kind: "Wall" | "Floor" | "Object", levelIndex: number, partId: number | string, model: Model)
 	local map = predictedModelsByType[kind]
-	if not map then
-		return
-	end
-	local key = getPredictionKey(levelIndex, partId)
+	if not map then return end	local key = getPredictionKey(levelIndex, partId)
 	map[key] = model
 	state.PredictedModels[kind .. ":" .. key] = model
 end
 
 local function getPlotState(plotInfo: PlotInfo?): PlotSubscription?
-	if not plotInfo or not plotInfo.PlotPart then
-		return nil
-	end
-	return plotSubscriptions[plotInfo.PlotPart]
+	if not plotInfo or not plotInfo.PlotPart then return nil end	return plotSubscriptions[plotInfo.PlotPart]
 end
 
 local function getLevelPart(plotPart: BasePart?, levelIndex: number): BasePart?
-	if not plotPart then
-		return nil
-	end
-	local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
-	if levelPart and levelPart:IsA("BasePart") then
-		return levelPart
-	end
-	return nil
+	if not plotPart then return nil end	local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
+	if levelPart and levelPart:IsA("BasePart") then return levelPart end	return nil
 end
 
 local function getLevelFolder(plotPart: BasePart?, levelIndex: number, name: string): Folder?
 	local levelPart = getLevelPart(plotPart, levelIndex)
-	if not levelPart then
-		return nil
-	end
-	local folder = levelPart:FindFirstChild(name)
-	if folder and folder:IsA("Folder") then
-		return folder
-	end
-	return nil
+	if not levelPart then return nil end	local folder = levelPart:FindFirstChild(name)
+	if folder and folder:IsA("Folder") then return folder end	return nil
 end
 
 local function cloneWallData(wall: Formex.WallData): Formex.WallData
@@ -360,10 +336,7 @@ local function findWallModel(plotInfo: PlotInfo, levelIndex: number, wallId: num
 	local folder = getLevelFolder(plotInfo.PlotPart, levelIndex, "Walls")
 	if folder then
 		local model = folder:FindFirstChild(tostring(wallId))
-		if model and model:IsA("Model") then
-			return model
-		end
-	end
+		if model and model:IsA("Model") then return model end	end
 	return nil
 end
 
@@ -376,10 +349,7 @@ local function findFloorModel(plotInfo: PlotInfo, levelIndex: number, floorId: n
 	local folder = getLevelFolder(plotInfo.PlotPart, levelIndex, "Floors")
 	if folder then
 		local model = folder:FindFirstChild(tostring(floorId))
-		if model and model:IsA("Model") then
-			return model
-		end
-	end
+		if model and model:IsA("Model") then return model end	end
 	return nil
 end
 
@@ -392,19 +362,13 @@ local function findObjectModel(plotInfo: PlotInfo, levelIndex: number, objectId:
 	local folder = getLevelFolder(plotInfo.PlotPart, levelIndex, "Objects")
 	if folder then
 		local model = folder:FindFirstChild(tostring(objectId))
-		if model and model:IsA("Model") then
-			return model
-		end
-	end
+		if model and model:IsA("Model") then return model end	end
 	return nil
 end
 
 local function applyPrediction(plotInfo: PlotInfo, validation: any): PredictionState?
 	local plotState = getPlotState(plotInfo)
-	if not plotState then
-		return nil
-	end
-
+	if not plotState then return nil end
 	local plotData = plotState.Data
 	local levelsTouched = validation.LevelsTouched or {}
 	local snapshotWalls, snapshotFloors, snapshotObjects = capturePredictionSnapshot(plotData, levelsTouched)
@@ -643,10 +607,7 @@ end
 
 local function buildPredictionIdMap(entries: {any}?, key: string): {[any]: number}
 	local map = {}
-	if not entries then
-		return map
-	end
-	for _, entry in ipairs(entries) do
+	if not entries then return map end	for _, entry in ipairs(entries) do
 		local value = entry[key]
 		if value ~= nil and map[value] == nil then
 			map[value] = nextPredictionId()
@@ -656,10 +617,7 @@ local function buildPredictionIdMap(entries: {any}?, key: string): {[any]: numbe
 end
 
 local function remapEntryIds(entries: {any}?, key: string, map: {[any]: number})
-	if not entries or not map then
-		return
-	end
-	for _, entry in ipairs(entries) do
+	if not entries or not map then return end	for _, entry in ipairs(entries) do
 		local value = entry[key]
 		local remapped = value and map[value]
 		if remapped ~= nil then
@@ -669,10 +627,7 @@ local function remapEntryIds(entries: {any}?, key: string, map: {[any]: number})
 end
 
 local function remapIdList(ids: {any}?, map: {[any]: number})
-	if not ids or not map then
-		return
-	end
-	for index, value in ipairs(ids) do
+	if not ids or not map then return end	for index, value in ipairs(ids) do
 		local remapped = map[value]
 		if remapped ~= nil then
 			ids[index] = remapped
@@ -715,10 +670,7 @@ local function remapLevelWalls(levelData: Formex.LevelData, wallMap: {[any]: num
 end
 
 local function remapLevelFloors(levelData: Formex.LevelData, floorMap: {[any]: number}?)
-	if not floorMap or not levelData.Floors then
-		return
-	end
-	local remappedFloors = {}
+	if not floorMap or not levelData.Floors then return end	local remappedFloors = {}
 	for floorId, floorData in pairs(levelData.Floors) do
 		local newId = floorMap[floorId] or floorId
 		if newId ~= floorId then
@@ -736,10 +688,7 @@ local function remapLevelFloors(levelData: Formex.LevelData, floorMap: {[any]: n
 end
 
 local function remapLevelObjects(levelData: Formex.LevelData, objectMap: {[any]: number}?)
-	if not objectMap or not levelData.Objects then
-		return
-	end
-	local remappedObjects = {}
+	if not objectMap or not levelData.Objects then return end	local remappedObjects = {}
 	for objectId, objectData in pairs(levelData.Objects) do
 		local newId = objectMap[objectId] or objectId
 		if newId ~= objectId then
@@ -751,10 +700,7 @@ local function remapLevelObjects(levelData: Formex.LevelData, objectMap: {[any]:
 end
 
 local function remapResultIds(resultValue: any, map: {[any]: number}?)
-	if not map then
-		return resultValue
-	end
-	if type(resultValue) == "table" then
+	if not map then return resultValue end	if type(resultValue) == "table" then
 		for index, value in ipairs(resultValue) do
 			local remapped = map[value]
 			if remapped ~= nil then
@@ -764,17 +710,11 @@ local function remapResultIds(resultValue: any, map: {[any]: number}?)
 		return resultValue
 	end
 	local remapped = map[resultValue]
-	if remapped ~= nil then
-		return remapped
-	end
-	return resultValue
+	if remapped ~= nil then return remapped end	return resultValue
 end
 
 local function remapPredictionValidation(validation: any)
-	if not validation then
-		return
-	end
-
+	if not validation then return end
 	local wallMap = buildPredictionIdMap(validation.AddedWalls, "WallId")
 	local floorMap = buildPredictionIdMap(validation.AddedFloors, "FloorId")
 	local objectMap = buildPredictionIdMap(validation.AddedObjects, "ObjectId")
@@ -849,10 +789,7 @@ local function normalizeResultIds(resultValue: any): {any}
 end
 
 local function updatePredictedId(plotInfo: PlotInfo, partType: Formex.PartType, levelIndex: number, predictedId: any, serverId: any)
-	if predictedId == nil or serverId == nil or predictedId == serverId then
-		return
-	end
-
+	if predictedId == nil or serverId == nil or predictedId == serverId then return end
 	local map = predictedModelsByType[partType]
 	if map then
 		local predictedKey = getPredictionKey(levelIndex, predictedId)
@@ -867,10 +804,7 @@ local function updatePredictedId(plotInfo: PlotInfo, partType: Formex.PartType, 
 
 	local plotData = plotInfo.PlotData
 	local levelData = plotData.Levels and plotData.Levels[levelIndex]
-	if not levelData then
-		return
-	end
-
+	if not levelData then return end
 	local predictedKeyId = tonumber(predictedId) or predictedId
 	local serverKeyId = tonumber(serverId) or serverId
 
@@ -905,10 +839,7 @@ local function updatePredictedId(plotInfo: PlotInfo, partType: Formex.PartType, 
 end
 
 local function reconcilePredictionResults(plotInfo: PlotInfo, validation: any, changes: {Formex.BuildChange}, results: {Formex.BuildChangeResult})
-	if not validation or not validation.Results then
-		return
-	end
-
+	if not validation or not validation.Results then return end
 	local maxServerId: number? = nil
 	for index, serverResult in ipairs(results) do
 		local predictedResult = validation.Results[index]
@@ -945,13 +876,7 @@ local function reconcilePredictionResults(plotInfo: PlotInfo, validation: any, c
 end
 
 local function finalizePrediction(state: PredictionState?)
-	if not state then
-		return
-	end
-	if not state.RemovedPredictionModels or #state.RemovedPredictionModels == 0 then
-		return
-	end
-
+	if not state then return end	if not state.RemovedPredictionModels or #state.RemovedPredictionModels == 0 then return end
 	local removedSet = {} :: {[Model]: boolean}
 	for _, model in ipairs(state.RemovedPredictionModels) do
 		if model then
@@ -975,10 +900,7 @@ local function finalizePrediction(state: PredictionState?)
 end
 
 local function rollbackPrediction(state: PredictionState?)
-	if not state then
-		return
-	end
-	local plotInfo = state.PlotInfo
+	if not state then return end	local plotInfo = state.PlotInfo
 	local plotData = plotInfo.PlotData
 	local plotPart = plotInfo.PlotPart
 
@@ -1103,19 +1025,14 @@ end
 
 local function getChildPart(model: Model, name: string): BasePart?
     local part = model:FindFirstChild(name)
-    if part and part:IsA("BasePart") then
-        return part
-    end
-    return nil
+    if part and part:IsA("BasePart") then return part end    return nil
 end
 
 local function refreshWallParts(wallData: Formex.WallData, model: Model)
-    local frontName = Formex.Walls and Formex.Walls.FrontPartName or "Front"
-    local backName = Formex.Walls and Formex.Walls.BackPartName or "BackSide"
-    wallData.FrontPart = getChildPart(model, frontName)
-    wallData.BackPart = getChildPart(model, backName)
-    wallData.FrontTopPart = getChildPart(model, "FrontTop")
-    wallData.BackTopPart = getChildPart(model, "BackTop")
+    wallData.FrontBottomPart = getChildPart(model, Formex.WallPart.FrontBottom)
+    wallData.BackBottomPart = getChildPart(model, Formex.WallPart.BackBottom)
+    wallData.FrontTopPart = getChildPart(model, Formex.WallPart.FrontTop)
+    wallData.BackTopPart = getChildPart(model, Formex.WallPart.BackTop)
 end
 
 local function refreshFloorParts(floorData: Formex.FloorData, model: Model)
@@ -1267,10 +1184,7 @@ end
 
 local function unsubscribeWallModel(plotState: PlotSubscription, levelIndex: number, model: Model)
     local subscription = plotState.Walls[model]
-    if not subscription then
-        return
-    end
-
+    if not subscription then return end
     disconnectConnections(subscription.Connections)
     plotState.Walls[model] = nil
 
@@ -1319,10 +1233,7 @@ local function subscribeFloorModel(plotState: PlotSubscription, levelIndex: numb
     end
 
     local function ensureClientMeshes(reason: string)
-        if hasClientMeshes() then
-            return
-        end
-        if not floorData.Points or #floorData.Points < 3 then
+        if hasClientMeshes() then return end        if not floorData.Points or #floorData.Points < 3 then
             markFloorDebug("ClientMeshEnsureLast", "SkippedNoPoints:" .. reason)
             return
         end
@@ -1398,10 +1309,7 @@ end
 
 local function unsubscribeFloorModel(plotState: PlotSubscription, levelIndex: number, model: Model)
     local subscription = plotState.Floors[model]
-    if not subscription then
-        return
-    end
-
+    if not subscription then return end
     disconnectConnections(subscription.Connections)
     plotState.Floors[model] = nil
 
@@ -1416,10 +1324,7 @@ local function unsubscribeFloorModel(plotState: PlotSubscription, levelIndex: nu
 end
 
 local function subscribeObjectModel(plotState: PlotSubscription, levelIndex: number, model: Model)
-    if plotState.Objects[model] then
-        return
-    end
-
+    if plotState.Objects[model] then return end
     local levelData = ensureLevelData(plotState.Data, levelIndex, nil)
     local objectKey = tonumber(model.Name) or 0
     if not isPredictionModel(model) then
@@ -1462,10 +1367,7 @@ end
 
 local function unsubscribeObjectModel(plotState: PlotSubscription, levelIndex: number, model: Model)
     local subscription = plotState.Objects[model]
-    if not subscription then
-        return
-    end
-
+    if not subscription then return end
     disconnectConnections(subscription.Connections)
     plotState.Objects[model] = nil
 
@@ -1522,15 +1424,9 @@ local function watchModelFolder(plotState: PlotSubscription, levelIndex: number,
 end
 
 local function watchLevelPart(plotState: PlotSubscription, levelPart: BasePart)
-    if plotState.Levels[levelPart] then
-        return
-    end
-
+    if plotState.Levels[levelPart] then return end
     local levelIndex = tonumber(levelPart.Name)
-    if not levelIndex then
-        return
-    end
-
+    if not levelIndex then return end
     ensureLevelData(plotState.Data, levelIndex, levelPart)
 
     local levelSubscription: LevelSubscription = {
@@ -1549,10 +1445,7 @@ local function watchLevelPart(plotState: PlotSubscription, levelPart: BasePart)
     end
 
     local function detachFolder(folder: Instance)
-        if not folder:IsA("Folder") then
-            return
-        end
-
+        if not folder:IsA("Folder") then return end
         local name = folder.Name
         local connections = levelSubscription.Folders[name]
         if connections then
@@ -1643,10 +1536,7 @@ end
 
 local function subscribeToPlot(plotPart: Part)
     local existing = plotSubscriptions[plotPart]
-    if existing then
-        return existing.Info
-    end
-
+    if existing then return existing.Info end
     local plotId = plotPart:GetAttribute("PlotId") or 0
 
     local ownerUserId = plotPart:GetAttribute("OwnerUserId") or 0
@@ -1779,14 +1669,8 @@ local function subscribeToPlot(plotPart: Part)
     end))
 
     table.insert(plotState.Connections, plotPart.AttributeChanged:Connect(function(attributeName)
-        if string.sub(attributeName, 1, 2) ~= "U_" then
-            return
-        end
-        local id = tonumber(string.sub(attributeName, 3))
-        if not id then
-            return
-        end
-        local value = plotPart:GetAttribute(attributeName)
+        if string.sub(attributeName, 1, 2) ~= "U_" then return end        local id = tonumber(string.sub(attributeName, 3))
+        if not id then return end        local value = plotPart:GetAttribute(attributeName)
         if value == nil then
             plotData.Permissions[id] = nil
         else
@@ -1906,18 +1790,9 @@ end
 
 function FormexClient.BuildTransaction(changes: {Formex.BuildChange}, selection: Formex.SelectionSnapshot?): {Formex.BuildChangeResult}?
 	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid then
-		return nil
-	end
-	if not changes or #changes == 0 then
-		return nil
-	end
-
+	if not plotInfo or not plotInfo.IsValid then return nil end	if not changes or #changes == 0 then return nil end
 	local validation = Formex.IsTransactionValid(plotInfo.PlotData, changes)
-	if not validation or validation.IsValid ~= true then
-		return nil
-	end
-
+	if not validation or validation.IsValid ~= true then return nil end
 	remapPredictionValidation(validation)
 	local prediction = applyPrediction(plotInfo, validation)
 	local results, _message = FormexFunctions:InvokeServer(Formex.Function.BuildTransaction, changes, selection)

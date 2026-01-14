@@ -77,10 +77,7 @@ function FormexDesignHighlights.Init()
 end
 
 local function ensureSelectionHighlight(): Highlight
-	if selectionHighlight and selectionHighlight.Parent then
-		return selectionHighlight
-	end
-
+	if selectionHighlight and selectionHighlight.Parent then return selectionHighlight end
 	local highlight = Instance.new("Highlight")
 	highlight.FillTransparency = 1
 	highlight.OutlineTransparency = 0
@@ -92,17 +89,11 @@ local function ensureSelectionHighlight(): Highlight
 end
 
 function FormexDesignHighlights.IsHighlightInstance(instance: Instance?): boolean
-	if not instance then
-		return false
-	end
-	return selectionHighlight ~= nil and instance == selectionHighlight
+	if not instance then return false end	return selectionHighlight ~= nil and instance == selectionHighlight
 end
 
 function FormexDesignHighlights.UpdateSelectionHighlight()
-	if not Formex or not OverlayFolder or not Constants then
-		return
-	end
-
+	if not Formex or not OverlayFolder or not Constants then return end
 	local highlight = ensureSelectionHighlight()
 	local highlightEnabled = true
 	if getDesignMode and Enums and Enums.DesignMode then
@@ -343,18 +334,12 @@ end
 
 local function getLevelFolder(plotInfo: any, levelIndex: number): Instance?
 	local plotPart = plotInfo and plotInfo.PlotPart
-	if not plotPart then
-		return nil
-	end
-	return plotPart:FindFirstChild(tostring(levelIndex))
+	if not plotPart then return nil end	return plotPart:FindFirstChild(tostring(levelIndex))
 end
 
 local function getLevelFolderChild(plotInfo: any, levelIndex: number, name: string): Instance?
 	local levelFolder = getLevelFolder(plotInfo, levelIndex)
-	if not levelFolder then
-		return nil
-	end
-	return levelFolder:FindFirstChild(name)
+	if not levelFolder then return nil end	return levelFolder:FindFirstChild(name)
 end
 
 function FormexDesignHighlights.UpdateFloorEdgePreview(

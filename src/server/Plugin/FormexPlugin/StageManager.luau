@@ -28,10 +28,7 @@ local function getStageModel(root: Model): Model?
 	local stageId = root:GetAttribute(Constants.Attributes.StageId)
 	if stageId and stageFolder then
 		for _, child in ipairs(stageFolder:GetChildren()) do
-			if child:IsA("Model") and child:GetAttribute(Constants.Attributes.StageId) == stageId then
-				return child
-			end
-		end
+			if child:IsA("Model") and child:GetAttribute(Constants.Attributes.StageId) == stageId then return child end		end
 		local legacy = stageFolder:FindFirstChild(stageId)
 		if legacy and legacy:IsA("Model") then
 			legacy:SetAttribute(Constants.Attributes.StageId, stageId)
@@ -214,20 +211,14 @@ end
 
 function StageManager.UpdateStageDesign(root: Model, objectMount: string?)
 	local stage = getStageModel(root)
-	if not stage then
-		return
-	end
-	local stagePivot = getStagePivot(root)
+	if not stage then return end	local stagePivot = getStagePivot(root)
 	stage:PivotTo(stagePivot)
 	buildStageParts(stage, stagePivot, objectMount)
 end
 
 function StageManager.UpdateStageName(root: Model)
 	local stage = getStageModel(root)
-	if not stage then
-		return
-	end
-	stage.Name = root.Name
+	if not stage then return end	stage.Name = root.Name
 end
 
 function StageManager.PositionStage(root: Model, stageIndex: number)
@@ -251,10 +242,7 @@ end
 
 function StageManager.RefreshSizeGuide(root: Model, size: Vector3)
 	local stage = getStageModel(root)
-	if not stage then
-		return
-	end
-	local guide = stage:FindFirstChild(Constants.Prefab.SizeGuideName)
+	if not stage then return end	local guide = stage:FindFirstChild(Constants.Prefab.SizeGuideName)
 	if guide and guide:IsA("BasePart") then
 		local stagePivot = getStagePivot(root)
 		updateSizeGuide(guide, stagePivot, size)
@@ -263,10 +251,7 @@ end
 
 function StageManager.EnsureSizeGuide(root: Model, size: Vector3): BasePart?
 	local stage = getStageModel(root)
-	if not stage then
-		return nil
-	end
-	local stagePivot = getStagePivot(root)
+	if not stage then return nil end	local stagePivot = getStagePivot(root)
 	return ensureSizeGuide(stage, stagePivot, size)
 end
 
@@ -280,10 +265,7 @@ end
 
 function StageManager.FocusCameraOnStage(root: Model)
 	local camera = Workspace.CurrentCamera
-	if not camera then
-		return
-	end
-	local center = root:GetPivot().Position
+	if not camera then return end	local center = root:GetPivot().Position
 	local offset = Vector3.new(Constants.Stage.Size * 1.25, Constants.Stage.Size * 0.75, Constants.Stage.Size * 1.25)
 	camera.CFrame = CFrame.new(center + offset, center)
 end

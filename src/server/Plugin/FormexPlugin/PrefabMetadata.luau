@@ -70,10 +70,7 @@ end
 
 function PrefabMetadata.GetPrefabModel(root: Model): Model?
 	local prefabModel = root:FindFirstChild(Constants.Prefab.PrefabModelName)
-	if prefabModel and prefabModel:IsA("Model") then
-		return prefabModel
-	end
-	return nil
+	if prefabModel and prefabModel:IsA("Model") then return prefabModel end	return nil
 end
 
 function PrefabMetadata.EnsurePrefabModel(root: Model): Model

@@ -83,10 +83,7 @@ end
 
 local function getHistoryIfExists(plotId: number, userId: number): HistoryState?
 	local plotHistory = historyByPlot[plotId]
-	if not plotHistory then
-		return nil
-	end
-	return plotHistory[userId]
+	if not plotHistory then return nil end	return plotHistory[userId]
 end
 
 local function pushUndo(plotId: number, userId: number, snapshot: Formex.LevelArray, selection: Formex.SelectionSnapshot?)
@@ -102,10 +99,7 @@ local function pushUndo(plotId: number, userId: number, snapshot: Formex.LevelAr
 end
 
 local function updatePlayerUndoRedoAttributes(player: Player, plotId: number?)
-	if not player then
-		return
-	end
-
+	if not player then return end
 	if not plotId or plotId == 0 then
 		player:SetAttribute("CanUndo", false)
 		player:SetAttribute("CanRedo", false)
@@ -175,10 +169,7 @@ end
 
 local function cloneLevelForSnapshot(snapshot: Formex.LevelArray, levels: Formex.LevelArray, levelIndex: number)
 	local levelData = levels[levelIndex]
-	if not levelData then
-		return
-	end
-
+	if not levelData then return end
 	local levelClone = table.clone(levelData)
 	levelClone.Walls = table.clone(levelData.Walls)
 	levelClone.Floors = table.clone(levelData.Floors)
@@ -231,10 +222,7 @@ local function resolveSplitHeight(height: number, value: number?, existing: numb
 	if resolved == nil then
 		resolved = existing
 	end
-	if resolved == nil or resolved <= 0 or height <= Formex.LayoutGridSize * 2 then
-		return 0
-	end
-	local snapped = snapToGrid(resolved)
+	if resolved == nil or resolved <= 0 or height <= Formex.LayoutGridSize * 2 then return 0 end	local snapped = snapToGrid(resolved)
 	local maxSplit = height - Formex.LayoutGridSize
 	return math.clamp(snapped, Formex.LayoutGridSize, maxSplit)
 end
@@ -261,10 +249,7 @@ local function resolveColor(value: Color3?, fallback: Color3?): Color3
 end
 
 local function normalizeMaterialId(value: number?): number?
-	if type(value) ~= "number" or value <= 0 then
-		return nil
-	end
-	return value
+	if type(value) ~= "number" or value <= 0 then return nil end	return value
 end
 
 local function resolveSideMaterials(entryTop: number?, entryBottom: number?, entryLegacy: number?, existingTop: number?, existingBottom: number?, existingLegacy: number?, defaultMaterial: number): (number, number)
@@ -671,10 +656,7 @@ function FormexBuild.BuildWall(player: Player, wallData: Formex.WallData | {Form
 			Data = wallData,
 		},
 	}, selection)
-	if not results then
-		return nil
-	end
-	local changeResult = results[1]
+	if not results then return nil end	local changeResult = results[1]
 	return changeResult and changeResult.Result or nil
 end
 
@@ -855,10 +837,7 @@ function FormexBuild.BuildFloor(player: Player, floorData: Formex.FloorData | {F
 			Data = floorData,
 		},
 	}, selection)
-	if not results then
-		return nil
-	end
-	local changeResult = results[1]
+	if not results then return nil end	local changeResult = results[1]
 	return changeResult and changeResult.Result or nil
 end
 
@@ -956,31 +935,16 @@ local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.
 	end
 
 	local function isObjectValid(entry: Formex.ObjectData, prefab: Formex.ObjectPrefab): boolean
-		if not entry.Position or not entry.Rotation then
-			return false
-		end
-		local _, boundsSize = Formex.Objects.GetPrefabBounds(prefab, nil)
+		if not entry.Position or not entry.Rotation then return false end		local _, boundsSize = Formex.Objects.GetPrefabBounds(prefab, nil)
 		local plot = plotData
 		local mount = prefab.ObjectMount
 
 		if isWallMount(mount) then
-			if not entry.WallId then
-				return false
-			end
-			local wallData = levelData.Walls[entry.WallId]
-			if not wallData then
-				return false
-			end
-			local dir, _, startLocal, length = Formex.Objects.GetWallBasis(wallData)
-			if length <= Formex.EPSILON then
-				return false
-			end
-			local minX = boundsSize.X / 2
+			if not entry.WallId then return false end			local wallData = levelData.Walls[entry.WallId]
+			if not wallData then return false end			local dir, _, startLocal, length = Formex.Objects.GetWallBasis(wallData)
+			if length <= Formex.EPSILON then return false end			local minX = boundsSize.X / 2
 			local maxX = length - (boundsSize.X / 2)
-			if entry.Position.X < minX - Formex.EPSILON or entry.Position.X > maxX + Formex.EPSILON then
-				return false
-			end
-			local levelIndex = wallData.Level or entry.Level or 1
+			if entry.Position.X < minX - Formex.EPSILON or entry.Position.X > maxX + Formex.EPSILON then return false end			local levelIndex = wallData.Level or entry.Level or 1
 			local levelOffset = Formex.Plot.GetLevelOffset(levelIndex)
 			local wallHeight = wallData.Height or Formex.LevelHeight
 			local wallTop = levelOffset + wallHeight
@@ -991,27 +955,15 @@ local function applyObjectChanges(plotData: Formex.PlotData, objectData: Formex.
 			if mount == Formex.MountType.Door then
 				elevation = 0
 			end
-			if elevation < -Formex.EPSILON then
-				return false
-			end
-			local bottomY = floorHeight + elevation
+			if elevation < -Formex.EPSILON then return false end			local bottomY = floorHeight + elevation
 			local topY = bottomY + boundsSize.Y
-			if topY > wallTop + Formex.EPSILON then
-				return false
-			end
-			return true
+			if topY > wallTop + Formex.EPSILON then return false end			return true
 		end
 
 		local position2 = Vector2.new(entry.Position.X, entry.Position.Z)
-		if not Formex.Plot.IsPointInUnlockedSegments(position2, plot.SegmentsUnlocked) then
-			return false
-		end
-		if mount == Formex.MountType.Floor or mount == Formex.MountType.Ceiling then
+		if not Formex.Plot.IsPointInUnlockedSegments(position2, plot.SegmentsUnlocked) then return false end		if mount == Formex.MountType.Floor or mount == Formex.MountType.Ceiling then
 			local floorData = Formex.Objects.GetFloorAtPosition(plot, entry.Level or 1, position2)
-			if not floorData then
-				return false
-			end
-		end
+			if not floorData then return false end		end
 		return true
 	end
 
@@ -1108,18 +1060,12 @@ function FormexBuild.BuildObject(player: Player, objectData: Formex.ObjectData, 
 			Data = objectData,
 		},
 	}, selection)
-	if not results then
-		return nil
-	end
-	local changeResult = results[1]
+	if not results then return nil end	local changeResult = results[1]
 	return changeResult and changeResult.Result or nil
 end
 
 local function mergeLevelSet(target: {[number]: boolean}, levels: {number}?)
-	if not levels then
-		return
-	end
-	for _, levelIndex in ipairs(levels) do
+	if not levels then return end	for _, levelIndex in ipairs(levels) do
 		target[levelIndex] = true
 	end
 end
@@ -1134,25 +1080,16 @@ local function toSortedLevelList(levelSet: {[number]: boolean}): {number}
 end
 
 local function shouldCarveObject(objectData: Formex.ObjectData?): boolean
-	if not objectData then
-		return false
-	end
-	local prefab = objectData.Prefab
+	if not objectData then return false end	local prefab = objectData.Prefab
 	if not prefab and objectData.PrefabName then
 		prefab = Formex.Objects.GetPrefab(objectData.PrefabName)
 	end
-	if not prefab then
-		return false
-	end
-	return prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window
+	if not prefab then return false end	return prefab.ObjectMount == Formex.MountType.Door or prefab.ObjectMount == Formex.MountType.Window
 end
 
 local function resolveObjectFromLevels(levels: Formex.LevelArray?, levelIndex: number, objectId: number | string): Formex.ObjectData?
 	local levelData = levels and levels[levelIndex]
-	if not levelData or not levelData.Objects then
-		return nil
-	end
-	local objectData = levelData.Objects[objectId]
+	if not levelData or not levelData.Objects then return nil end	local objectData = levelData.Objects[objectId]
 	if not objectData and type(objectId) == "string" then
 		local numericId = tonumber(objectId)
 		if numericId then
@@ -1176,10 +1113,7 @@ local function buildCarveWallIds(
 	end
 
 	local function addWall(levelIndex: number?, wallId: number?)
-		if not levelIndex or not wallId then
-			return
-		end
-		local wallSet = carveWallIdsByLevel[levelIndex]
+		if not levelIndex or not wallId then return end		local wallSet = carveWallIdsByLevel[levelIndex]
 		if not wallSet then
 			wallSet = {}
 			carveWallIdsByLevel[levelIndex] = wallSet
@@ -1189,13 +1123,7 @@ local function buildCarveWallIds(
 
 	local function addWallForObject(levels: Formex.LevelArray?, levelIndex: number, objectId: number | string)
 		local objectData = resolveObjectFromLevels(levels, levelIndex, objectId)
-		if not objectData or not objectData.WallId then
-			return
-		end
-		if not shouldCarveObject(objectData) then
-			return
-		end
-		addWall(levelIndex, objectData.WallId)
+		if not objectData or not objectData.WallId then return end		if not shouldCarveObject(objectData) then return end		addWall(levelIndex, objectData.WallId)
 	end
 
 	for _, entry in ipairs(result.UpdatedWalls or {}) do
@@ -1226,10 +1154,7 @@ local function renderPlotChanges(
 	levelsTouched: {number}?
 )
 	local plotPart = FormexSystem.Plots[plotData.PlotId]
-	if not plotPart then
-		return
-	end
-
+	if not plotPart then return end
 	if result and levelsTouched then
 		local levelsToRender = result.LevelsTouched or levelsTouched
 		local carveWallIdsByLevel = buildCarveWallIds(plotData, snapshotLevels, result, levelsToRender)

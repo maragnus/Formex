@@ -103,10 +103,7 @@ local function cross2(a: Vector2, b: Vector2): number
 end
 
 function Formex.Plot.IsPointOnSegment(point: Vector2, startPoint: Vector2, endPoint: Vector2): boolean
-	if math.abs(cross2(endPoint - startPoint, point - startPoint)) > EPSILON then
-		return false
-	end
-	local minX = math.min(startPoint.X, endPoint.X) - EPSILON
+	if math.abs(cross2(endPoint - startPoint, point - startPoint)) > EPSILON then return false end	local minX = math.min(startPoint.X, endPoint.X) - EPSILON
 	local maxX = math.max(startPoint.X, endPoint.X) + EPSILON
 	local minY = math.min(startPoint.Y, endPoint.Y) - EPSILON
 	local maxY = math.max(startPoint.Y, endPoint.Y) + EPSILON
@@ -122,10 +119,7 @@ local function getSegmentCenter(index: number): (number, number)
 end
 
 local function isPointInUnlockedSegments(point: Vector2, mask: number?): boolean
-	if not mask or mask == 0 then
-		return false
-	end
-
+	if not mask or mask == 0 then return false end
 	local halfWidth = Formex.SegmentSize.Width / 2
 	local halfDepth = Formex.SegmentSize.Depth / 2
 
@@ -145,10 +139,7 @@ end
 Formex.Plot.IsPointInUnlockedSegments = isPointInUnlockedSegments
 
 function Formex.Plot.IsLineWithinUnlockedSegments(startPoint: Vector2 | Vector2int16, endPoint: Vector2 | Vector2int16, mask: number?): boolean
-	if not isPointInUnlockedSegments(startPoint, mask) or not isPointInUnlockedSegments(endPoint, mask) then
-		return false
-	end
-
+	if not isPointInUnlockedSegments(startPoint, mask) or not isPointInUnlockedSegments(endPoint, mask) then return false end
 	if typeof(startPoint) ~= "Vector2" or typeof(endPoint) ~= "Vector2" then
 		startPoint = Vector2.new(startPoint.X, startPoint.Y)
 		endPoint = Vector2.new(endPoint.X, endPoint.Y)
@@ -164,10 +155,7 @@ function Formex.Plot.IsLineWithinUnlockedSegments(startPoint: Vector2 | Vector2i
 
 	for i = 1, steps do
 		local point = startPoint + unit * (i * step)
-		if not isPointInUnlockedSegments(point, mask) then
-			return false
-		end
-	end
+		if not isPointInUnlockedSegments(point, mask) then return false end	end
 
 	return true
 end

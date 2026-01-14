@@ -28,10 +28,7 @@ type PrefabEditData = {
 }
 
 local function findPrefabRoot(instance: Instance, workspaceRoot: Folder, replicatedRoot: Folder): Model?
-	if instance:IsA("Model") and PrefabCatalog.IsPrefabRoot(instance) then
-		return instance
-	end
-	local ancestor = PluginUtils.FindAncestor(instance, function(target)
+	if instance:IsA("Model") and PrefabCatalog.IsPrefabRoot(instance) then return instance end	local ancestor = PluginUtils.FindAncestor(instance, function(target)
 		return target:IsA("Model") and PrefabCatalog.IsPrefabRoot(target)
 	end, nil)
 	if ancestor and ancestor:IsA("Model")
@@ -147,20 +144,14 @@ local function getPathsFromRoots(roots: {Model}, rootFolder: Instance): {string}
 end
 
 local function applyObjectMountFromUI(roots: {Model}, data: PrefabEditData?)
-	if not data or not data.ObjectMount then
-		return
-	end
-	for _, root in ipairs(roots) do
+	if not data or not data.ObjectMount then return end	for _, root in ipairs(roots) do
 		PrefabOperations.UpdatePrefab(root, { ObjectMount = data.ObjectMount })
 	end
 end
 
 local function focusSpawnLocation()
 	local camera = Workspace.CurrentCamera
-	if not camera then
-		return
-	end
-	local spawn = Workspace:FindFirstChildOfClass("SpawnLocation") or Workspace:FindFirstChild("SpawnLocation", true)
+	if not camera then return end	local spawn = Workspace:FindFirstChildOfClass("SpawnLocation") or Workspace:FindFirstChild("SpawnLocation", true)
 	if spawn and spawn:IsA("BasePart") then
 		local center = spawn.Position
 		local offset = Vector3.new(18, 12, 18)

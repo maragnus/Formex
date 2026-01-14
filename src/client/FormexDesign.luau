@@ -91,6 +91,15 @@ type InputInfo = {
 	Target: Instance?,
 	ActionHeld: boolean,
 	AltHeld: boolean,
+	
+	-- InputInfo should be considered very reliable without requiring for fallback lookups
+	PartType: Formex.PartType?,
+	WallSide: Formex.ObjectSide?,
+	WallData: Formex.WallData?,
+	FloorSide: string?,
+	FloorData: Formex.FloorData?,
+	ObjectData: Formex.ObjectData?,
+	RoomData: Formex.RoomData?,
 }
 
 local inputInfo: InputInfo? = nil
@@ -128,6 +137,7 @@ local canRedo = false
 local altDropperForced = false
 local altDropperUsed = false
 local lastSubModeBeforeAlt: DesignSubMode? = nil
+local lastDesignModeBeforeAlt: DesignMode? = nil
 local designTipMessage: string? = nil
 type TopDownState = FormexCamera.TopDownState
 local topDownStateByPlotId: {[number]: TopDownState} = {}
@@ -235,29 +245,27 @@ end
 
 local function updateAltDropperState(held: boolean)
 	if held then
-		if altDropperForced then
-			return
-		end
-		if isPaintableDesignMode(designMode)
+		if altDropperForced then return end		if isPaintableDesignMode(designMode)
 			and (designSubMode == FormexDesign.DesignSubMode.Normal
 				or designSubMode == FormexDesign.DesignSubMode.Paint) then
 			lastSubModeBeforeAlt = designSubMode
+			lastDesignModeBeforeAlt = designMode
 			altDropperUsed = false
 			altDropperForced = true
-			FormexDesign.SetDesignSubMode(FormexDesign.DesignSubMode.Dropper)
+			FormexDesign.SetDesignMode(FormexDesign.DesignMode.Dropper, true)
 		end
 	else
-		if not altDropperForced then
-			return
-		end
-		altDropperForced = false
-		local nextMode = lastSubModeBeforeAlt or FormexDesign.DesignSubMode.Normal
+		if not altDropperForced then return end		altDropperForced = false
+		local nextMode = lastDesignModeBeforeAlt or FormexDesign.DesignMode.Select
+		local nextSubMode = lastSubModeBeforeAlt or FormexDesign.DesignSubMode.Normal
 		if altDropperUsed then
-			nextMode = FormexDesign.DesignSubMode.Paint
+			nextSubMode = FormexDesign.DesignSubMode.Paint
 		end
+		lastDesignModeBeforeAlt = nil
 		lastSubModeBeforeAlt = nil
 		altDropperUsed = false
-		FormexDesign.SetDesignSubMode(nextMode)
+		FormexDesign.SetDesignMode(nextMode, true)
+		FormexDesign.SetDesignSubMode(nextSubMode)
 	end
 end
 
@@ -267,25 +275,17 @@ local function snapToWallGrid(value: number): number
 end
 
 local function clampWallHeight(value: number?): number?
-	if value == nil then
-		return nil
-	end
-	local snapped = snapToWallGrid(value)
+	if value == nil then return nil end	local snapped = snapToWallGrid(value)
 	return math.clamp(snapped, Formex.GridSize, Formex.LevelHeight)
 end
 
 local function clampWallSplit(value: number?, height: number?): number?
-	if value == nil then
-		return nil
+	if value == nil then return nil end	if value <= 0 then return 0 end	local maxHeight = height
+	if not maxHeight or maxHeight <= 0 then
+		maxHeight = Formex.LevelHeight
 	end
-	if value <= 0 then
-		return 0
-	end
-	if not height or value <= Formex.GridSize or value >= height then
-		return 0
-	end
-	local snapped = snapToWallGrid(value)
-	return math.clamp(snapped, Formex.GridSize, height - Formex.GridSize)
+	if value <= Formex.GridSize or value >= maxHeight then return 0 end	local snapped = snapToWallGrid(value)
+	return math.clamp(snapped, Formex.GridSize, maxHeight - Formex.GridSize)
 end
 
 local function clampFloorRaiseHeight(value: number?): number
@@ -479,10 +479,7 @@ function FormexDesign.SetTipMessage(message: string?)
 	if message == "" then
 		message = nil
 	end
-	if designTipMessage == message then
-		return
-	end
-	designTipMessage = message
+	if designTipMessage == message then return end	designTipMessage = message
 	notifyDesignStateChange()
 end
 
@@ -503,13 +500,7 @@ function FormexDesign.SetDesignSubMode(mode: DesignSubMode?)
 	if not isPaintableDesignMode(designMode) then
 		mode = FormexDesign.DesignSubMode.Normal
 	end
-	if altDropperForced and mode ~= FormexDesign.DesignSubMode.Dropper then
-		mode = FormexDesign.DesignSubMode.Dropper
-	end
-	if designSubMode == mode then
-		return
-	end
-	if actionType ~= FormexDesign.ActionType.Select then
+	if designSubMode == mode then return end	if actionType ~= FormexDesign.ActionType.Select then
 		FormexDesign.CancelAction()
 	end
 	if mode ~= FormexDesign.DesignSubMode.Normal then
@@ -696,52 +687,31 @@ function FormexDesign.CanRedo(): boolean
 end
 
 local function resolveUndoRedoMode(selection: Formex.SelectionSnapshot?): DesignMode?
-	if not selection then
-		return nil
-	end
-
+	if not selection then return nil end
 	local mode = selection.Mode
 	if type(mode) == "string" and designModeViewSettings[mode] then
 		return mode :: DesignMode
 	end
 
 	local selectionMode = selection.SelectionType and designModeBySelectionType[selection.SelectionType :: SelectionType]
-	if selectionMode then
-		return selectionMode
-	end
-
+	if selectionMode then return selectionMode end
 	return nil
 end
 
 local function getPlotModelFromPlotData(plotInfo: FormexClient.PlotInfo?, selectionKind: SelectionType, levelIndex: number, partId: number): Model?
-	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Levels then
-		return nil
-	end
-
+	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Levels then return nil end
 	local levelData = plotInfo.PlotData.Levels[levelIndex]
-	if not levelData then
-		return nil
-	end
-
+	if not levelData then return nil end
 	if selectionKind == FormexDesign.SelectionType.Wall then
 		local wallData = levelData.Walls and levelData.Walls[partId]
 		local model = wallData and wallData.Part
-		if model and model:IsA("Model") then
-			return model
-		end
-	elseif selectionKind == FormexDesign.SelectionType.Floor then
+		if model and model:IsA("Model") then return model end	elseif selectionKind == FormexDesign.SelectionType.Floor then
 		local floorData = levelData.Floors and levelData.Floors[partId]
 		local model = floorData and floorData.Model
-		if model and model:IsA("Model") then
-			return model
-		end
-	elseif selectionKind == FormexDesign.SelectionType.Object then
+		if model and model:IsA("Model") then return model end	elseif selectionKind == FormexDesign.SelectionType.Object then
 		local objectData = levelData.Objects and levelData.Objects[partId]
 		local model = objectData and objectData.Part
-		if model and model:IsA("Model") then
-			return model
-		end
-	end
+		if model and model:IsA("Model") then return model end	end
 
 	return nil
 end
@@ -753,10 +723,7 @@ local function selectPlotModelByIdAsync(
 	partId: number,
 	timeoutSeconds: number?
 )
-	if not plotInfo or not selectionKind then
-		return
-	end
-
+	if not plotInfo or not selectionKind then return end
 	local model = getPlotModelFromPlotData(plotInfo, selectionKind, levelIndex, partId)
 	if model then
 		FormexDesign.Select(model)
@@ -777,25 +744,16 @@ local function selectPlotModelByIdAsync(
 end
 
 local function findSelectionModel(plotInfo: FormexClient.PlotInfo, selection: Formex.SelectionSnapshot?): Instance?
-	if not selection or selection.SelectionType == FormexDesign.SelectionType.None then
-		return nil
-	end
-
+	if not selection or selection.SelectionType == FormexDesign.SelectionType.None then return nil end
 	local levelIndex = selection.LevelIndex
 	local partId = selection.PartId
 	local selectionKind = selection.SelectionType
-	if not levelIndex or partId == nil or not selectionKind then
-		return nil
-	end
-
+	if not levelIndex or partId == nil or not selectionKind then return nil end
 	return getPlotModelFromPlotData(plotInfo, selectionKind :: SelectionType, levelIndex, partId)
 end
 
 local function applyUndoRedoSelection(selection: Formex.SelectionSnapshot?)
-	if not selection then
-		return
-	end
-
+	if not selection then return end
 	local targetMode = resolveUndoRedoMode(selection)
 	if targetMode then
 		FormexDesign.SetDesignMode(targetMode)
@@ -804,14 +762,8 @@ local function applyUndoRedoSelection(selection: Formex.SelectionSnapshot?)
 	FormexDesign.ClearSelection()
 
 	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
-		return
-	end
-
-	if selection.SelectionType == FormexDesign.SelectionType.None then
-		return
-	end
-
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then return end
+	if selection.SelectionType == FormexDesign.SelectionType.None then return end
 	local function trySelect(): boolean
 		local model = findSelectionModel(plotInfo, selection)
 		if model then
@@ -821,17 +773,11 @@ local function applyUndoRedoSelection(selection: Formex.SelectionSnapshot?)
 		return false
 	end
 
-	if trySelect() then
-		return
-	end
-
+	if trySelect() then return end
 	task.spawn(function()
 		local deadline = time() + 2
 		while time() < deadline do
-			if trySelect() then
-				return
-			end
-			task.wait(0.05)
+			if trySelect() then return end			task.wait(0.05)
 		end
 	end)
 end
@@ -896,10 +842,7 @@ end
 function FormexDesign.Undo(): boolean
 	FormexDesign.CancelAction()
 	local ok, _, selection = FormexClient.Undo(getSelectionSnapshot())
-	if ok ~= true then
-		return false
-	end
-	FormexDesign.ClearSelection()
+	if ok ~= true then return false end	FormexDesign.ClearSelection()
 	applyUndoRedoSelection(selection)
 	return true
 end
@@ -907,20 +850,14 @@ end
 function FormexDesign.Redo(): boolean
 	FormexDesign.CancelAction()
 	local ok, _, selection = FormexClient.Redo(getSelectionSnapshot())
-	if ok ~= true then
-		return false
-	end
-	FormexDesign.ClearSelection()
+	if ok ~= true then return false end	FormexDesign.ClearSelection()
 	applyUndoRedoSelection(selection)
 	return true
 end
 
 local function getPlayerFocusPosition(): Vector3?
 	local character = localPlayer.Character
-	if not character then
-		return nil
-	end
-
+	if not character then return nil end
 	local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
 	if root and root:IsA("BasePart") then
 		return root.Position
@@ -929,30 +866,18 @@ local function getPlayerFocusPosition(): Vector3?
 end
 
 local function saveTopDownState(plotInfo: FormexClient.PlotInfo?)
-	if not plotInfo or not plotInfo.IsValid then
-		return
-	end
-	topDownStateByPlotId[plotInfo.PlotId] = FormexCamera.GetTopDownState()
+	if not plotInfo or not plotInfo.IsValid then return end	topDownStateByPlotId[plotInfo.PlotId] = FormexCamera.GetTopDownState()
 end
 
 local function getSelectionFocusPosition(plotPart: BasePart): Vector3?
-	if selectionType == FormexDesign.SelectionType.None or not selectionPart then
-		return nil
-	end
-	if not selectionPart:IsDescendantOf(plotPart) then
-		return nil
-	end
-	if selectionPart:IsA("Model") or selectionPart:IsA("BasePart") then
+	if selectionType == FormexDesign.SelectionType.None or not selectionPart then return nil end	if not selectionPart:IsDescendantOf(plotPart) then return nil end	if selectionPart:IsA("Model") or selectionPart:IsA("BasePart") then
 		return selectionPart:GetPivot().Position
 	end
 	return nil
 end
 
 local function clampFocusToPlot(plotPart: BasePart, boundsMin: Vector3?, boundsMax: Vector3?, worldPosition: Vector3): Vector3
-	if not boundsMin or not boundsMax then
-		return worldPosition
-	end
-
+	if not boundsMin or not boundsMax then return worldPosition end
 	local offset = Vector2.new(worldPosition.X - plotPart.Position.X, worldPosition.Z - plotPart.Position.Z)
 	local clamped = Vector2.new(
 		math.clamp(offset.X, boundsMin.X, boundsMax.X),
@@ -962,10 +887,7 @@ local function clampFocusToPlot(plotPart: BasePart, boundsMin: Vector3?, boundsM
 end
 
 local function focusTopDownOnSelectionOrPlayer(plotInfo: FormexClient.PlotInfo, boundsMin: Vector3?, boundsMax: Vector3?)
-	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
-		return
-	end
-
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then return end
 	local plotPart = plotInfo.PlotPart
 	local focusPosition = getSelectionFocusPosition(plotPart) or getPlayerFocusPosition() or plotPart.Position
 	local clamped = clampFocusToPlot(plotPart, boundsMin, boundsMax, focusPosition)
@@ -973,10 +895,7 @@ local function focusTopDownOnSelectionOrPlayer(plotInfo: FormexClient.PlotInfo, 
 end
 
 function FormexDesign.MoveCameraToPlayer()
-	if viewSettings.CameraMode ~= FormexCamera.CameraMode.TopDown then
-		return
-	end
-
+	if viewSettings.CameraMode ~= FormexCamera.CameraMode.TopDown then return end
 	local focusPosition = getPlayerFocusPosition()
 	if focusPosition then
 		FormexCamera.Focus(focusPosition)
@@ -1068,10 +987,7 @@ local function createSegmentOverlay(bounds: Formex.SegmentBounds, plotInfo: Form
 end
 
 local function renderExpandOverlay(plotInfo: FormexClient.PlotInfo)
-	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
-		return
-	end
-
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then return end
 	for index = 1, Formex.Segments.Count do
 		local bounds = Formex.Segments.GetBounds(plotInfo.PlotPart, index, plotInfo.LevelsUnlocked)
 		local unlocked = Formex.Segments.IsUnlocked(plotInfo.SegmentsUnlocked, index)
@@ -1118,10 +1034,7 @@ local function createGridOverlay(levelIndex: number, bounds: Formex.SegmentBound
 end
 
 local function renderGridOverlays(plotInfo: FormexClient.PlotInfo)
-	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
-		return
-	end
-
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then return end
 	local gridLevel = currentLevel
 
 	for _, index in ipairs(Formex.Segments.GetAllUnlocked(plotInfo.SegmentsUnlocked)) do
@@ -1194,28 +1107,16 @@ end
 
 local function getPlotFitDistance(): number?
 	local camera = Workspace.CurrentCamera
-	if not camera then
-		return nil
-	end
-
+	if not camera then return nil end
 	local viewport = camera.ViewportSize
-	if viewport.Y <= 0 then
-		return nil
-	end
-
+	if viewport.Y <= 0 then return nil end
 	local aspect = viewport.X / viewport.Y
-	if aspect <= 0 then
-		return nil
-	end
-
+	if aspect <= 0 then return nil end
 	local halfWidth = Formex.Dimensions.Width / 2
 	local halfDepth = Formex.Dimensions.Depth / 2
 	local halfFov = math.rad(camera.FieldOfView) * 0.5
 	local tanHalfFov = math.tan(halfFov)
-	if tanHalfFov <= 0 then
-		return nil
-	end
-
+	if tanHalfFov <= 0 then return nil end
 	local distanceForDepth = halfDepth / tanHalfFov
 	local distanceForWidth = halfWidth / (tanHalfFov * aspect)
 	return math.max(distanceForDepth, distanceForWidth)
@@ -1233,10 +1134,7 @@ local function refresh(preserveSelection: boolean?)
 	if not plotInfo or not plotInfo.IsValid then return	end
 
 	local plotPart = plotInfo.PlotPart
-	if not plotPart then
-		return
-	end
-
+	if not plotPart then return end
 	local plotChanged = plotPart ~= lastPlotPart
 	if plotChanged then
 		lastPlotPart = plotPart
@@ -1375,10 +1273,7 @@ local function snapWallEndPoint(startPoint: Vector2 | Vector2int16, rawEndPoint:
 	local dx = rawEndPoint.X - startPoint.X
 	local dz = rawEndPoint.Y - startPoint.Y
 	local length = math.sqrt(dx * dx + dz * dz)
-	if length <= 1e-4 then
-		return rawEndPoint
-	end
-
+	if length <= 1e-4 then return rawEndPoint end
 	local snappedDx = dx
 	local snappedDz = dz
 	if Formex.SnapWallsTo45Degrees then
@@ -1399,10 +1294,7 @@ end
 
 local function isPointInOwnedSegments(plotInfo: FormexClient.PlotInfo, point: Vector2): boolean
 	local mask = plotInfo.SegmentsUnlocked
-	if not mask or mask == 0 then
-		return false
-	end
-
+	if not mask or mask == 0 then return false end
 	local halfWidth = Formex.SegmentSize.Width / 2
 	local halfDepth = Formex.SegmentSize.Depth / 2
 
@@ -1535,19 +1427,104 @@ local function getPointerHit(forceGridCollision: boolean?): (Ray?, Vector3?, Vec
 	return ray, result.Position, result.Normal, result.Instance
 end
 
-local function getInputInfo(forceGridCollision: boolean?): InputInfo | nil
-	if designMode == FormexDesign.DesignMode.Play then
-		return nil
-	end
+local wallSide = {
+	[Formex.WallPart.FrontBottom] = Formex.ObjectSide.Front,
+	[Formex.WallPart.FrontTop] = Formex.ObjectSide.Front,
+	[Formex.WallPart.BackBottom] = Formex.ObjectSide.Back,
+	[Formex.WallPart.BackTop] = Formex.ObjectSide.Back,
+} :: {[string]: Formex.ObjectSide}
 
+local floorSide = {
+	["Floor"] = "Floor",
+	["Floor (Client)"] = "Floor",
+	["Ceiling"] = "Ceiling",
+	["Ceiling (Client)"] = "Ceiling",
+	["Foundation"] = "Foundation",
+	["Foundation (Client)"] = "Foundation",
+} :: {[string]: Formex.ObjectSide}
+
+type PartInfo = {
+	PlotData: Formex.PlotData,
+	WallSide: Formex.ObjectSide?,
+	FloorSide: string?,
+	PartType: Formex.PartType?,
+	Data: Formex.WallData | Formex.FloorData | Formex.ObjectData | nil,
+	Room: Formex.RoomData?,
+}
+
+local function getDataFromPart(target: Instance?): PartInfo?
+	if not target then return nil end
+
+	-- Part is as member of this plot
 	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
-		return nil
+	local plotPart = plotInfo and plotInfo.PlotPart
+	if not plotInfo.IsValid or not plotPart or not target:IsDescendantOf(plotPart) then return nil end
+
+	-- Build hierarchy from plotPart to part
+	local hierarchy = {} :: {Instance}
+
+	local part = target:IsA("Model") and target or target:FindFirstAncestorWhichIsA("Model")
+	while part and part ~= plotPart do
+		table.insert(hierarchy, 1, part)
+		part = part.Parent
 	end
 
+	-- Expecting hierarchy: Level (Folder) -> Type (Folder) -> Part (BasePart/Model)
+	local levelPart, typeFolder, part = table.unpack(hierarchy)
+	local levelIndex, typeName, partId = tonumber(levelPart.Name), typeFolder.Name, tonumber(part.Name)
+	if not levelIndex or not typeName or not partId then return nil end
+	
+	local levelData = plotInfo.PlotData.Levels[levelIndex]
+	if not levelData then return nil end
+
+	local result: PartInfo = {
+		PlotData = plotInfo.PlotData,
+		PartType = nil,
+		Data = nil,
+		Room = nil,
+	}
+
+	if typeName == "Walls" then
+		local data = levelData.Walls and levelData.Walls[partId]
+		if not data then return nil end
+
+		result.PartType = Formex.PartType.Wall
+		result.Data = data
+		result.WallSide = wallSide[target.Name] or nil
+		if result.WallSide == Formex.ObjectSide.Front then
+			result.Room = levelData.Rooms and levelData.Rooms[data.ConnectedRoomFront] or nil
+		elseif result.WallSide == Formex.ObjectSide.Back then	
+			result.Room = levelData.Rooms and levelData.Rooms[data.ConnectedRoomBack] or nil
+		end
+	elseif typeName == "Floors" then
+		local data = levelData.Floors and levelData.Floors[partId]
+		if not data then return nil end
+
+		result.PartType = Formex.PartType.Floor
+		result.Data = data
+		result.FloorSide = floorSide[target.Name] or nil
+		result.Room = levelData.Rooms and levelData.Rooms[data.Room] or nil
+	elseif typeName == "Objects" then
+		local data = levelData.Objects and levelData.Objects[partId]
+		if not data then return nil end
+
+		result.PartType = Formex.PartType.Object
+		result.Data = data
+		result.Room = levelData.Rooms and levelData.Rooms[data.Room] or nil
+	end
+
+	return result
+end
+
+local function getInputInfo(forceGridCollision: boolean?): InputInfo | nil
+	if designMode == FormexDesign.DesignMode.Play then return nil end
+	local plotInfo = FormexClient.CurrentPlot
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then return nil end
 	local ray, hitPosition, hitNormal, target = getPointerHit(forceGridCollision)
 	local snapPoint = hitPosition and getSnappedPoint(plotInfo.PlotPart, hitPosition) or nil
-	local layoutTile = hitPosition and getLayoutTile(plotInfo.PlotPart, hitPosition) or nil
+	local layoutTile = hitPosition and getLayoutTile(plotInfo.PlotPart, hitPosition) or nil	
+
+	local partInfo = getDataFromPart(target)
 
 	inputInfo = {
 		PlotInfo = plotInfo,
@@ -1556,11 +1533,18 @@ local function getInputInfo(forceGridCollision: boolean?): InputInfo | nil
 		HitNormal = hitNormal,
 		SnapPoint = snapPoint,
 		LayoutTile = layoutTile,
-		LevelIndex = 1, --getLevel(),
+		PartType = partInfo and partInfo.PartType or nil,
+		WallSide = partInfo and partInfo.WallSide or nil,
+		FloorSide = partInfo and partInfo.FloorSide or nil,
+		WallData = partInfo and partInfo.PartType == Formex.PartType.Wall and partInfo.Data or nil,
+		FloorData = partInfo and partInfo.PartType == Formex.PartType.Floor and partInfo.Data or nil,
+		ObjectData = partInfo and partInfo.PartType == Formex.PartType.Object and partInfo.Data or nil,
+		LevelIndex = partInfo and partInfo.Data.Level or currentLevel or 1, --getLevel(),
 		Target = target,
 		ActionHeld = actionHeld,
 		AltHeld = altHeld
 	} :: InputInfo
+
 	return inputInfo
 end
 
@@ -1598,10 +1582,7 @@ local function updateGhostValidity(isValid: boolean)
 end
 
 function Formex.HideGhost(plotPart: BasePart?)
-	if not ghost then
-		return
-	end
-
+	if not ghost then return end
 	local hiddenCFrame = CFrame.new(0, -10000, 0)
 	if plotPart then
 		local offsetY = Formex.LevelHeight * (Formex.MaxPlotSize.Levels + 2)
@@ -1913,10 +1894,7 @@ local function updateSelectionSettingsFromSelection()
 end
 
 local function updateSelectionHandles(plotInfo: any)
-	if not plotInfo or not plotInfo.IsValid then
-		return
-	end
-
+	if not plotInfo or not plotInfo.IsValid then return end
 	if selectionType == FormexDesign.SelectionType.Wall then
 		if Walls then
 			Walls.UpdateHandles(plotInfo)
@@ -2004,19 +1982,13 @@ local function buildFloor(floorData: Formex.FloorData, action: Formex.BuildActio
 			Data = floorData,
 		},
 	}, selection)
-	if not results then
-		return nil
-	end
-	local changeResult = results[1]
+	if not results then return nil end	local changeResult = results[1]
 	return changeResult and changeResult.Result or nil
 end
 
 local function buildRoomFromFloor(floorData: Formex.FloorData, selectionSnapshot: Formex.SelectionSnapshot?)
 	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid then
-		return nil
-	end
-
+	if not plotInfo or not plotInfo.IsValid then return nil end
 	local walls = buildRoomWalls(plotInfo, floorData.LevelIndex, floorData.Points)
 	local changes = {}
 	if #walls > 0 then
@@ -2043,10 +2015,7 @@ local function buildFloorForMode(floorData: Formex.FloorData, selectionSnapshot:
 end
 
 local function selectAfterFloorBuild(plotInfo: FormexClient.PlotInfo?, levelIndex: number, points: {Vector2int16}, result: any?)
-	if not plotInfo or not plotInfo.IsValid then
-		return
-	end
-
+	if not plotInfo or not plotInfo.IsValid then return end
 	if designMode == FormexDesign.DesignMode.Room then
 		local sample = Formex.Poly.GetFaceSamplePoint(points, Formex.EPSILON)
 		if sample then
@@ -2103,10 +2072,7 @@ local function updateFloorPaintSettingsSilently(settings: FloorSelectedSettings)
 end
 
 local function syncPaintFromSelection(silent: boolean?)
-	if designSubMode ~= FormexDesign.DesignSubMode.Normal then
-		return
-	end
-
+	if designMode == FormexDesign.DesignMode.Dropper then return end	if designSubMode ~= FormexDesign.DesignSubMode.Normal then return end
 	if selectionType == FormexDesign.SelectionType.Floor and floorSelectedSettings.HasSelection then
 		updateFloorPaintSettingsSilently(floorSelectedSettings)
 		if not silent then
@@ -2130,17 +2096,18 @@ function FormexDesign.RefreshSelectionSettings()
 end
 
 local function applyWallStateUpdate(update: WallStateUpdate?)
-	if not update then
-		return
-	end
-
+	if not update then return end
 	local overrides = {}
 	local changed = false
-	local applyToSelection = designSubMode == FormexDesign.DesignSubMode.Normal
+	local inDropperMode = designMode == FormexDesign.DesignMode.Dropper
+	local applyToSelection = not inDropperMode
+		and designSubMode == FormexDesign.DesignSubMode.Normal
 		and selectionType == FormexDesign.SelectionType.Wall
 		and wallSelectedSettings.HasSelection
-	local updatePaintSettings = designSubMode ~= FormexDesign.DesignSubMode.Normal
-	local updateBuildSettings = designSubMode == FormexDesign.DesignSubMode.Normal and not applyToSelection
+	local updatePaintSettings = inDropperMode or designSubMode == FormexDesign.DesignSubMode.Paint
+	local updateBuildSettings = not inDropperMode
+		and designSubMode == FormexDesign.DesignSubMode.Normal
+		and not applyToSelection
 	local heightValue = nil
 	if updatePaintSettings then
 		heightValue = wallPaintSettings.Height
@@ -2337,11 +2304,10 @@ local function applyWallStateUpdate(update: WallStateUpdate?)
 end
 
 local function applyFloorStateUpdate(update: FloorStateUpdate?)
-	if not update then
-		return
-	end
-
-	local applyToSelection = designSubMode == FormexDesign.DesignSubMode.Normal
+	if not update then return end
+	local inDropperMode = designMode == FormexDesign.DesignMode.Dropper
+	local applyToSelection = not inDropperMode
+		and designSubMode == FormexDesign.DesignSubMode.Normal
 		and selectionType == FormexDesign.SelectionType.Floor
 		and floorSelectedSettings.HasSelection
 	local updatedSelection = false
@@ -2400,11 +2366,10 @@ local function applyFloorStateUpdate(update: FloorStateUpdate?)
 end
 
 local function applyObjectStateUpdate(update: ObjectStateUpdate?)
-	if not update then
-		return
-	end
-
-	local applyToSelection = designSubMode == FormexDesign.DesignSubMode.Normal
+	if not update then return end
+	local inDropperMode = designMode == FormexDesign.DesignMode.Dropper
+	local applyToSelection = not inDropperMode
+		and designSubMode == FormexDesign.DesignSubMode.Normal
 		and selectionType == FormexDesign.SelectionType.Object
 		and objectSelectedSettings.HasSelection
 
@@ -2467,10 +2432,7 @@ local function applyObjectStateUpdate(update: ObjectStateUpdate?)
 end
 
 function FormexDesign.UpdateDesignState(update: DesignStateUpdate)
-	if not update then
-		return
-	end
-
+	if not update then return end
 	beginDesignStateBatch()
 
 	if update.Mode ~= nil then
@@ -2513,109 +2475,67 @@ end
 
 
 local function handleDropperDesignModeClick(input: InputInfo): boolean
-	if designMode ~= FormexDesign.DesignMode.Dropper then
+	if designMode ~= FormexDesign.DesignMode.Dropper then return false end
+	if not input.Target then return true end
+	local function copyForMode(mode: DesignMode): boolean
+		if mode == FormexDesign.DesignMode.Wall and Walls and Walls.CopyPaintFromTarget then
+			return Walls.CopyPaintFromTarget(input.Target, input.WallSide)
+		end
+		if mode == FormexDesign.DesignMode.Floor and Floors and Floors.CopyPaintFromTarget then
+			return Floors.CopyPaintFromTarget(input.Target)
+		end
+		if mode == FormexDesign.DesignMode.Object and Objects and Objects.CopyPaintFromTarget then
+			return Objects.CopyPaintFromTarget(input.Target)
+		end
 		return false
 	end
 
-	if not input.Target then
+	if altDropperForced and lastDesignModeBeforeAlt then
+		local copied = copyForMode(lastDesignModeBeforeAlt)
+		if copied then
+			altDropperUsed = true
+		end
 		return true
 	end
 
-	if Walls and Walls.CopyPaintFromTarget then
-		local copied = Walls.CopyPaintFromTarget(input.Target, input.HitPosition)
-		if copied then
-			FormexDesign.UpdateDesignState({
-				Mode = FormexDesign.DesignMode.Wall,
-				SubMode = FormexDesign.DesignSubMode.Paint,
-			})
-			return true
-		end
+	if copyForMode(FormexDesign.DesignMode.Wall) then
+		FormexDesign.UpdateDesignState({
+			Mode = FormexDesign.DesignMode.Wall,
+			SubMode = FormexDesign.DesignSubMode.Paint,
+		})
+		return true
 	end
 
-	if Floors and Floors.CopyPaintFromTarget then
-		local copied = Floors.CopyPaintFromTarget(input.Target)
-		if copied then
-			FormexDesign.UpdateDesignState({
-				Mode = FormexDesign.DesignMode.Floor,
-				SubMode = FormexDesign.DesignSubMode.Paint,
-			})
-			return true
-		end
+	if copyForMode(FormexDesign.DesignMode.Floor) then
+		FormexDesign.UpdateDesignState({
+			Mode = FormexDesign.DesignMode.Floor,
+			SubMode = FormexDesign.DesignSubMode.Paint,
+		})
+		return true
 	end
 
-	if Objects and Objects.CopyPaintFromTarget then
-		local copied = Objects.CopyPaintFromTarget(input.Target)
-		if copied then
-			FormexDesign.UpdateDesignState({
-				Mode = FormexDesign.DesignMode.Object,
-				SubMode = FormexDesign.DesignSubMode.Paint,
-			})
-			return true
-		end
+	if copyForMode(FormexDesign.DesignMode.Object) then
+		FormexDesign.UpdateDesignState({
+			Mode = FormexDesign.DesignMode.Object,
+			SubMode = FormexDesign.DesignSubMode.Paint,
+		})
+		return true
 	end
 
 	return true
 end
 
 local function handlePaintDropperClick(input: InputInfo): boolean
-	if designSubMode == FormexDesign.DesignSubMode.Normal then
-		return false
-	end
-
-	if not input.Target then
-		return true
-	end
+	if designSubMode == FormexDesign.DesignSubMode.Normal then return false	end
+	if not input.Target then return true end
+	if designSubMode ~= FormexDesign.DesignSubMode.Paint then return true end
 
 	if designMode == FormexDesign.DesignMode.Wall then
-		if not Walls then
-			return true
-		end
-		if designSubMode == FormexDesign.DesignSubMode.Paint then
-			Walls.ApplyPaintToTarget(input.Target, input.HitPosition)
-		elseif designSubMode == FormexDesign.DesignSubMode.Dropper then
-			local copied = Walls.CopyPaintFromTarget(input.Target, input.HitPosition)
-			if copied then
-				if altDropperForced then
-					altDropperUsed = true
-				else
-					FormexDesign.SetDesignSubMode(FormexDesign.DesignSubMode.Paint)
-				end
-			end
-		end
-		return true
+		Walls.ApplyPaintToTarget(input.Target, input.WallSide)
 	elseif designMode == FormexDesign.DesignMode.Floor then
-		if not Floors then
-			return true
-		end
-		if designSubMode == FormexDesign.DesignSubMode.Paint then
-			Floors.ApplyPaintToTarget(input.Target)
-		elseif designSubMode == FormexDesign.DesignSubMode.Dropper then
-			local copied = Floors.CopyPaintFromTarget(input.Target)
-			if copied then
-				if altDropperForced then
-					altDropperUsed = true
-				else
-					FormexDesign.SetDesignSubMode(FormexDesign.DesignSubMode.Paint)
-				end
-			end
-		end
-		return true
+		Floors.ApplyPaintToTarget(input.Target)
 	elseif designMode == FormexDesign.DesignMode.Object then
-		if Objects then
-			if designSubMode == FormexDesign.DesignSubMode.Paint then
-				Objects.ApplyPaintToTarget(input.Target)
-			elseif designSubMode == FormexDesign.DesignSubMode.Dropper then
-				local copied = Objects.CopyPaintFromTarget(input.Target)
-				if copied then
-					if altDropperForced then
-						altDropperUsed = true
-					else
-						FormexDesign.SetDesignSubMode(FormexDesign.DesignSubMode.Paint)
-					end
-				end
-			end
-		end
-		return true
+		Objects.ApplyPaintToTarget(input.Target)
 	end
 
 	return true
@@ -2842,10 +2762,9 @@ local function handlePrimaryClick()
 	local input = getInputInfo()
 	if not input then return end
 
-	if FormexDesign.Handles.HandleClicked(input.Ray) then
-		return
-	end
+	print("Input Info:", inputInfo)
 
+	if FormexDesign.Handles.HandleClicked(input.Ray) then return end
 	-- Clicking on empty space cancels selection
 	if not input.HitPosition then
 		if actionType == FormexDesign.ActionType.Select and designMode ~= FormexDesign.DesignMode.Select then
@@ -2866,7 +2785,7 @@ local function handlePrimaryClick()
 		return
 	end
 
-	if isPaintableDesignMode(designMode) and designSubMode ~= FormexDesign.DesignSubMode.Normal then
+	if isPaintableDesignMode(designMode) and designSubMode == FormexDesign.DesignSubMode.Paint then
 		handlePaintDropperClick(input)
 		return
 	end
@@ -2934,9 +2853,12 @@ function FormexDesign.SetDesignMode(mode: DesignMode?, preserveSelection: boolea
 	end
 	if not isPaintableDesignMode(mode) then
 		designSubMode = FormexDesign.DesignSubMode.Normal
-		altDropperForced = false
-		altDropperUsed = false
-		lastSubModeBeforeAlt = nil
+		if mode ~= FormexDesign.DesignMode.Dropper or not altDropperForced then
+			altDropperForced = false
+			altDropperUsed = false
+			lastSubModeBeforeAlt = nil
+			lastDesignModeBeforeAlt = nil
+		end
 	end
 	if designMode ~= FormexDesign.DesignMode.Floor and designMode ~= FormexDesign.DesignMode.Room then
 		designTipMessage = nil
@@ -2958,6 +2880,7 @@ local function resetDesignForPlotChange()
 		altDropperForced = false
 		altDropperUsed = false
 		lastSubModeBeforeAlt = nil
+		lastDesignModeBeforeAlt = nil
 		designTipMessage = nil
 		designSessionActive = false
 		designSessionPendingFocus = false
@@ -3162,10 +3085,7 @@ FormexClient.ClientEvents:Connect(function(eventName, plotId, _partType, _levelI
 		return
 	end
 
-	if eventName ~= "PlotPartChanged" or not selectionPart or not model then
-		return
-	end
-
+	if eventName ~= "PlotPartChanged" or not selectionPart or not model then return end
 	if selectionPart ~= model
 		and not selectionPart:IsDescendantOf(model)
 		and not model:IsDescendantOf(selectionPart) then
@@ -3185,10 +3105,7 @@ FormexClient.ClientEvents:Connect(function(eventName, plotId, _partType, _levelI
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then
-		return
-	end
-
+	if gameProcessed then return end
 	if input.UserInputType == Enum.UserInputType.MouseButton1
 	or input.UserInputType == Enum.UserInputType.Touch then
 		actionHeld = true
@@ -3199,10 +3116,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		if (designMode == FormexDesign.DesignMode.Floor or designMode == FormexDesign.DesignMode.Room) and Floors then
 			local info = getInputInfo(true)
-			if info and Floors.HandleSecondaryClick(info) then
-				return
-			end
-		end
+			if info and Floors.HandleSecondaryClick(info) then return end		end
 		FormexDesign.CancelAction()
 		return
 	end
@@ -3246,15 +3160,9 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 RunService.RenderStepped:Connect(function()
-	if designMode == FormexDesign.DesignMode.Play then
-		return
-	end
-
+	if designMode == FormexDesign.DesignMode.Play then return end
 	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then
-		return
-	end
-
+	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then return end
 	handleUpdate()
 end)
 

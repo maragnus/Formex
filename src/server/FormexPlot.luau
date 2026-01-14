@@ -97,10 +97,7 @@ function FormexPlot.NewSave(player: Player, startingSegment: number?): boolean
     if not plotData then error("Invalid plot") end
     local segmentIndex = tonumber(startingSegment)
     if segmentIndex ~= nil then
-        if segmentIndex < 1 or segmentIndex > Formex.Segments.Count then
-            return false, "Invalid starting segment."
-        end
-    end
+        if segmentIndex < 1 or segmentIndex > Formex.Segments.Count then return false, "Invalid starting segment." end    end
     
     local saveId = Random.new():NextInteger(1000, 10000000)
     plotData.SaveId = saveId
@@ -120,19 +117,10 @@ function FormexPlot.UnlockSegment(player: Player, segmentIndex: number): (boolea
     local plotData, permission = FormexSystem.GetPlayerCurrentPlot(player)
     if not plotData then return false, "No current plot" end
     if plotData.SaveId == 0 then return false, "Load or create a save first." end
-    if permission ~= Formex.Permission.Owner and permission ~= Formex.Permission.Manager then
-        return false, "Permission denied"
-    end
-    local index = tonumber(segmentIndex)
-    if not index or index < 1 or index > Formex.Segments.Count then
-        return false, "Invalid segment"
-    end
-
+    if permission ~= Formex.Permission.Owner and permission ~= Formex.Permission.Manager then return false, "Permission denied" end    local index = tonumber(segmentIndex)
+    if not index or index < 1 or index > Formex.Segments.Count then return false, "Invalid segment" end
     local mask = plotData.SegmentsUnlocked or 0
-    if Formex.Segments.IsUnlocked(mask, index) then
-        return false, "Segment already unlocked"
-    end
-
+    if Formex.Segments.IsUnlocked(mask, index) then return false, "Segment already unlocked" end
     mask = Formex.Segments.Unlock(mask, index)
     plotData.SegmentsUnlocked = mask
 

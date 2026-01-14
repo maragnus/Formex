@@ -40,10 +40,7 @@ end
 function Formex.DecodeFloorPoints(value: string?): { Vector2int16 }
 	-- Restore points from the attribute string during selection/editing.
 	local points = {}
-	if not value or value == "" then
-		return points
-	end
-
+	if not value or value == "" then return points end
 	for entry in string.gmatch(value, "([^;]+)") do
 		local xStr, yStr = string.match(entry, "([^,]+),([^,]+)")
 		if xStr and yStr then
@@ -56,10 +53,7 @@ end
 
 local function toVector2(point: Vector2 | Vector2int16): Vector2
 	-- Normalize point types for shared math helpers.
-	if typeof(point) == "Vector2" then
-		return point
-	end
-	return Vector2.new(point.X, point.Y)
+	if typeof(point) == "Vector2" then return point end	return Vector2.new(point.X, point.Y)
 end
 
 local function cross2(a: Vector2, b: Vector2): number
@@ -123,10 +117,7 @@ function Formex.Floors.CleanPolygon(points: { Vector2int16 }): { Vector2int16 }
 		table.remove(deduped, #deduped)
 	end
 
-	if #deduped < 3 then
-		return deduped
-	end
-
+	if #deduped < 3 then return deduped end
 	local cleaned = deduped
 	local changed = true
 	while changed and #cleaned >= 3 do
@@ -145,10 +136,7 @@ function Formex.Floors.CleanPolygon(points: { Vector2int16 }): { Vector2int16 }
 		cleaned = nextPass
 	end
 
-	if #cleaned < 3 then
-		return cleaned
-	end
-
+	if #cleaned < 3 then return cleaned end
 	local area = polygonArea(toVector2Array(cleaned))
 	local ccwPoints = cleaned
 	if area < 0 then
@@ -161,10 +149,7 @@ end
 local function orientation(a: Vector2, b: Vector2, c: Vector2): number
 	-- Helper for segment intersection tests.
 	local value = (b.Y - a.Y) * (c.X - b.X) - (b.X - a.X) * (c.Y - b.Y)
-	if math.abs(value) <= EPSILON then
-		return 0
-	end
-	return value > 0 and 1 or 2
+	if math.abs(value) <= EPSILON then return 0 end	return value > 0 and 1 or 2
 end
 
 local function onSegment(a: Vector2, b: Vector2, c: Vector2): boolean
@@ -180,10 +165,7 @@ local function segmentsIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vect
 	local o3 = orientation(q1, q2, p1)
 	local o4 = orientation(q1, q2, p2)
 
-	if o1 ~= o2 and o3 ~= o4 then
-		return true
-	end
-
+	if o1 ~= o2 and o3 ~= o4 then return true end
 	if o1 == 0 and onSegment(p1, q1, p2) then return true end
 	if o2 == 0 and onSegment(p1, q2, p2) then return true end
 	if o3 == 0 and onSegment(q1, p1, q2) then return true end
@@ -195,10 +177,7 @@ end
 local function isSimplePolygon(points: { Vector2 }): boolean
 	-- Reject polygons with self-intersection before building wedges.
 	local count = #points
-	if count < 3 then
-		return false
-	end
-
+	if count < 3 then return false end
 	for i = 1, count do
 		local a1 = points[i]
 		local a2 = points[(i % count) + 1]
@@ -207,10 +186,7 @@ local function isSimplePolygon(points: { Vector2 }): boolean
 			local b2 = points[(j % count) + 1]
 
 			local isAdjacent = j == i + 1 or (i == 1 and j == count)
-			if not isAdjacent and segmentsIntersect(a1, a2, b1, b2) then
-				return false
-			end
-		end
+			if not isAdjacent and segmentsIntersect(a1, a2, b1, b2) then return false end		end
 	end
 
 	return true
@@ -250,19 +226,10 @@ end
 local function isPolygonValid(points: { Vector2int16 }): boolean
 	-- Geometry-only validation used when plot data is not available.
 	local count = #points
-	if count < 3 or count > Formex.MaxFloorPoints then
-		return false
-	end
-
+	if count < 3 or count > Formex.MaxFloorPoints then return false end
 	local polygon = toVector2Array(points)
-	if polygonArea(polygon) <= EPSILON then
-		return false
-	end
-
-	if not isSimplePolygon(polygon) then
-		return false
-	end
-
+	if polygonArea(polygon) <= EPSILON then return false end
+	if not isSimplePolygon(polygon) then return false end
 	return true
 end
 
@@ -270,26 +237,14 @@ function Formex.Floors.IsValid(plot: Formex.PlotData, floor: Formex.FloorData): 
 	-- Full validation including plot boundaries.
 	local cleaned = Formex.Floors.CleanPolygon(floor.Points or {})
 	local count = #cleaned
-	if count < 3 or count > Formex.MaxFloorPoints then
-		return false
-	end
-
+	if count < 3 or count > Formex.MaxFloorPoints then return false end
 	local polygon = toVector2Array(cleaned)
-	if polygonArea(polygon) <= EPSILON then
-		return false
-	end
-
-	if not isSimplePolygon(polygon) then
-		return false
-	end
-
+	if polygonArea(polygon) <= EPSILON then return false end
+	if not isSimplePolygon(polygon) then return false end
 	for i = 1, count do
 		local a = polygon[i]
 		local b = polygon[(i % count) + 1]
-		if not Formex.Plot.IsLineWithinUnlockedSegments(a, b, plot.SegmentsUnlocked) then
-			return false
-		end
-	end
+		if not Formex.Plot.IsLineWithinUnlockedSegments(a, b, plot.SegmentsUnlocked) then return false end	end
 
 	return true
 end
@@ -300,15 +255,9 @@ end
 
 local function addTriangle(triangles: { Triangle }, a: Vector2, b: Vector2, c: Vector2, maxTriangles: number): boolean
 	-- Insert a CCW triangle if it has area, while respecting the max triangle budget.
-	if #triangles >= maxTriangles then
-		return false
-	end
-
+	if #triangles >= maxTriangles then return false end
 	local area = cross2(b - a, c - a) / 2
-	if math.abs(area) <= EPSILON then
-		return true
-	end
-	if area < 0 then
+	if math.abs(area) <= EPSILON then return true end	if area < 0 then
 		b, c = c, b
 	end
 	table.insert(triangles, { a, b, c })
@@ -372,10 +321,7 @@ local function triangulateEarClipping(points: { Vector2int16 }, maxTriangles: nu
 				end
 
 				if not hasPointInside then
-					if not addTriangle(triangles, a, b, c, maxTriangles) then
-						return triangles
-					end
-					table.remove(indices, i)
+					if not addTriangle(triangles, a, b, c, maxTriangles) then return triangles end					table.remove(indices, i)
 					earFound = true
 					break
 				end
@@ -420,10 +366,7 @@ end
 
 local function normalizeMaterialId(value: number?): number?
 	-- Treat 0/invalid material ids as nil.
-	if type(value) ~= "number" or value <= 0 then
-		return nil
-	end
-	return value
+	if type(value) ~= "number" or value <= 0 then return nil end	return value
 end
 
 local function ensureFloorModel(floor: Formex.FloorData, parent: Instance?): Model
@@ -447,10 +390,7 @@ local function getPlotPartFromInstance(instance: Instance?): BasePart?
 	-- Walk up the hierarchy to locate the plot root part.
 	local current = instance
 	while current do
-		if current:IsA("BasePart") and current:GetAttribute("PlotId") then
-			return current
-		end
-		current = current.Parent
+		if current:IsA("BasePart") and current:GetAttribute("PlotId") then return current end		current = current.Parent
 	end
 	return nil
 end
@@ -856,10 +796,7 @@ local function ensureValidShape(plot: Formex.PlotData?, floor: Formex.FloorData,
 		isValid = Formex.Floors.IsValid(plot, { Points = cleaned } :: any)
 	end
 
-	if isValid then
-		return cleaned
-	end
-
+	if isValid then return cleaned end
 	local bounds = getBoundsRectangle(floor.Points or {})
 	if #bounds >= 3 then
 		return Formex.Floors.CleanPolygon(bounds)
@@ -875,16 +812,10 @@ function Formex.Floors.Edit(
 	plotData: Formex.PlotData?
 ): Model?
 	-- Main entry point to create/update floor mesh parts in-place.
-	if not floor or not floor.Points then
-		return nil
-	end
-
+	if not floor or not floor.Points then return nil end
 	local parent = parentOverride or (floor.Model and floor.Model.Parent) or nil
 	local plotPart = plotPartOverride or getPlotPartFromInstance(parent)
-	if not plotPart then
-		return nil
-	end
-
+	if not plotPart then return nil end
 	local model = ensureFloorModel(floor, parent)
 	model.Name = tostring(floor.FloorId)
 	local previousPointsKey = model:GetAttribute("Points") or ""
@@ -946,15 +877,9 @@ function Formex.Floors.Edit(
 end
 
 function Formex.Floors.RenderClientMeshes(model: Model, plotPartOverride: BasePart?): Model?
-	if not model or not model:IsA("Model") then
-		return nil
-	end
-
+	if not model or not model:IsA("Model") then return nil end
 	local plotPart = plotPartOverride or getPlotPartFromInstance(model)
-	if not plotPart then
-		return nil
-	end
-
+	if not plotPart then return nil end
 	local floorData = buildFloorDataFromAttributes(model)
 	local cleaned = Formex.Floors.CleanPolygon(floorData.Points)
 	local usablePoints = ensureValidShape(nil, floorData, cleaned)
@@ -1009,10 +934,7 @@ function Formex.Floors.ApplyClientMaterials(model: Model)
 end
 
 function Formex.Floors.DestroyClientMeshes(model: Model)
-	if not model or model.Parent == nil then
-		return
-	end
-	clearMeshParts(model, CLIENT_MESH_SUFFIX)
+	if not model or model.Parent == nil then return end	clearMeshParts(model, CLIENT_MESH_SUFFIX)
 end
 
 function Formex.Floors.Create(
@@ -1022,10 +944,7 @@ function Formex.Floors.Create(
 	plotData: Formex.PlotData?
 ): Model?
 	-- Create is currently an alias to Edit to reuse mesh generation logic.
-	if not floor or not floor.Points then
-		return nil
-	end
-
+	if not floor or not floor.Points then return nil end
 	return Formex.Floors.Edit(floor, plotPartOverride, parentOverride, plotData)
 end
 

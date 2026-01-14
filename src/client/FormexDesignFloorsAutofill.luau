@@ -114,17 +114,11 @@ local function setDebugOutput(output: {[string]: any}?)
 end
 
 local function debugWrite(key: string, value: any)
-	if not DEBUG_OUTPUT then
-		return
-	end
-	DEBUG_OUTPUT[key] = value
+	if not DEBUG_OUTPUT then return end	DEBUG_OUTPUT[key] = value
 end
 
 local function debugMessage(message: string, data: any?)
-	if not DEBUG_OUTPUT then
-		return
-	end
-	local messages = DEBUG_OUTPUT.Messages
+	if not DEBUG_OUTPUT then return end	local messages = DEBUG_OUTPUT.Messages
 	if not messages then
 		messages = {}
 		DEBUG_OUTPUT.Messages = messages
@@ -136,15 +130,9 @@ local function debugMessage(message: string, data: any?)
 end
 
 local function isArray(value: any): boolean
-	if type(value) ~= "table" then
-		return false
-	end
-	local count = 0
+	if type(value) ~= "table" then return false end	local count = 0
 	for key, _ in pairs(value) do
-		if type(key) ~= "number" then
-			return false
-		end
-		count += 1
+		if type(key) ~= "number" then return false end		count += 1
 	end
 	return count == #value
 end
@@ -194,10 +182,7 @@ local function serializeValue(value: any, indent: number, visited: {[table]: boo
 end
 
 local function debugFlush()
-	if not DEBUG_OUTPUT then
-		return
-	end
-	local output = serializeValue(DEBUG_OUTPUT, 0, {})
+	if not DEBUG_OUTPUT then return end	local output = serializeValue(DEBUG_OUTPUT, 0, {})
 	print("[AutofillDebug]\n" .. output)
 end
 
@@ -254,24 +239,12 @@ local function toPointList(points: {Vector2int16}?): {{number}}
 end
 
 local function getFloorModelFromTarget(target: Instance?): Model?
-	if not target then
-		return nil
-	end
-	if target:IsA("Model") and target.Parent and target.Parent:IsA("Folder") and target.Parent.Name == "Floors" then
-		return target
-	end
-	local model = target:FindFirstAncestorOfClass("Model")
-	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then
-		return model
-	end
-	return nil
+	if not target then return nil end	if target:IsA("Model") and target.Parent and target.Parent:IsA("Folder") and target.Parent.Name == "Floors" then return target end	local model = target:FindFirstAncestorOfClass("Model")
+	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then return model end	return nil
 end
 
 local function getLevelData(plotInfo: any, levelIndex: number): Formex.LevelData?
-	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Levels then
-		return nil
-	end
-	return plotInfo.PlotData.Levels[levelIndex]
+	if not plotInfo or not plotInfo.PlotData or not plotInfo.PlotData.Levels then return nil end	return plotInfo.PlotData.Levels[levelIndex]
 end
 
 local function getLevelDebugData(plotInfo: any, levelIndex: number): ({[string]: any}, {[string]: any})
@@ -353,10 +326,7 @@ local function buildFloorDataFromPoints(points: {Vector2int16}): Formex.FloorDat
 end
 
 local function isFloorDataValid(plotInfo: any, floorData: Formex.FloorData, action: Formex.BuildAction?): boolean
-	if not plotInfo or not plotInfo.PlotData then
-		return false
-	end
-	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
+	if not plotInfo or not plotInfo.PlotData then return false end	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
 		{
 			PartType = Formex.PartType.Floor,
 			Action = action or Formex.BuildAction.Edit,
@@ -407,10 +377,7 @@ local function selectFaceForPoint(faces: {Face}, point: Vector2): Face?
 end
 
 local function getFaceSamplePoint(points: {Vector2int16}): Vector2?
-	if #points == 0 then
-		return nil
-	end
-
+	if #points == 0 then return nil end
 	local sumX = 0
 	local sumY = 0
 	local minX = points[1].X
@@ -427,15 +394,9 @@ local function getFaceSamplePoint(points: {Vector2int16}): Vector2?
 	end
 
 	local centroid = Vector2.new(sumX / #points, sumY / #points)
-	if isPointInsidePolygon(centroid, points, false) then
-		return centroid
-	end
-
+	if isPointInsidePolygon(centroid, points, false) then return centroid end
 	local center = Vector2.new((minX + maxX) / 2, (minY + maxY) / 2)
-	if isPointInsidePolygon(center, points, false) then
-		return center
-	end
-
+	if isPointInsidePolygon(center, points, false) then return center end
 	local polygon = {}
 	for _, point in ipairs(points) do
 		table.insert(polygon, Vector2.new(point.X, point.Y))
@@ -487,10 +448,7 @@ local function getFaceSamplePoint(points: {Vector2int16}): Vector2?
 
 				if not hasPointInside then
 					local centroid2 = Vector2.new((a.X + b.X + c.X) / 3, (a.Y + b.Y + c.Y) / 3)
-					if isPointInsidePolygon(centroid2, points, false) then
-						return centroid2
-					end
-					table.remove(indices, i)
+					if isPointInsidePolygon(centroid2, points, false) then return centroid2 end					table.remove(indices, i)
 					earFound = true
 					break
 				end
@@ -729,10 +687,7 @@ local function applyPreview(
 end
 
 local function getCursorLocalPoint(plotInfo: any, input: any): Vector2?
-	if not plotInfo or not plotInfo.PlotPart then
-		return nil
-	end
-	if input and input.HitPosition then
+	if not plotInfo or not plotInfo.PlotPart then return nil end	if input and input.HitPosition then
 		local localPosition = plotInfo.PlotPart.CFrame:PointToObjectSpace(input.HitPosition)
 		return Vector2.new(localPosition.X, localPosition.Z)
 	end
@@ -794,10 +749,7 @@ local function finalizeAutofill()
 	end
 
 	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid then
-		return
-	end
-
+	if not plotInfo or not plotInfo.IsValid then return end
 	local floorData = buildFloorDataFromPoints(cachedPolygon)
 	local result = buildFloor(floorData, getSelectionSnapshot())
 	selectAfterFloorBuild(plotInfo, floorData.LevelIndex, floorData.Points, result)
@@ -827,17 +779,11 @@ function Autofill.ClearSelection()
 end
 
 function Autofill.HandleUpdate(input: any)
-	if getActionType() ~= Enums.ActionType.Start then
-		return
-	end
-	updatePreview(input)
+	if getActionType() ~= Enums.ActionType.Start then return end	updatePreview(input)
 end
 
 function Autofill.HandlePrimaryClick(_input: any)
-	if getActionType() ~= Enums.ActionType.Start then
-		return
-	end
-	local targetFloor = getFloorModelFromTarget(_input and _input.Target or nil)
+	if getActionType() ~= Enums.ActionType.Start then return end	local targetFloor = getFloorModelFromTarget(_input and _input.Target or nil)
 	if targetFloor and select(targetFloor) then
 		Autofill.CancelAction()
 		return
@@ -866,10 +812,7 @@ function Autofill.HandlePrimaryClick(_input: any)
 end
 
 function Autofill.HandleSecondaryClick(_input: any): boolean
-	if getActionType() ~= Enums.ActionType.Start then
-		return false
-	end
-	Autofill.CancelAction()
+	if getActionType() ~= Enums.ActionType.Start then return false end	Autofill.CancelAction()
 	return true
 end
 

@@ -70,15 +70,9 @@ function PrefabCatalog.FindPrefabByPath(root: Instance, path: string): Model?
 	local current: Instance = root
 	for _, segment in ipairs(parts) do
 		local child = current:FindFirstChild(segment)
-		if not child then
-			return nil
-		end
-		current = child
+		if not child then return nil end		current = child
 	end
-	if current:IsA("Model") then
-		return current
-	end
-	return nil
+	if current:IsA("Model") then return current end	return nil
 end
 
 function PrefabCatalog.FindWorkspacePrefab(path: string): Model?
@@ -90,10 +84,7 @@ function PrefabCatalog.FindReplicatedPrefab(path: string): Model?
 end
 
 function PrefabCatalog.IsPrefabRoot(model: Instance): boolean
-	if not model:IsA("Model") then
-		return false
-	end
-	return model:FindFirstChild(Constants.Prefab.PrefabModelName) ~= nil
+	if not model:IsA("Model") then return false end	return model:FindFirstChild(Constants.Prefab.PrefabModelName) ~= nil
 end
 
 return PrefabCatalog

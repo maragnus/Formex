@@ -21,10 +21,7 @@ function Formex.Math.DoLinesIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2:
     local o3 = Orientation(q1, q2, p1)
     local o4 = Orientation(q1, q2, p2)
 
-    if o1 ~= o2 and o3 ~= o4 then
-        return true
-    end
-
+    if o1 ~= o2 and o3 ~= o4 then return true end
     return false
 end
 
@@ -40,10 +37,7 @@ function Formex.Math.IsSimplePolygon(polygon: {Vector2}): boolean
             end
             local b1 = polygon[j]
             local b2 = polygon[(j % n) + 1]
-            if Formex.Math.DoLinesIntersect(a1, a2, b1, b2) then
-                return false
-            end
-        end
+            if Formex.Math.DoLinesIntersect(a1, a2, b1, b2) then return false end        end
     end
     return true
 end

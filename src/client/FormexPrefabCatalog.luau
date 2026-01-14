@@ -52,27 +52,15 @@ end
 local function getPrefabAssetId(prefab: Formex.ObjectPrefab): number?
 	if prefab.Attributes then
 		local assetId = prefab.Attributes.AssetId or prefab.Attributes.PreviewAssetId
-		if type(assetId) == "number" and assetId > 0 then
-			return assetId
-		end
-	end
+		if type(assetId) == "number" and assetId > 0 then return assetId end	end
 	return nil
 end
 
 local function resolvePreviewModel(prefab: Formex.ObjectPrefab): Model?
 	local root = prefab.Model
-	if not root then
-		return nil
-	end
-	local prefabChild = root:FindFirstChild("Prefab")
-	if prefabChild and prefabChild:IsA("Model") then
-		return prefabChild
-	end
-	local modelChild = root:FindFirstChild("Model")
-	if modelChild and modelChild:IsA("Model") then
-		return modelChild
-	end
-	return root
+	if not root then return nil end	local prefabChild = root:FindFirstChild("Prefab")
+	if prefabChild and prefabChild:IsA("Model") then return prefabChild end	local modelChild = root:FindFirstChild("Model")
+	if modelChild and modelChild:IsA("Model") then return modelChild end	return root
 end
 
 local function applyPreviewModelSettings(model: Model)
@@ -269,44 +257,26 @@ local function getPrefabCategories(prefabs: {Formex.ObjectPrefab}): {string}
 		end
 	end
 	table.sort(categories, function(a, b)
-		if a == "All" then
-			return true
-		end
-		if b == "All" then
-			return false
-		end
-		return string.lower(a) < string.lower(b)
+		if a == "All" then return true end		if b == "All" then return false end		return string.lower(a) < string.lower(b)
 	end)
 	return categories
 end
 
 local function matchesSearch(prefab: Formex.ObjectPrefab, searchText: string): boolean
-	if searchText == "" then
-		return true
-	end
-	local name = string.lower(prefab.Name or "")
+	if searchText == "" then return true end	local name = string.lower(prefab.Name or "")
 	local prefabName = string.lower(prefab.PrefabName or "")
 	return string.find(name, searchText, 1, true) ~= nil
 		or string.find(prefabName, searchText, 1, true) ~= nil
 end
 
 local function matchesCategory(prefab: Formex.ObjectPrefab, category: string): boolean
-	if category == "All" then
-		return true
-	end
-	for _, entry in ipairs(prefab.Categories or {}) do
-		if entry == category then
-			return true
-		end
-	end
+	if category == "All" then return true end	for _, entry in ipairs(prefab.Categories or {}) do
+		if entry == category then return true end	end
 	return false
 end
 
 local function clearGrid()
-	if not ui.Grid then
-		return
-	end
-	for _, child in ipairs(ui.Grid:GetChildren()) do
+	if not ui.Grid then return end	for _, child in ipairs(ui.Grid:GetChildren()) do
 		if child:IsA("GuiObject") then
 			child:Destroy()
 		end
@@ -315,10 +285,7 @@ local function clearGrid()
 end
 
 local function rebuildCategoryRow(prefabs: {Formex.ObjectPrefab})
-	if not ui.CategoryRow then
-		return
-	end
-	for _, child in ipairs(ui.CategoryRow:GetChildren()) do
+	if not ui.CategoryRow then return end	for _, child in ipairs(ui.CategoryRow:GetChildren()) do
 		if child:IsA("GuiObject") then
 			child:Destroy()
 		end
@@ -417,10 +384,7 @@ end
 
 local function rebuildGrid(prefabs: {Formex.ObjectPrefab})
 	clearGrid()
-	if not ui.Grid then
-		return
-	end
-
+	if not ui.Grid then return end
 	for _, prefab in ipairs(prefabs) do
 		buildCard(ui.Grid, prefab)
 	end
@@ -437,10 +401,7 @@ local function refreshSelection()
 end
 
 local function buildCatalog()
-	if ui.Container then
-		return
-	end
-
+	if ui.Container then return end
 	local overlay = Instance.new("Frame", screenGui)
 	overlay.Name = "FormexPrefabCatalog"
 	overlay.BackgroundTransparency = 1
@@ -639,10 +600,7 @@ end
 
 function FormexPrefabCatalog.Refresh(forceRebuild: boolean?)
 	buildCatalog()
-	if not ui.Container then
-		return
-	end
-
+	if not ui.Container then return end
 	local prefabs = Formex.Objects.GetPrefabs()
 	if forceRebuild or next(ui.CategoryButtons) == nil then
 		rebuildCategoryRow(prefabs)
@@ -665,18 +623,9 @@ end
 
 function FormexPrefabCatalog.Show()
 	buildCatalog()
-	if not ui.Container then
-		return
-	end
-	local plot = FormexClient.CurrentPlot
-	if not plot or not plot.IsValid then
-		return
-	end
-	local state = FormexDesign.GetDesignState()
-	if state.Mode ~= FormexDesign.DesignMode.Object then
-		return
-	end
-	selectedPrefabName = state.Object and state.Object.PrefabName or nil
+	if not ui.Container then return end	local plot = FormexClient.CurrentPlot
+	if not plot or not plot.IsValid then return end	local state = FormexDesign.GetDesignState()
+	if state.Mode ~= FormexDesign.DesignMode.Object then return end	selectedPrefabName = state.Object and state.Object.PrefabName or nil
 	ui.Container.Visible = true
 	FormexPrefabCatalog.Refresh(true)
 end
@@ -700,13 +649,7 @@ function FormexPrefabCatalog.Toggle()
 end
 
 FormexClient.ClientEvents:Connect(function(eventName)
-	if eventName ~= "DesignStateChanged" and eventName ~= "CurrentPlotChanged" then
-		return
-	end
-	if not ui.Container or not ui.Container.Visible then
-		return
-	end
-
+	if eventName ~= "DesignStateChanged" and eventName ~= "CurrentPlotChanged" then return end	if not ui.Container or not ui.Container.Visible then return end
 	local plot = FormexClient.CurrentPlot
 	if not plot or not plot.IsValid then
 		FormexPrefabCatalog.Hide()
