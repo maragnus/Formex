@@ -348,6 +348,7 @@ Formex.Function = table.freeze({
 	ListSaves = "ListSaves",
 	LoadSave = "LoadSave",
 	PlotLoad = "PlotLoad",
+	DeletePlot = "DeletePlot",
 	NewSave = "NewSave",
 	GetPermissions = "GetPermissions",
 	SetPermission = "SetPermission",

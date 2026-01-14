@@ -1796,6 +1796,14 @@ function FormexClient.PlotLoad(saveId: number?)
     return result, message
 end
 
+function FormexClient.DeletePlot(saveId: number?)
+    local result, message = FormexFunctions:InvokeServer(Formex.Function.DeletePlot, saveId)
+    if result == false then
+        warn("DeletePlot failed:", message)
+    end
+    return result, message
+end
+
 function FormexClient.NewSave(startingSegment: number?)
     local result, message = FormexFunctions:InvokeServer(Formex.Function.NewSave, startingSegment)
     if result == false then

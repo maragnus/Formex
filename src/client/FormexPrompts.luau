@@ -27,6 +27,7 @@ end
 function FormexPrompts.PlotLoad()
     local saves = FormexClient.GetSaves() or {}
     local currentSaveId = FormexClient.CurrentPlot.SaveId or 0
+    local rng = Random.new()
 
     table.sort(saves, function(a, b)
         return (a.LastPlayed or 0) > (b.LastPlayed or 0)
@@ -35,6 +36,103 @@ function FormexPrompts.PlotLoad()
     local function formatTimestamp(timestamp: number?): string
         if not timestamp or timestamp == 0 then return "Never played" end
         return "Last played " .. os.date("%x %X", timestamp)
+    end
+
+    local newSaveButton: GuiButton? = nil
+
+    local function updateNewSaveVisibility()
+        if newSaveButton then
+            newSaveButton.Visible = #saves < Formex.MaxSaveSlots
+        end
+    end
+
+    local function removeSaveFromList(saveId: number)
+        for index, entry in ipairs(saves) do
+            if entry.SaveId == saveId then
+                table.remove(saves, index)
+                break
+            end
+        end
+        updateNewSaveVisibility()
+    end
+
+    local function confirmDelete(save)
+        local saveName = save.Name ~= nil and tostring(save.Name) or ("Save " .. tostring(save.SaveId))
+        local proceed = FormexUI.Alert(
+            "Delete plot",
+            "Are you sure you want to delete \"" .. saveName .. "\"?",
+            FormexUI.ButtonType.Danger,
+            FormexUI.AlertType.YesNo
+        )
+        if proceed ~= true then
+            return false
+        end
+
+        local targetNumber = rng:NextInteger(1, 9)
+        local numbers = { targetNumber }
+        while #numbers < 4 do
+            local candidate = rng:NextInteger(1, 9)
+            local unique = true
+            for _, value in ipairs(numbers) do
+                if value == candidate then
+                    unique = false
+                    break
+                end
+            end
+            if unique then
+                table.insert(numbers, candidate)
+            end
+        end
+
+        for index = #numbers, 2, -1 do
+            local swapIndex = rng:NextInteger(1, index)
+            numbers[index], numbers[swapIndex] = numbers[swapIndex], numbers[index]
+        end
+
+        local confirmation = FormexUI.Dialog({
+            Name = "DeletePlotConfirm" .. tostring(save.SaveId),
+            Title = "Double check",
+            Size = "Small",
+            Buttons = {
+                { Text = "Cancel", Result = false, Type = FormexUI.ButtonType.Secondary, Style = FormexUI.ButtonStyle.Outline }
+            }
+        }, function(dialog)
+            FormexUI.CreateLabel({
+                Parent = dialog.ContentFrame,
+                Text = string.format("Click %d to delete \"%s\". This cannot be undone.", targetNumber, saveName),
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Top,
+                TextWrapped = true,
+                AutomaticSize = Enum.AutomaticSize.Y,
+                Size = UDim2.new(1, 0, 0, 0),
+            })
+
+            local numberRow = FormexUI.CreateRow({
+                Parent = dialog.ContentFrame,
+                Name = "ConfirmNumbers",
+                AutomaticSize = Enum.AutomaticSize.Y,
+                Size = UDim2.new(1, 0, 0, 0),
+                Gap = 8,
+                HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                VerticalAlignment = Enum.VerticalAlignment.Top,
+            })
+
+            for _, value in ipairs(numbers) do
+                local button = FormexUI.CreateButton({
+                    Parent = numberRow,
+                    Name = "Number_" .. tostring(value),
+                    Text = tostring(value),
+                    Type = value == targetNumber and FormexUI.ButtonType.Danger or FormexUI.ButtonType.Secondary,
+                    Style = "Solid",
+                    Size = UDim2.new(0, 64, 0, 44),
+                }, function()
+                    dialog.Close(value == targetNumber)
+                end)
+                button.Visible = true
+            end
+        end)
+
+        return confirmation == true
     end
 
     FormexUI.Dialog({
@@ -66,8 +164,6 @@ function FormexPrompts.PlotLoad()
 
         for _, save in ipairs(saves) do
             local isCurrentSave = currentSaveId ~= 0 and save.SaveId == currentSaveId
-            local actionIcon = isCurrentSave and Formex.Icons.Refresh or Formex.Icons.PlotLoad
-            local actionType = isCurrentSave and "Primary" or "Secondary"
 
             local row = Instance.new("Frame", list)
             row.Name = "Save_" .. tostring(save.SaveId or "Unknown")
@@ -91,7 +187,7 @@ function FormexPrompts.PlotLoad()
             local info = Instance.new("Frame", row)
             info.Name = "Info"
             info.BackgroundTransparency = 1
-            info.Size = UDim2.new(1, -72, 1, 0)
+            info.Size = UDim2.new(1, -220, 1, 0)
             local infoLayout = Instance.new("UIListLayout", info)
             infoLayout.FillDirection = Enum.FillDirection.Vertical
             infoLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -117,43 +213,103 @@ function FormexPrompts.PlotLoad()
             detailsLabel.TextXAlignment = Enum.TextXAlignment.Left
             detailsLabel.TextColor3 = Color3.fromRGB(90, 105, 140)
 
-            local reloadButton = FormexUI.CreateButton({
-                Parent = row,
-                Name = "Reload_" .. tostring(save.SaveId),
-                Icon = actionIcon,
-                Type = actionType,
-                Style = "Solid",
-            }, function()
-                local success, message = FormexClient.PlotLoad(save.SaveId)
-                if success == false then
-                    warn("Failed to load save:", message)
-                    return
-                end
-                dialog.Close(save.SaveId)
-            end)
-            reloadButton.Visible = true
-            reloadButton.LayoutOrder = 3
-            reloadButton.Size = UDim2.new(0, 44, 0, 44)
+            local actions = Instance.new("Frame", row)
+            actions.Name = "Actions"
+            actions.BackgroundTransparency = 1
+            actions.Size = UDim2.new(0, 200, 1, 0)
+            actions.LayoutOrder = 3
+            local actionsLayout = Instance.new("UIListLayout", actions)
+            actionsLayout.FillDirection = Enum.FillDirection.Horizontal
+            actionsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+            actionsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+            actionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            actionsLayout.Padding = UDim.new(0, 8)
+
+            if isCurrentSave then
+                local refreshButton = FormexUI.CreateButton({
+                    Parent = actions,
+                    Name = "Refresh_" .. tostring(save.SaveId),
+                    Icon = Formex.Icons.Refresh,
+                    Text = "Refresh",
+                    Type = "Primary",
+                    Style = "Solid",
+                    Size = UDim2.new(0, 108, 0, 44),
+                }, function()
+                    local success, message = FormexClient.PlotLoad(save.SaveId)
+                    if success == false then
+                        warn("Failed to refresh save:", message)
+                        return
+                    end
+                    dialog.Close(save.SaveId)
+                end)
+                refreshButton.Visible = true
+            else
+                local loadButton = FormexUI.CreateButton({
+                    Parent = actions,
+                    Name = "Load_" .. tostring(save.SaveId),
+                    Icon = Formex.Icons.PlotLoad,
+                    Type = "Primary",
+                    Style = "Solid",
+                    Size = UDim2.new(0, 44, 0, 44),
+                }, function()
+                    local success, message = FormexClient.PlotLoad(save.SaveId)
+                    if success == false then
+                        warn("Failed to load save:", message)
+                        return
+                    end
+                    dialog.Close(save.SaveId)
+                end)
+                loadButton.Visible = true
+                loadButton.LayoutOrder = 1
+
+                local deleteButton = FormexUI.CreateButton({
+                    Parent = actions,
+                    Name = "Delete_" .. tostring(save.SaveId),
+                    Icon = Formex.Icons.DeleteItem,
+                    Type = "Danger",
+                    Style = FormexUI.ButtonStyle.Outline,
+                    Size = UDim2.new(0, 44, 0, 44),
+                }, function()
+                    local confirmed = confirmDelete(save)
+                    if not confirmed then
+                        return
+                    end
+
+                    local success, message = FormexClient.DeletePlot(save.SaveId)
+                    if success == false then
+                        FormexUI.Alert(
+                            "Delete failed",
+                            message or "Could not delete this plot. Please try again.",
+                            FormexUI.ButtonType.Warn,
+                            FormexUI.AlertType.OkOnly
+                        )
+                        return
+                    end
+
+                    removeSaveFromList(save.SaveId)
+                    row:Destroy()
+                end)
+                deleteButton.Visible = true
+                deleteButton.LayoutOrder = 2
+            end
         end
 
-        if #saves < Formex.MaxSaveSlots then
-            local newSaveButton = FormexUI.CreateButton({
-                Parent = dialog.ContentFrame,
-                Name = "NewSave",
-                Text = "Create new save",
-                Type = "Success",
-                Style = "Solid"
-            }, function()
-                local saveId, message = FormexClient.NewSave()
-                if saveId == false then
-                    warn("Failed to create save:", message)
-                    return
-                end
-                dialog.Close(saveId or true)
-            end)
-            newSaveButton.Visible = true
-            newSaveButton.Size = UDim2.new(1, -6, 0, 44)
-        end
+        newSaveButton = FormexUI.CreateButton({
+            Parent = dialog.ContentFrame,
+            Name = "NewSave",
+            Text = "Create new save",
+            Type = "Success",
+            Style = "Solid"
+        }, function()
+            local saveId, message = FormexClient.NewSave()
+            if saveId == false then
+                warn("Failed to create save:", message)
+                return
+            end
+            dialog.Close(saveId or true)
+        end)
+        newSaveButton.Visible = #saves < Formex.MaxSaveSlots
+        newSaveButton.Size = UDim2.new(1, -6, 0, 44)
     end)
 end
 

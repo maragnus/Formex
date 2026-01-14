@@ -31,6 +31,9 @@ local remoteFunctions = {
     [Formex.Function.PlotLoad] = function(player, saveId)
         return FormexPlot.PlotLoad(player, saveId)
     end,
+    [Formex.Function.DeletePlot] = function(player, saveId)
+        return FormexPlot.DeletePlot(player, saveId)
+    end,
     [Formex.Function.NewSave] = function(player, startingSegment)
         return FormexPlot.NewSave(player, startingSegment)
     end,

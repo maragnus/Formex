@@ -90,6 +90,58 @@ function FormexPlot.PlotLoad(player: Player, saveId: number?): (boolean, string?
     return FormexSystem.LoadPlot(plotId, targetSaveId)
 end
 
+function FormexPlot.DeletePlot(player: Player, saveId: number?): (boolean, string?)
+    local userId = player.UserId
+    local targetSaveId = tonumber(saveId)
+    if not targetSaveId or targetSaveId <= 0 then
+        return false, "Invalid save selected"
+    end
+
+    local key = tostring(userId) .. ":" .. tostring(targetSaveId)
+    local ok, result, message = pcall(function()
+        local existing = FormexSystem.PlotDataStore:GetAsync(key)
+        if not existing then
+            return false, "Save not found"
+        end
+
+        FormexSystem.PlotDataStore:RemoveAsync(key)
+        FormexSystem.PlotDataStore:RemoveAsync(key .. ":data")
+        return true
+    end)
+
+    if not ok then
+        return false, "Failed to delete save: " .. tostring(result)
+    end
+    if result == false then
+        return false, message or "Save not found"
+    end
+
+    local plotId = FormexSystem.PlayerToPlot[userId]
+    if plotId then
+        local plotData = FormexSystem.PlotData[plotId]
+        if plotData and plotData.SaveId == targetSaveId then
+            plotData.SaveId = 0
+            plotData.Name = player.Name .. "'s Plot"
+            plotData.LastPlayed = 0
+            plotData.NextId = 1
+            plotData.Levels = {}
+            plotData.Rooms = {}
+            plotData.LevelsUnlocked = 1
+            plotData.SegmentsUnlocked = 0
+            plotData.Permissions = {}
+
+            local plotPart = FormexSystem.Plots[plotId]
+            if plotPart then
+                FormexSystem.ClearPlot(plotPart)
+                FormexSystem.CreateLevelPlaceholders(plotPart)
+            end
+            FormexSystem.UpdatePlotAttributes(plotId)
+        end
+    end
+
+    return true
+end
+
 function FormexPlot.NewSave(player: Player, startingSegment: number?): boolean
     local plotId = FormexSystem.PlayerToPlot[player.UserId]
     if not plotId or plotId == 0 then error("No claimed plot") end
