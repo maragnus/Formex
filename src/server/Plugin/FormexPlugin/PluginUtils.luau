@@ -31,13 +31,15 @@ function PluginUtils.GetPathFromRoot(instance: Instance, root: Instance): string
 		table.insert(parts, 1, current.Name)
 		current = current.Parent
 	end
-	if current ~= root then return nil end	return PluginUtils.JoinPath(parts)
+	if current ~= root then return nil end
+	return PluginUtils.JoinPath(parts)
 end
 
 function PluginUtils.FindAncestor(instance: Instance, predicate: (Instance) -> boolean, stopAt: Instance?): Instance?
 	local current: Instance? = instance
 	while current do
-		if predicate(current) then return current end		if stopAt and current == stopAt then
+		if predicate(current) then return current end
+		if stopAt and current == stopAt then
 			break
 		end
 		current = current.Parent
@@ -87,16 +89,19 @@ function PluginUtils.SnapToInteger(value: number): number
 end
 
 function PluginUtils.SnapToGrid(value: number, grid: number): number
-	if grid <= 0 then return value end	return math.round(value / grid) * grid
+	if grid <= 0 then return value end
+	return math.round(value / grid) * grid
 end
 
 function PluginUtils.Clamped(value: number, minValue: number): number
-	if value < minValue then return minValue end	return value
+	if value < minValue then return minValue end
+	return value
 end
 
 function PluginUtils.GetOrCreateChildModel(parent: Instance, name: string): Model
 	local model = parent:FindFirstChild(name)
-	if model and model:IsA("Model") then return model end	local created = Instance.new("Model")
+	if model and model:IsA("Model") then return model end
+	local created = Instance.new("Model")
 	created.Name = name
 	created.Parent = parent
 	return created

@@ -142,18 +142,21 @@ local function bindHandleInput(handleInfo: HandleInfo)
 	end)
 
 	handleInfo.Icon.InputBegan:Connect(function(input)
-		if handleInfo.InputEnabled == false then return end		if input.UserInputType ~= Enum.UserInputType.MouseButton1
+		if handleInfo.InputEnabled == false then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1
 			and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
 		end
-		if not handleInfo.Billboard.Enabled then return end		setActionHeld(true)
+		if not handleInfo.Billboard.Enabled then return end
+		setActionHeld(true)
 		if handleInfo.OnClick then
 			handleInfo.OnClick(handleInfo.Argument)
 		end
 	end)
 
 	handleInfo.Icon.InputEnded:Connect(function(input)
-		if handleInfo.InputEnabled == false then return end		if input.UserInputType ~= Enum.UserInputType.MouseButton1
+		if handleInfo.InputEnabled == false then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1
 			and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
 		end
@@ -201,7 +204,8 @@ local function getHandlesCenter(): Vector3?
 		end
 	end
 
-	if not minX then return nil end	return Vector3.new((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2)
+	if not minX then return nil end
+	return Vector3.new((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2)
 end
 
 local function stopSpinnerRotation()
@@ -216,7 +220,8 @@ local function startSpinnerRotation()
 	spinnerRotationTimer = 0
 	spinnerRotationConnection = RunService.Heartbeat:Connect(function(dt)
 		spinnerRotationTimer += dt
-		if spinnerRotationTimer < SPINNER_STEP_TIME then return end		local steps = math.floor(spinnerRotationTimer / SPINNER_STEP_TIME)
+		if spinnerRotationTimer < SPINNER_STEP_TIME then return end
+		local steps = math.floor(spinnerRotationTimer / SPINNER_STEP_TIME)
 		spinnerRotationTimer -= steps * SPINNER_STEP_TIME
 		spinnerRotation = (spinnerRotation + (SPINNER_STEP_DEGREES * steps)) % 360
 		if busySpinnerIcon then
@@ -345,8 +350,10 @@ function Handles.CreateHandle(name: string, color: Color3, iconAsset: number | s
 end
 
 function Handles.GetHandleIcon(handle: BasePart?): ImageButton?
-	if not handle then return nil end	local info = handles[handle.Name]
-	if not info then return nil end	return info.Icon
+	if not handle then return nil end
+	local info = handles[handle.Name]
+	if not info then return nil end
+	return info.Icon
 end
 
 function Handles.SetHandleVisible(handle: string | BasePart?, visible: boolean)
@@ -385,7 +392,8 @@ function Handles.ClearHandleHover()
 end
 
 function Handles.CheckHover(ray: Ray)
-	if useGuiInput then return end    local handle = checkHit(ray)
+	if useGuiInput then return end
+    local handle = checkHit(ray)
 
     if hoveredHandle == handle then	return end
 
@@ -401,7 +409,8 @@ function Handles.CheckHover(ray: Ray)
 end
 
 function Handles.HandleClicked(ray: Ray): boolean
-	if useGuiInput then return false end    local handle = checkHit(ray)
+	if useGuiInput then return false end
+    local handle = checkHit(ray)
 
     if handle then
         print("Handle clicked:", handle.Part.Name)

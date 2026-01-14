@@ -6,8 +6,8 @@ Exports:
 - Init(): ()
 - GetSelectedObjectData(): Formex.ObjectData?
 - ApplySelectedDesign(design, colors): boolean
-- ApplyPaintToTarget(target): boolean
-- CopyPaintFromTarget(target): boolean
+- ApplyPaintToTarget(input): boolean
+- CopyPaintFromTarget(input): boolean
 - HandleUpdate(input): ()
 - HandlePrimaryClick(input): ()
 - HandlePrimaryRelease(input): ()
@@ -30,7 +30,7 @@ local getActionType: () -> string
 local setActionType: (string) -> ()
 local getDesignMode: () -> string
 local getSelectionType: () -> string
-local getSelectionPart: () -> Instance?
+local getSelectionData: () -> any?
 local getSelectionSnapshot: () -> any?
 local getCurrentLevel: () -> number
 local getLastInputInfo: () -> any?
@@ -39,7 +39,7 @@ local getObjectPrefabName: () -> string?
 local updateDesignState: (any) -> ()
 local notifyDesignModeChange: () -> ()
 local clearSelection: () -> ()
-local select: (Instance) -> boolean
+local select: (any) -> boolean
 local selectPlotModelByIdAsync: (any, string, number, number, number?) -> ()
 
 local ghostModel: Model? = nil
@@ -68,7 +68,8 @@ end
 
 local function getResultObjectId(result: any): number | string?
 	local resultType = type(result)
-	if resultType == "number" or resultType == "string" then return result end	if resultType == "table" then
+	if resultType == "number" or resultType == "string" then return result end
+	if resultType == "table" then
 		if result.ObjectId then
 			return result.ObjectId
 		end
@@ -100,7 +101,8 @@ local function buildObject(objectData: any, action: any, selection: Formex.Selec
 			Data = objectData,
 		},
 	}, selection)
-	if not results then return nil end	local changeResult = results[1]
+	if not results then return nil end
+	local changeResult = results[1]
 	return changeResult and changeResult.Result or nil
 end
 
@@ -198,96 +200,37 @@ local function clearGhost()
 	ghostValid = false
 end
 
-local function getObjectModelFromTarget(target: Instance?): Model?
-	if not target then return nil end	local model = target:IsA("Model") and target or target:FindFirstAncestorOfClass("Model")
-	while model and model.Parent do
-		if model.Parent:IsA("Folder") and model.Parent.Name == "Objects" then return model end		if not model.Parent:IsA("Model") then
-			break
-		end
-		model = model.Parent
-	end
-	return nil
-end
-
-local function getObjectDesignIndexFromTarget(target: Instance?): number?
-	if not target then return nil end	if target:IsA("BasePart") then
-		return tonumber(target.Name)
-	end
-	return nil
-end
-
-local function getWallModelFromTarget(target: Instance?): Model?
-	if not target then return nil end	if target:IsA("Model") and target.Parent and target.Parent:IsA("Folder") and target.Parent.Name == "Walls" then return target end	local model = target:FindFirstAncestorOfClass("Model")
-	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Walls" then return model end	return nil
-end
-
-local function getWallDataFromModel(model: Model): Formex.WallData?
-	local level = tonumber(model.Parent.Parent.Name) or getCurrentLevel()
-	local wallId = tonumber(model.Name) or 0
-	local startValue = model:GetAttribute("Start") or Vector2.new(0, 0)
-	local endValue = model:GetAttribute("End") or Vector2.new(0, 0)
-	local height = model:GetAttribute("WallHeight") or Formex.LevelHeight
-	return {
-		WallId = wallId,
-		Level = level,
-		Start = Vector2int16.new(math.round(startValue.X), math.round(startValue.Y)),
-		End = Vector2int16.new(math.round(endValue.X), math.round(endValue.Y)),
-		Height = height,
-		Part = model,
-	} :: Formex.WallData
-end
-
-local function getFloorModelFromTarget(target: Instance?): Model?
-	if not target then return nil end	local model = target:IsA("Model") and target or target:FindFirstAncestorOfClass("Model")
-	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then return model end	return nil
-end
-
 local function getLevelFolder(plotInfo: any, levelIndex: number): BasePart?
 	local plotPart = plotInfo and plotInfo.PlotPart
-	if not plotPart then return nil end	local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
-	if levelPart and levelPart:IsA("BasePart") then return levelPart end	return nil
+	if not plotPart then return nil end
+	local levelPart = plotPart:FindFirstChild(tostring(levelIndex))
+	if levelPart and levelPart:IsA("BasePart") then return levelPart end
+	return nil
 end
 
 local function getLevelFolderChild(plotInfo: any, levelIndex: number, name: string): Folder?
 	local levelPart = getLevelFolder(plotInfo, levelIndex)
-	if not levelPart then return nil end	local folder = levelPart:FindFirstChild(name)
-	if folder and folder:IsA("Folder") then return folder end	return nil
+	if not levelPart then return nil end
+	local folder = levelPart:FindFirstChild(name)
+	if folder and folder:IsA("Folder") then return folder end
+	return nil
 end
 
 local function snapToGrid(value: number): number
 	local grid = Formex.ObjectGridSize
-	if grid <= 0 then return value end	return math.round(value / grid) * grid
+	if grid <= 0 then return value end
+	return math.round(value / grid) * grid
 end
 
-local function getLevelIndexFromModel(model: Model): number
-	local parent = model.Parent
-	if parent and parent.Parent and parent.Parent:IsA("BasePart") then
-		return tonumber(parent.Parent.Name) or getCurrentLevel()
-	end
-	return getCurrentLevel()
-end
-
-local function getFloorSurfaceHeights(floorModel: Model): (number, number)
-	local levelIndex = getLevelIndexFromModel(floorModel)
-	local raiseHeight = floorModel:GetAttribute("RaiseHeight") or 0
+local function getFloorSurfaceHeightsFromData(floorData: Formex.FloorData): (number, number)
+	local levelIndex = floorData.LevelIndex
+	local raiseHeight = floorData.RaiseHeight or 0
 	local levelTop = Formex.LevelHeight * (levelIndex - 1)
 	if raiseHeight > 0 then
 		return levelTop + raiseHeight, levelTop
 	end
 	local thickness = levelIndex == 1 and Formex.FoundationHeight or Formex.InterfloorHeight
 	return levelTop, levelTop - thickness
-end
-
-local function getLevelFromTarget(target: Instance?): number
-	local floorModel = getFloorModelFromTarget(target)
-	if floorModel then
-		return getLevelIndexFromModel(floorModel)
-	end
-	local objectModel = getObjectModelFromTarget(target)
-	if objectModel then
-		return getLevelIndexFromModel(objectModel)
-	end
-	return getCurrentLevel()
 end
 
 type Obb2D = {
@@ -342,14 +285,16 @@ local function obbOverlap2D(a: Obb2D, b: Obb2D): boolean
 	}) do
 		local distance = math.abs(delta:Dot(axis))
 		local radius = getObbRadius(a, axis) + getObbRadius(b, axis)
-		if distance > radius - Constants.Epsilon then return false end	end
+		if distance > radius - Constants.Epsilon then return false end
+	end
 
 	return true
 end
 
 local function getObjectWorldCFrame(plotInfo: any, objectData: Formex.ObjectData, prefab: Formex.ObjectPrefab): CFrame?
 	local plotPart = plotInfo and plotInfo.PlotPart
-	if not plotPart then return nil end	if Formex.Objects.GetObjectCFrame then
+	if not plotPart then return nil end
+	if Formex.Objects.GetObjectCFrame then
 		return Formex.Objects.GetObjectCFrame(objectData, prefab, plotPart, plotInfo.PlotData)
 	end
 	return nil
@@ -362,8 +307,10 @@ local function getObjectLocalCFrame(
 	_wallOverride: Formex.WallData?
 ): CFrame?
 	local plotPart = plotInfo and plotInfo.PlotPart
-	if not plotPart then return nil end	local worldCFrame = getObjectWorldCFrame(plotInfo, objectData, prefab)
-	if not worldCFrame then return nil end	return plotPart.CFrame:ToObjectSpace(worldCFrame)
+	if not plotPart then return nil end
+	local worldCFrame = getObjectWorldCFrame(plotInfo, objectData, prefab)
+	if not worldCFrame then return nil end
+	return plotPart.CFrame:ToObjectSpace(worldCFrame)
 end
 
 local function getObjectBoundsSize(prefab: Formex.ObjectPrefab, objectData: Formex.ObjectData?): Vector3
@@ -376,7 +323,8 @@ local function getLevelObjects(
 	levelIndex: number,
 	snapshot: {[number]: Formex.ObjectData}?
 ): {[number]: Formex.ObjectData}?
-	if snapshot then return snapshot end	local plotData = plotInfo and plotInfo.PlotData
+	if snapshot then return snapshot end
+	local plotData = plotInfo and plotInfo.PlotData
 	local levelData = plotData and plotData.Levels and plotData.Levels[levelIndex]
 	return levelData and levelData.Objects or nil
 end
@@ -390,10 +338,13 @@ local function isPlacementClear(
 	snapshot: {[number]: Formex.ObjectData}?,
 	movedIds: {[number]: boolean}?
 ): boolean
-	if not plotInfo or not plotInfo.PlotData then return true end	local localCFrame = getObjectLocalCFrame(plotInfo, objectData, prefab, wallOverride)
-	if not localCFrame then return true end	local levelIndex = objectData.Level or getCurrentLevel()
+	if not plotInfo or not plotInfo.PlotData then return true end
+	local localCFrame = getObjectLocalCFrame(plotInfo, objectData, prefab, wallOverride)
+	if not localCFrame then return true end
+	local levelIndex = objectData.Level or getCurrentLevel()
 	local levelObjects = getLevelObjects(plotInfo, levelIndex, snapshot)
-	if not levelObjects then return true end	local size = getObjectBoundsSize(prefab, objectData)
+	if not levelObjects then return true end
+	local size = getObjectBoundsSize(prefab, objectData)
 	local sourceObb = buildObb(localCFrame, size)
 	for _, other in pairs(levelObjects) do
 		if ignoreObjectId and other.ObjectId == ignoreObjectId then
@@ -415,7 +366,8 @@ local function isPlacementClear(
 			if otherCFrame then
 				local otherSize = getObjectBoundsSize(otherPrefab, other)
 				local otherObb = buildObb(otherCFrame, otherSize)
-				if obbOverlap2D(sourceObb, otherObb) then return false end			end
+				if obbOverlap2D(sourceObb, otherObb) then return false end
+			end
 		end
 	end
 	return true
@@ -451,7 +403,8 @@ local function clearMoveSnapshot()
 end
 
 local function startMoveSnapshot(input: any, objectData: Formex.ObjectData)
-	if not input or not input.PlotInfo or not objectData.ObjectId then return end	local levelIndex = objectData.Level or getCurrentLevel()
+	if not input or not input.PlotInfo or not objectData.ObjectId then return end
+	local levelIndex = objectData.Level or getCurrentLevel()
 	moveSnapshot = buildObjectSnapshot(input.PlotInfo, levelIndex)
 	moveSnapshotMoved = { [objectData.ObjectId] = true }
 end
@@ -460,7 +413,8 @@ local function resolvePrefab(): Formex.ObjectPrefab?
 	local prefabName = getObjectPrefabName()
 	if prefabName then
 		local prefab = Formex.Objects.GetPrefab(prefabName)
-		if prefab then return prefab end	end
+		if prefab then return prefab end
+	end
 
 	local prefabs = Formex.Objects.GetPrefabs()
 	if #prefabs > 0 then
@@ -470,7 +424,8 @@ local function resolvePrefab(): Formex.ObjectPrefab?
 end
 
 local function applyDesignToGhost(prefab: Formex.ObjectPrefab)
-	if not ghostModel then return end	local paintSettings = getObjectPaintSettings()
+	if not ghostModel then return end
+	local paintSettings = getObjectPaintSettings()
 	ghostData = {
 		ObjectId = 0,
 		Level = getCurrentLevel(),
@@ -564,7 +519,7 @@ local function getSurfacePlacementWithMount(
 	local localHit = plotPart.CFrame:PointToObjectSpace(hitPosition)
 	local normal = input.HitNormal or Vector3.new(0, 1, 0)
 	local mount = mountOverride or prefab.ObjectMount
-	local levelIndex = getLevelFromTarget(input.Target)
+	local levelIndex = input.LevelIndex
 	local validSurface = true
 	local rotationY = rotationOverride and rotationOverride.Y or 0
 	local _, boundsSize = Formex.Objects.GetPrefabBounds(prefab, nil)
@@ -572,18 +527,17 @@ local function getSurfacePlacementWithMount(
 	local ceilingBottomY = 0
 
 	if mount == Formex.MountType.Floor or mount == Formex.MountType.Ceiling then
-		local floorModel = getFloorModelFromTarget(input.Target)
-		if not floorModel then
+		if not input.FloorData or not input.FloorSide then
 			return {} :: Formex.ObjectData, false
 		end
-		levelIndex = getLevelIndexFromModel(floorModel)
-		floorTopY, ceilingBottomY = getFloorSurfaceHeights(floorModel)
+		levelIndex = input.FloorData.LevelIndex
+		floorTopY, ceilingBottomY = getFloorSurfaceHeightsFromData(input.FloorData)
 		if mount == Formex.MountType.Floor then
-			if normal.Y < SURFACE_UP_DOT then
+			if input.FloorSide ~= "Floor" or normal.Y < SURFACE_UP_DOT then
 				validSurface = false
 			end
 		else
-			if math.abs(normal.Y) < SURFACE_UP_DOT then
+			if input.FloorSide ~= "Ceiling" or math.abs(normal.Y) < SURFACE_UP_DOT then
 				validSurface = false
 			end
 		end
@@ -634,19 +588,8 @@ local function getPlacement(
 ): (Formex.ObjectData, boolean)
 	local objectMount = prefab.ObjectMount
 	if objectMount == Formex.MountType.Wall or objectMount == Formex.MountType.Door or objectMount == Formex.MountType.Window then
-		local wallData = wallOverride
+		local wallData = wallOverride or (input and input.WallData)
 		if not wallData then
-			local wallModel = getWallModelFromTarget(input.Target)
-			if wallModel then
-				wallData = getWallDataFromModel(wallModel)
-			end
-		end
-		if not wallData then
-			local floorModel = getFloorModelFromTarget(input.Target)
-			if floorModel then
-				local data = getSurfacePlacementWithMount(input, prefab, rotationOverride, Formex.MountType.Floor)
-				return data, false
-			end
 			return {} :: Formex.ObjectData, false
 		end
 		local data, valid = getWallPlacement(input, prefab, wallData, rotationOverride)
@@ -664,7 +607,8 @@ local function getPlacement(
 end
 
 local function isObjectTransactionValid(plotInfo: any, objectData: Formex.ObjectData, action: Formex.BuildAction): boolean
-	if not plotInfo or not plotInfo.PlotData then return false end	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
+	if not plotInfo or not plotInfo.PlotData then return false end
+	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
 		{
 			PartType = Formex.PartType.Object,
 			Action = action,
@@ -675,46 +619,29 @@ local function isObjectTransactionValid(plotInfo: any, objectData: Formex.Object
 end
 
 local function getSelectedObjectModel(): Model?
-	local selectionPart = getSelectionPart()
-	if not selectionPart then return nil end	return getObjectModelFromTarget(selectionPart)
+	if getSelectionType() ~= Enums.SelectionType.Object then return nil end
+	local selectionData = getSelectionData()
+	if not selectionData or not selectionData.Part then return nil end
+	return selectionData.Part
 end
 
-local function getObjectDataFromModel(model: Model): Formex.ObjectData
-	local level = tonumber(model.Parent.Parent.Name) or getCurrentLevel()
-	local objectId = tonumber(model.Name) or 0
-	local position = model:GetAttribute("Position") or Vector3.new(0, 0, 0)
-	local rotation = model:GetAttribute("Rotation") or Vector3.new(0, 0, 0)
-	local side = model:GetAttribute("Side") or Formex.ObjectSide.Front
-	local wallId = model:GetAttribute("WallId")
-	local prefabName = model:GetAttribute("PrefabName")
-	local design, colors = Formex.Objects.DecodeDesign(model:GetAttribute("Design"))
-	local prefab = prefabName and Formex.Objects.GetPrefab(prefabName) or nil
-	local objectModel = model:FindFirstChild("Object")
-	return {
-		ObjectId = objectId,
-		Level = level,
-		Position = position,
-		Rotation = rotation,
-		Side = side,
-		WallId = wallId,
-		PrefabName = prefabName,
-		Prefab = prefab,
-		Design = design,
-		DesignColors = colors,
-		IsPortal = model:GetAttribute("IsPortal") == true,
-		Part = model,
-		ObjectModel = objectModel and objectModel:IsA("Model") and objectModel or nil,
-		DesignParts = {},
-	} :: Formex.ObjectData
+local function cloneObjectData(objectData: Formex.ObjectData): Formex.ObjectData
+	local clone = table.clone(objectData)
+	clone.Design = objectData.Design and table.clone(objectData.Design) or {}
+	clone.DesignColors = objectData.DesignColors and table.clone(objectData.DesignColors) or {}
+	return clone
 end
 
 function Objects.GetSelectedObjectData(): Formex.ObjectData?
-	local model = getSelectedObjectModel()
-	if not model then return nil end	return getObjectDataFromModel(model)
+	if getSelectionType() ~= Enums.SelectionType.Object then return nil end
+	local selectionData = getSelectionData()
+	if not selectionData then return nil end
+	return cloneObjectData(selectionData)
 end
 
 local function ensurePreviewHighlight(model: Model)
-	if previewHighlight and previewHighlight.Parent then return end	previewHighlight = Instance.new("Highlight")
+	if previewHighlight and previewHighlight.Parent then return end
+	previewHighlight = Instance.new("Highlight")
 	previewHighlight.FillTransparency = 1
 	previewHighlight.OutlineTransparency = 0
 	previewHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -748,7 +675,8 @@ end
 
 local function updateHandlePositions(plotInfo: any, objectData: Formex.ObjectData, prefab: Formex.ObjectPrefab)
 	local model = objectData.Part
-	if not model then return end	local boxCFrame, boxSize = model:GetBoundingBox()
+	if not model then return end
+	local boxCFrame, boxSize = model:GetBoundingBox()
 	local center = boxCFrame.Position
 	local anchorY = center.Y
 	if prefab.ObjectMount == Formex.MountType.Floor
@@ -870,7 +798,8 @@ end
 
 function Objects.ApplySelectedDesign(design: {[number]: number}, colors: {[number]: Color3}): boolean
 	local selectedData = Objects.GetSelectedObjectData()
-	if not selectedData then return false end	selectedData.Design = table.clone(design)
+	if not selectedData then return false end
+	selectedData.Design = table.clone(design)
 	selectedData.DesignColors = table.clone(colors)
 	buildObject({
 		ObjectId = selectedData.ObjectId,
@@ -886,14 +815,15 @@ function Objects.ApplySelectedDesign(design: {[number]: number}, colors: {[numbe
 	return true
 end
 
-function Objects.ApplyPaintToTarget(target: Instance): boolean
-	local model = getObjectModelFromTarget(target)
-	if not model then return false end	local designIndex = getObjectDesignIndexFromTarget(target)
-	if not designIndex then return false end	local objectData = getObjectDataFromModel(model)
+function Objects.ApplyPaintToTarget(input: any): boolean
+	if not input or not input.ObjectData or not input.ObjectDesignIndex then return false end
+	local objectData = input.ObjectData
+	local designIndex = input.ObjectDesignIndex
 	local paintSettings = getObjectPaintSettings()
 	local materialId = paintSettings.Design[designIndex]
 	local color = paintSettings.DesignColors[designIndex]
-	if not materialId and not color then return false end	local updatedDesign = table.clone(objectData.Design)
+	if not materialId and not color then return false end
+	local updatedDesign = table.clone(objectData.Design)
 	local updatedColors = table.clone(objectData.DesignColors)
 	if materialId then
 		updatedDesign[designIndex] = materialId
@@ -915,13 +845,14 @@ function Objects.ApplyPaintToTarget(target: Instance): boolean
 	return true
 end
 
-function Objects.CopyPaintFromTarget(target: Instance): boolean
-	local model = getObjectModelFromTarget(target)
-	if not model then return false end	local designIndex = getObjectDesignIndexFromTarget(target)
-	if not designIndex then return false end	local objectData = getObjectDataFromModel(model)
+function Objects.CopyPaintFromTarget(input: any): boolean
+	if not input or not input.ObjectData or not input.ObjectDesignIndex then return false end
+	local objectData = input.ObjectData
+	local designIndex = input.ObjectDesignIndex
 	local materialId = objectData.Design[designIndex]
 	local color = objectData.DesignColors[designIndex]
-	if not materialId and not color then return false end	updateDesignState({
+	if not materialId and not color then return false end
+	updateDesignState({
 		Object = {
 			DesignIndex = designIndex,
 			Material = materialId,
@@ -938,7 +869,8 @@ local function updateGhostPlacement(input: any)
 		return
 	end
 	ensureGhost(prefab)
-	if not ghostModel then return end	applyDesignToGhost(prefab)
+	if not ghostModel then return end
+	applyDesignToGhost(prefab)
 
 	local data, valid = getPlacement(input, prefab, nil, nil, nil, nil, nil)
 	if valid then
@@ -956,8 +888,10 @@ local function updateGhostPlacement(input: any)
 end
 
 local function finalizePlacement(input: any)
-	if not ghostValid then return end	local prefab = resolvePrefab()
-	if not prefab then return end	local data, valid = getPlacement(input, prefab, nil, nil, nil, nil, nil)
+	if not ghostValid then return end
+	local prefab = resolvePrefab()
+	if not prefab then return end
+	local data, valid = getPlacement(input, prefab, nil, nil, nil, nil, nil)
 	if valid then
 		valid = isObjectTransactionValid(input.PlotInfo, data, Formex.BuildAction.Add)
 	end
@@ -993,7 +927,9 @@ local result = buildObject(objectEntry, Formex.BuildAction.Add, getSelectionSnap
 end
 
 local function updateMovePreview(input: any)
-	if not moveOriginal or not moveOriginal.Part then return end	if not input or not input.PlotInfo or not input.PlotInfo.PlotPart then return end	local prefab = moveOriginal.Prefab
+	if not moveOriginal or not moveOriginal.Part then return end
+	if not input or not input.PlotInfo or not input.PlotInfo.PlotPart then return end
+	local prefab = moveOriginal.Prefab
 	if not prefab and moveOriginal.PrefabName then
 		prefab = Formex.Objects.GetPrefab(moveOriginal.PrefabName)
 	end
@@ -1002,16 +938,7 @@ local function updateMovePreview(input: any)
 	if prefab.ObjectMount == Formex.MountType.Wall
 		or prefab.ObjectMount == Formex.MountType.Door
 		or prefab.ObjectMount == Formex.MountType.Window then
-		local targetWall = input.Target and getWallModelFromTarget(input.Target)
-		if targetWall then
-			wallData = getWallDataFromModel(targetWall)
-		elseif moveOriginal.WallId then
-			local plotData = input.PlotInfo.PlotData
-			local levelData = plotData.Levels and plotData.Levels[moveOriginal.Level]
-			if levelData then
-				wallData = levelData.Walls[moveOriginal.WallId]
-			end
-		end
+		wallData = input.WallData
 	end
 
 	local data, valid = getPlacement(
@@ -1047,11 +974,14 @@ local function updateMovePreview(input: any)
 end
 
 local function updateRotatePreview(input: any)
-	if not moveOriginal or not moveOriginal.Part then return end	if not input or not input.PlotInfo or not input.PlotInfo.PlotPart or not input.HitPosition then return end	local prefab = moveOriginal.Prefab
+	if not moveOriginal or not moveOriginal.Part then return end
+	if not input or not input.PlotInfo or not input.PlotInfo.PlotPart or not input.HitPosition then return end
+	local prefab = moveOriginal.Prefab
 	if not prefab and moveOriginal.PrefabName then
 		prefab = Formex.Objects.GetPrefab(moveOriginal.PrefabName)
 	end
-	if not prefab then return end	local plotPart = input.PlotInfo.PlotPart
+	if not prefab then return end
+	local plotPart = input.PlotInfo.PlotPart
 	local localHit = plotPart.CFrame:PointToObjectSpace(input.HitPosition)
 	local boxCFrame = moveOriginal.Part:GetBoundingBox()
 	local objectLocal = plotPart.CFrame:PointToObjectSpace(boxCFrame.Position)
@@ -1088,7 +1018,8 @@ local function updateRotatePreview(input: any)
 end
 
 local function finalizeMove(input: any)
-	if not moveOriginal or not movePreview then return end	local plotPart = input and input.PlotInfo and input.PlotInfo.PlotPart
+	if not moveOriginal or not movePreview then return end
+	local plotPart = input and input.PlotInfo and input.PlotInfo.PlotPart
 	if not previewValid then
 		if moveOriginal.Part then
 			if plotPart then
@@ -1143,7 +1074,7 @@ function Objects.Init()
 	setActionType = ctx.SetActionType
 	getDesignMode = ctx.GetDesignMode
 	getSelectionType = ctx.GetSelectionType
-	getSelectionPart = ctx.GetSelectionPart
+	getSelectionData = ctx.GetSelectionData
 	getSelectionSnapshot = ctx.GetSelectionSnapshot
 	getCurrentLevel = ctx.GetCurrentLevel
 	getLastInputInfo = ctx.GetLastInputInfo
@@ -1235,7 +1166,8 @@ function Objects.CancelAction()
 end
 
 function Objects.HandleUpdate(input: any)
-	if getDesignMode() ~= Enums.DesignMode.Object then return end	local actionType = getActionType()
+	if getDesignMode() ~= Enums.DesignMode.Object then return end
+	local actionType = getActionType()
 	if actionType == Enums.ActionType.Select then
 		updateObjectHandles(input.PlotInfo)
 		Handles.CheckHover(input.Ray)
@@ -1268,17 +1200,18 @@ end
 function Objects.HandlePrimaryClick(input: any)
 	local actionType = getActionType()
 	if actionType == Enums.ActionType.Select then
-		local currentSelection = getSelectionPart()
-		local hadSelection = getSelectionType() ~= Enums.SelectionType.None or currentSelection ~= nil
-		if hadSelection and input.Target and currentSelection then
-			if input.Target == currentSelection
-				or input.Target:IsDescendantOf(currentSelection)
-				or currentSelection:IsDescendantOf(input.Target) then
-				return
-			end
+		local selectionType = getSelectionType()
+		local selectionData = getSelectionData()
+		local hadSelection = selectionType ~= Enums.SelectionType.None
+		if hadSelection
+			and selectionType == Enums.SelectionType.Object
+			and input.ObjectData
+			and selectionData
+			and input.ObjectData == selectionData then
+			return
 		end
 
-		local selected = input.Target and select(input.Target) or false
+		local selected = select(input)
 		if selected then return end
 		if hadSelection then
 			clearSelection()

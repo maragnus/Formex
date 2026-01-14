@@ -103,7 +103,8 @@ local function cross2(a: Vector2, b: Vector2): number
 end
 
 function Formex.Plot.IsPointOnSegment(point: Vector2, startPoint: Vector2, endPoint: Vector2): boolean
-	if math.abs(cross2(endPoint - startPoint, point - startPoint)) > EPSILON then return false end	local minX = math.min(startPoint.X, endPoint.X) - EPSILON
+	if math.abs(cross2(endPoint - startPoint, point - startPoint)) > EPSILON then return false end
+	local minX = math.min(startPoint.X, endPoint.X) - EPSILON
 	local maxX = math.max(startPoint.X, endPoint.X) + EPSILON
 	local minY = math.min(startPoint.Y, endPoint.Y) - EPSILON
 	local maxY = math.max(startPoint.Y, endPoint.Y) + EPSILON
@@ -155,7 +156,8 @@ function Formex.Plot.IsLineWithinUnlockedSegments(startPoint: Vector2 | Vector2i
 
 	for i = 1, steps do
 		local point = startPoint + unit * (i * step)
-		if not isPointInUnlockedSegments(point, mask) then return false end	end
+		if not isPointInUnlockedSegments(point, mask) then return false end
+	end
 
 	return true
 end

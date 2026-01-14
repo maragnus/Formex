@@ -308,7 +308,8 @@ end
 local saveAccumulator = 0
 RunService.Heartbeat:Connect(function(deltaTime)
 	saveAccumulator = saveAccumulator + deltaTime
-	if saveAccumulator < SAVE_POLL_INTERVAL then return end	saveAccumulator = 0
+	if saveAccumulator < SAVE_POLL_INTERVAL then return end
+	saveAccumulator = 0
 
 	local now = time()
 	for plotId, queuedAt in pairs(saveQueue) do
@@ -565,7 +566,8 @@ carveWallsForLevel = function(plotData: Formex.PlotData, plotPart: BasePart?, le
 	local levelData = plotData.Levels and plotData.Levels[levelIndex]
 	if not levelData or not levelData.Walls then return end
 	if wallIds then
-		if next(wallIds) == nil then return end		for wallId in pairs(wallIds) do
+		if next(wallIds) == nil then return end
+		for wallId in pairs(wallIds) do
 			local wallData = levelData.Walls[wallId]
 			if wallData and wallData.Part then
 				Formex.Objects.CarveWallObjects(plotData, wallData, plotPart)
@@ -583,7 +585,8 @@ end
 
 function FormexSystem.RefreshWallCarves(plotId: number, levelIndex: number?)
 	local plotData = FormexSystem.PlotData[plotId]
-	if not plotData then return end	local plotPart = FormexSystem.Plots[plotId]
+	if not plotData then return end
+	local plotPart = FormexSystem.Plots[plotId]
 
 	if levelIndex then
 		carveWallsForLevel(plotData, plotPart, levelIndex)
@@ -598,7 +601,8 @@ end
 function FormexSystem.QueueWallCarve(plotId: number, levelIndex: number?)
 	task.defer(function()
 		task.wait()
-		if not FormexSystem.Plots[plotId] then return end		FormexSystem.RefreshWallCarves(plotId, levelIndex)
+		if not FormexSystem.Plots[plotId] then return end
+		FormexSystem.RefreshWallCarves(plotId, levelIndex)
 	end)
 end
 

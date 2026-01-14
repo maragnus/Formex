@@ -26,7 +26,8 @@ local function buildWall(wallData: any, action: any): any
 		},
 	}, nil)
 	setHandlesBusy(false)
-	if not results then return nil end	local changeResult = results[1]
+	if not results then return nil end
+	local changeResult = results[1]
 	return changeResult and changeResult.Result or nil
 end
 
@@ -94,7 +95,8 @@ end
 
 local function isFloorMaterial(materialInfo: Formex.MaterialInfo): boolean
     local categories = materialInfo.Categories
-    if not categories then return false end    return table.find(categories, "Floor") ~= nil
+    if not categories then return false end
+    return table.find(categories, "Floor") ~= nil
 end
 
 createButton("Claim", "Claim", "85199762467908", function()

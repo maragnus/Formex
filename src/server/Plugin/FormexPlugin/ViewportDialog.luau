@@ -49,7 +49,8 @@ function ViewportDialogModule.new(_plugin: Plugin): ViewportDialog
 	local currentModel: Model? = nil
 
 	local function ensureGui()
-		if screenGui and screenGui.Parent then return end		screenGui = getOrCreateGui()
+		if screenGui and screenGui.Parent then return end
+		screenGui = getOrCreateGui()
 		viewportFrame = getOrCreateViewport(screenGui)
 
 		camera = viewportFrame:FindFirstChildOfClass("Camera")
@@ -89,7 +90,8 @@ function ViewportDialogModule.new(_plugin: Plugin): ViewportDialog
 
 	function dialog:SetPrefab(root: Model?, _forceRecalc: boolean?)
 		ensureGui()
-		if not viewportFrame or not camera then return end		if currentModel then
+		if not viewportFrame or not camera then return end
+		if currentModel then
 			currentModel:Destroy()
 			currentModel = nil
 		end

@@ -4,20 +4,63 @@ Formex is a system for Roblox written in Luau that enabled Players to claim a pr
 
 Do not use `pcall`. While developing, errors need to propogate normally to find them.
 
-## Object Placement Reference
+## Related Documents
+
+Always check these related documents with reviewing or updating these systems:
 
 - Read `OBJECT_MOUNT_REFERENCE.md` any time you touch ObjectData positions/rotations, ObjectMount rules, prefab orientation, or plugin/placement logic.
+- Read `DESIGN_MODES.md` before making changes to design modes, tools, paint/dropper logic, handles, selection, sidebar behavior, or any `FormexDesign*.luau` files.
 
-## Requirements
+## Coding Standards
 
-- Luau requires that a `local function` is always defined before it's first usage. Make sure this is always the case when adding a new `local function` by resolving in one of these ways:
+1. The first line of every .luau module must be: --!strict
+
+2. Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Content.fromAssetId` and avoid unnecessary wrapper functions.
+    - `ImageLabel`:
+    `imageLabel.ImageContent = Content.fromAssetId(assetId: number)`
+    - `Texture`: `texture.ColorMapContent = Content.fromAssetId(assetId: number)` 
+
+3. Simple exits should always be contained to one line, for example:
+    - `if not plotInfo or not plotInfo.IsValid then return true end`
+    - `if not Walls[wallId] then contiue end`
+
+4. Always update `FormexSerialization.luau` when changing serializable properties on `Formex.LevelData`, `Formex.WallData`, `Formex.FloorData`, `Formex.ObjectData` data type definitions
+
+5. Luau requires that a `local function` is always defined before it's first usage. Make sure this is always the case when adding a new `local function` by resolving in one of these ways:
     - Make the function a `function module.*`
     - Move the usage below the declaration
     - Move the function and it's dependencies up
 
-- Luau type casting for assigments is not valid syntax `(value :: any).Levels = ...` just use `value.Levels = ...` instead
-- Wall, floor, and room XY snapping must use `Formex.LayoutGridSize`; only object placement uses `Formex.ObjectGridSize` / `Formex.GridSize`.
+6.  Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
+    - Always assume with 100% certainty that non-nullable types are strictly adhered to and DO NOT check them for nil. It is imperitive that we always get nil reference errors to find root cause issues.
 
+Note that the values in `Formex.LevelData` are assumed to NEVER be nil, never check them for nil, never treat them as nullable 
+These are BAD PRACTICE, DO NOT DO IT: `if levelData.Walls then` or `levelData.Walls or {}` or `levelData.Part or PlotData:WaitForChild(tostring(levelData.LevelIndex))`
+
+```luau
+export type LevelData = {
+	-- Serialized properties
+	LevelIndex: number,
+	Walls: {[number]: WallData}, -- {[WallId]: WallData}
+	Floors: {[number]: FloorData}, -- {[FloorId]: FloorData}
+	Objects: {[number]: ObjectData}, -- {[ObjectId]: ObjectData}
+	Rooms: {[number]: RoomData}, -- {[RoomId]: RoomData}
+
+	-- Runtime properties
+	Part: Part,
+	WallFolder: Folder,
+	FloorFolder: Folder,
+	ObjectFolder: Folder,
+}
+```
+
+7. When creating a table of a type that has non-nullable properties, you are REQUIRED to populate the required fields.
+
+8. Luau type casting for assigments is not valid syntax `(value :: any).Levels = ...` just use `value.Levels = ...` instead.
+
+## Requirements
+
+- Wall, floor, and room XY snapping must use `Formex.LayoutGridSize`; only object placement uses `Formex.ObjectGridSize` / `Formex.GridSize`.
 - World has predefined `Part` instances named "PlotPlaceholder" created in the `Workspace/Formex/Plots` Folder to define the **Plots** that a player can claim.
 - Players can claim only one **Plot** on a server
 - A **Plot** requires that the player selects a **Save Slot** before a building can be created.
@@ -25,14 +68,7 @@ Do not use `pcall`. While developing, errors need to propogate normally to find 
 - A **Plot** starts off owning one segment. Players can upgrade their plot by adding segments and levels (building stories)
 - A **Save Slot** defines the building on a plot. If no **Save** is loaded, then the PlotPlaceholder is empty and cannot be updating until a **Save** is loaded or new one is created.
 - Implement with an emphasis on KISS and DRY principals. 
-- Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
 - When handles must be disabled while waiting for server confirmation, wrap the call with `Handles.SetBusy(true)` and `Handles.SetBusy(false)` to show the spinner.
-- Implement with an emphasis on KISS and DRY principals. 
-- Rely on specified type definitions (e.g. `export type` from `Formex.luau`) to **avoid unnecessary type checks and nil checks** unless the type explicitely indicates that it may be nil or unexpected types.
-
-## Design Modes and Tools
-
-- Read `DESIGN_MODES.md` before making changes to design modes, tools, paint/dropper logic, handles, selection, or sidebar behavior.
 
 ## Ideal flow
 
@@ -75,7 +111,7 @@ A **Plot** has a permissions list of other players that can interact with it. Th
                           Parts...
                       Subtract: Model (optional)
                           Parts...
-- Formex entirely owns and maintains this exact hierarchy. It can be safely assumed that this will be strictly adhered to.
+- Formex entirely owns and maintains this exact hierarchy. It can be safely assumed that this will be strictly adhered to at all times.
 - Walls are divided into front-side and back-side Block-shaped parts, and also top and bottom parts if the wall has a split height.
   - Walls use Material/MaterialVariant and Color for design
   - Wall is total thickness of `Formex.WallThickness` and maximum height of `Formex.LevelHeight`, but is user adjustable
@@ -96,24 +132,6 @@ A **Plot** has a permissions list of other players that can interact with it. Th
 - Client selection/lookup by id must use `PlotData` references (`Levels[*].Walls/Floors/Objects`) and not traverse the Workspace hierarchy as a fallback.
 - When applying client-side predictions, update model attributes via the shared builders (`Formex.Walls.Edit`, `Formex.Floors.Edit`) so `PlotData` stays in sync.
 - If a client-side predicted model is created, assign the server-returned id, then replace it once the authoritative model appears (keep this reconciliation logic centralized, e.g. in `FormexDesignContext`).
-
-## Coding Standards
-
-The first line of every .luau module must be: --!strict
-
-Avoid using "rbxassetid://" and URIs for assets, instead, use Asset ID via `Content.fromAssetId` and avoid unnecessary wrapper functions.
-- `ImageLabel`:
-`imageLabel.ImageContent = Content.fromAssetId(assetId: number)`
-- `Texture`: `texture.ColorMapContent = Content.fromAssetId(assetId: number)` 
-
-Avoid multi-line simple exists:
-```lua
-		if not Walls then return true end```
-should be
-`if not Walls then return true end`
-Please fix these whenever you update a function.
-
-Always update `FormexSerialization.luau` when changing `Formex.PlotData`, `Formex.LevelData`, `Formex.WallData`, `Formex.FloorData`, `Formex.ObjectData`
 
 ## Multiplayer Undo/Redo System
 

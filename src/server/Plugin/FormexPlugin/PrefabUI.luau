@@ -234,14 +234,16 @@ end
 
 local function parseNumber(text: string): number?
 	local value = tonumber(text)
-	if value == nil then return nil end	return value
+	if value == nil then return nil end
+	return value
 end
 
 local function parseVector(x: TextBox, y: TextBox, z: TextBox): Vector3?
 	local vx = parseNumber(x.Text)
 	local vy = parseNumber(y.Text)
 	local vz = parseNumber(z.Text)
-	if vx == nil or vy == nil or vz == nil then return nil end	return Vector3.new(vx, vy, vz)
+	if vx == nil or vy == nil or vz == nil then return nil end
+	return Vector3.new(vx, vy, vz)
 end
 
 function PrefabUIFactory.new(plugin: Plugin, callbacks: Callbacks): PrefabUI

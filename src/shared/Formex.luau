@@ -34,10 +34,6 @@ export type LevelArray = {[number]: LevelData}
 
 	It is synchronized between the client and server.
 	Client-side uses Attribute subscriptions to maintain the in-memory structures.
-
-	The new helper properties (WallFolder, FloorFolder, ObjectFolder, ConnectedWalls, LevelData, etc.)
-	are not serialized and are only used at runtime to reference the actual Roblox instances.
-    - TODO: These are not implemented yet
 ]]
 
 -- Stored representation
@@ -96,10 +92,8 @@ export type WallData = {
 	BackBottomPart: Part?,
 	FrontTopPart: Part?,
 	BackTopPart: Part?,
-	ConnectedWalls: {number}, -- HELPER: walls connected to start or end point
-	ConnectedFloors: {number}, -- HELPER: floors connected to start or end point
-	ConnectedRoomFront: number?, -- HELPER: rooms on either side of wall
-	ConnectedRoomBack: number?, -- HELPER: rooms on either side of wall
+	FrontRoom: number?, -- HELPER: rooms on either side of wall
+	BackRoom: number?, -- HELPER: rooms on either side of wall
 }
 
 export type FloorData = {
@@ -123,9 +117,7 @@ export type FloorData = {
 	FloorClientPart: BasePart?,
 	FoundationClientPart: BasePart?,
 	CeilingClientPart: BasePart?,
-	ConnectedWalls: {number}, -- HELPER: walls connected to start or end point
-	ConnectedFloors: {number}, -- HELPER: floors connected to start or end point
-	ConnectedRooms: {number}, -- HELPER: rooms on either side of wall
+	Room: number, -- HELPER: rooms on either side of wall
 }
 
 export type ObjectData = {

@@ -4,8 +4,8 @@ FormexDesignWalls
 Handles wall design actions (placement, handles, paint/dropper).
 Exports:
 - Init(): load shared dependencies
-- ApplyPaintToTarget(target, wallSide): boolean
-- CopyPaintFromTarget(target, wallSide): boolean
+- ApplyPaintToTarget(input): boolean
+- CopyPaintFromTarget(input): boolean
 - ApplySelectedAppearance(overrides): boolean
 - GetSelectedWallData(): Formex.WallData?
 - UpdateHandles(plotInfo): ()
@@ -63,7 +63,7 @@ local getEditMode: () -> string
 local getCurrentLevel: () -> number
 local getViewSettings: () -> any
 local getSelectionType: () -> string
-local getSelectionPart: () -> Instance?
+local getSelectionData: () -> any?
 local getSelectionSnapshot: () -> any?
 local getLastInputInfo: () -> any?
 local getSnappedPoint: (BasePart, Vector3) -> Vector2int16
@@ -79,8 +79,7 @@ local isGhostActive: () -> boolean
 local getGhostType: () -> any?
 local notifyDesignModeChange: () -> ()
 local clearSelection: () -> ()
-local select: (Instance) -> boolean
-local getSelectionInfoFromInstance: (Instance?) -> (string?, number?, number?)
+local select: (any) -> boolean
 local selectPlotModelByIdAsync: (any, string, number, number, number?) -> ()
 local deleteAfterDelay: (Instance, number) -> ()
 local cancelAction: () -> ()
@@ -131,7 +130,7 @@ function Walls.Init()
 	getCurrentLevel = ctx.GetCurrentLevel
 	getViewSettings = ctx.GetViewSettings
 	getSelectionType = ctx.GetSelectionType
-	getSelectionPart = ctx.GetSelectionPart
+	getSelectionData = ctx.GetSelectionData
 	getSelectionSnapshot = ctx.GetSelectionSnapshot
 	getLastInputInfo = ctx.GetLastInputInfo
 	getSnappedPoint = ctx.GetSnappedPoint
@@ -148,7 +147,6 @@ function Walls.Init()
 	notifyDesignModeChange = ctx.NotifyDesignModeChange
 	clearSelection = ctx.ClearSelection
 	select = ctx.Select
-	getSelectionInfoFromInstance = ctx.GetSelectionInfoFromInstance
 	selectPlotModelByIdAsync = ctx.SelectPlotModelByIdAsync
 	deleteAfterDelay = ctx.DeleteAfterDelay
 	cancelAction = ctx.CancelAction
@@ -170,31 +168,6 @@ local function pointsEqual(a: Vector2int16, b: Vector2int16): boolean
 	return a.X == b.X and a.Y == b.Y
 end
 
--- TODO: Is this needed?
-local function getWallFrontPart(instance: Instance?): BasePart?
-	if not instance then return nil end	if instance:IsA("BasePart") then return instance end
-		if instance:IsA("Model") then
-		if instance.PrimaryPart then
-			return instance.PrimaryPart
-		end
-		local frontName = Formex.WallPart.FrontBottom
-		local frontPart = instance:FindFirstChild(frontName)
-		if frontPart and frontPart:IsA("BasePart") then return frontPart end	
-			for _, child in ipairs(instance:GetChildren()) do
-			if child:IsA("BasePart") then return child end		
-		end
-	end
-	return nil
-end
-
-local function getWallEndpoints(wallModel: Model): (Vector2int16, Vector2int16)
-	local startValue = wallModel:GetAttribute("Start") or Vector2.new(0, 0)
-	local endValue = wallModel:GetAttribute("End") or Vector2.new(0, 0)
-	local startPoint = Vector2int16.new(math.round(startValue.X), math.round(startValue.Y))
-	local endPoint = Vector2int16.new(math.round(endValue.X), math.round(endValue.Y))
-	return startPoint, endPoint
-end
-
 local function getLevelWallInfos(plotInfo: any, level: number): {WallInfo}
 	local results = {}
 	local plotData = plotInfo and plotInfo.PlotData
@@ -204,25 +177,16 @@ local function getLevelWallInfos(plotInfo: any, level: number): {WallInfo}
 	for _, wallData in pairs(levelData.Walls) do
 		local model = wallData.Part
 		if model and model:IsA("Model") then
-			local frontPart = getWallFrontPart(model)
-			if frontPart then
-				local startPoint = wallData.Start
-				local endPoint = wallData.End
-				if not startPoint or not endPoint then
-					startPoint, endPoint = getWallEndpoints(model)
-				end
-				if startPoint and endPoint then
-					local wallId = wallData.WallId or tonumber(model.Name)
-					if wallId then
-						table.insert(results, {
-							WallId = wallId,
-							Level = level,
-							Start = startPoint,
-							End = endPoint,
-							Part = model,
-						})
-					end
-				end
+			local startPoint = wallData.Start
+			local endPoint = wallData.End
+			if startPoint and endPoint and wallData.WallId then
+				table.insert(results, {
+					WallId = wallData.WallId,
+					Level = level,
+					Start = startPoint,
+					End = endPoint,
+					Part = model,
+				})
 			end
 		end
 	end
@@ -264,7 +228,8 @@ local function getHandleIcon(handle: BasePart?): GuiObject?
 	local billboard = handle:FindFirstChild("HandleBillboard")
 	if billboard and billboard:IsA("BillboardGui") then
 		local icon = billboard:FindFirstChild("Icon")
-		if icon and (icon:IsA("ImageButton") or icon:IsA("ImageLabel")) then return icon end	end
+		if icon and (icon:IsA("ImageButton") or icon:IsA("ImageLabel")) then return icon end
+	end
 
 	return nil
 end
@@ -283,7 +248,8 @@ local function getScreenRotationForDirection(direction: Vector3): number
 	local up = camera.CFrame.UpVector
 	local x = direction:Dot(right)
 	local y = direction:Dot(up)
-	if math.abs(x) <= Constants.Epsilon and math.abs(y) <= Constants.Epsilon then return 0 end	return math.deg(math.atan2(x, y))
+	if math.abs(x) <= Constants.Epsilon and math.abs(y) <= Constants.Epsilon then return 0 end
+	return math.deg(math.atan2(x, y))
 end
 
 local function getModelBottomCenter(model: Model): Vector3
@@ -316,7 +282,8 @@ local function buildWall(wallData: any, action: any, selection: Formex.Selection
 			Data = wallData,
 		},
 	}, selection)
-	if not results then return nil end	local changeResult = results[1]
+	if not results then return nil end
+	local changeResult = results[1]
 	return changeResult and changeResult.Result or nil
 end
 
@@ -326,7 +293,8 @@ local function safeBuildWall(wallData: any, action: any): (boolean, any)
 end
 
 local function getResultWallId(result: any): number?
-	if type(result) == "number" then return result end	if type(result) == "table" then
+	if type(result) == "number" then return result end
+	if type(result) == "table" then
 		if result.WallId then
 			return result.WallId
 		end
@@ -379,153 +347,53 @@ local function updateMergePreview(plotInfo: any, levelIndex: number, validation:
 	end
 end
 
-local function getWallBackPart(model: Model): BasePart?
-	local backPart = model:FindFirstChild(Formex.WallPart.BackBottom)
-	if backPart and backPart:IsA("BasePart") then return backPart end
-	return nil
-end
-
-local function getWallModelFromInstance(instance: Instance?): Model?
-	if not instance then return nil end
-	
-	if instance:IsA("BasePart") then
-		instance = instance.Parent
-	end
-
-	if instance:IsA("Model") then
-		local parent = instance.Parent
-		if parent and parent:IsA("Folder") and parent.Name == "Walls" then
-			return instance
-		end
-		return nil
-	end
-	
-	return nil
-end
-
-local function getWallSideFromTarget(target: Instance, wallSideOverride: Formex.ObjectSide?): (Model?, WallSide?)	
-	-- TODO Would this be more efficient with WallData and use Part references?
-
-	local model = getWallModelFromInstance(target)
-	if not model then
-		return nil, nil
-	end
-
-	if wallSideOverride == Formex.ObjectSide.Back then
-		return model, Formex.ObjectSide.Back
-	elseif wallSideOverride == Formex.ObjectSide.Front then
-		return model, Formex.ObjectSide.Front
-	end
-
-	if target.Name == Formex.WallPart.FrontBottom or target.Name == Formex.WallPart.FrontTop then
-		return model, Formex.ObjectSide.Front
-	end
-	if target.Name == Formex.WallPart.BackBottom or target.Name == Formex.WallPart.BackTop then
-		return model, Formex.ObjectSide.Back
-	end
-
-	return nil, nil
-end
-
-local function getWallTopPart(model: Model, name: string): BasePart?
-	local child = model:FindFirstChild(name)
-	if child and child:IsA("BasePart") then return child end
-	return nil
-end
-
-local function getWallDataFromPart(wallModel: Model, wallId: number, level: number): Formex.WallData
-	-- TODO Would this be more efficient with WallData and use Part references?
-
-	local startPoint, endPoint = getWallEndpoints(wallModel)
-	local frontPart = getWallFrontPart(wallModel)
-	local backPart = getWallBackPart(wallModel)
-	local frontTopPart = getWallTopPart(wallModel, Formex.WallPart.FrontTop)
-	local backTopPart = getWallTopPart(wallModel, Formex.WallPart.BackTop)
-	local height = wallModel:GetAttribute("WallHeight") or Formex.LevelHeight
-	local frontSplitHeight = wallModel:GetAttribute("FrontSplitHeight") or 0
-	local backSplitHeight = wallModel:GetAttribute("BackSplitHeight") or 0
-
-	local frontTopMaterial = wallModel:GetAttribute("FrontTopMaterial") or Formex.DefaultWallMaterial
-	local frontBottomMaterial = wallModel:GetAttribute("FrontBottomMaterial") or frontTopMaterial
-	local backTopMaterial = wallModel:GetAttribute("BackTopMaterial") or frontTopMaterial
-	local backBottomMaterial = wallModel:GetAttribute("BackBottomMaterial") or backTopMaterial
-
-	local frontTopColor = wallModel:GetAttribute("FrontTopColor") or Color3.new(1, 1, 1)
-	local frontBottomColor = wallModel:GetAttribute("FrontBottomColor") or frontTopColor
-	local backTopColor = wallModel:GetAttribute("BackTopColor") or frontTopColor
-	local backBottomColor = wallModel:GetAttribute("BackBottomColor") or backTopColor
-
-	return {
-		WallId = wallId,
-		Level = level,
-		Start = startPoint,
-		End = endPoint,
-		Height = height,
-		FrontSplitHeight = frontSplitHeight,
-		BackSplitHeight = backSplitHeight,
-		FrontTopMaterial = frontTopMaterial,
-		FrontBottomMaterial = frontBottomMaterial,
-		BackTopMaterial = backTopMaterial,
-		BackBottomMaterial = backBottomMaterial,
-		FrontTopColor = frontTopColor,
-		FrontBottomColor = frontBottomColor,
-		BackTopColor = backTopColor,
-		BackBottomColor = backBottomColor,
-		Part = wallModel,
-		FrontPart = frontPart,
-		BackPart = backPart,
-		FrontTopPart = frontTopPart,
-		BackTopPart = backTopPart,
-	}
+local function getWallDataFromPlot(plotInfo: any, level: number, wallId: number): Formex.WallData?
+	local plotData = plotInfo and plotInfo.PlotData
+	local levelData = plotData and plotData.Levels and plotData.Levels[level]
+	return levelData and levelData.Walls and levelData.Walls[wallId] or nil
 end
 
 function Walls.GetSelectedWallData(): Formex.WallData?
-	local selectionPart = getSelectionPart()
-	local wallModel = getWallModelFromInstance(selectionPart)
-	if not wallModel then return nil end
-	local level = tonumber(wallModel.Parent.Parent.Name) or getCurrentLevel()
-	local wallId = tonumber(wallModel.Name) or 0
-	return getWallDataFromPart(wallModel, wallId, level)
+	if getSelectionType() ~= Enums.SelectionType.Wall then return nil end
+	return getSelectionData()
 end
 
-local function applyWallAppearance(plotInfo: any, wallModel: Model, overrides: {[string]: any})
+local function applyWallAppearance(plotInfo: any, wallData: Formex.WallData, overrides: {[string]: any})
 	if not plotInfo or not plotInfo.PlotPart then return end
-	local wallId = tonumber(wallModel.Name) or 0
-	local level = tonumber(wallModel.Parent.Parent.Name) or getCurrentLevel()
-	local current = getWallDataFromPart(wallModel, wallId, level)
+	if not wallData or not wallData.Part then return end
 
-	local height = current.Height
+	local height = wallData.Height
 	if overrides.Height ~= nil then
 		height = overrides.Height == false and nil or overrides.Height
 	end
 
-	local frontSplitHeight = current.FrontSplitHeight
+	local frontSplitHeight = wallData.FrontSplitHeight
 	if overrides.FrontSplitHeight ~= nil then
 		frontSplitHeight = overrides.FrontSplitHeight == false and 0 or overrides.FrontSplitHeight
 	end
 
-	local backSplitHeight = current.BackSplitHeight
+	local backSplitHeight = wallData.BackSplitHeight
 	if overrides.BackSplitHeight ~= nil then
 		backSplitHeight = overrides.BackSplitHeight == false and 0 or overrides.BackSplitHeight
 	end
 
 	local updated = {
-		WallId = current.WallId,
-		Level = current.Level,
-		Start = current.Start,
-		End = current.End,
+		WallId = wallData.WallId,
+		Level = wallData.Level,
+		Start = wallData.Start,
+		End = wallData.End,
 		Height = height,
 		FrontSplitHeight = frontSplitHeight,
 		BackSplitHeight = backSplitHeight,
-		FrontTopMaterial = overrides.FrontTopMaterial or current.FrontTopMaterial,
-		FrontBottomMaterial = overrides.FrontBottomMaterial or current.FrontBottomMaterial,
-		BackTopMaterial = overrides.BackTopMaterial or current.BackTopMaterial,
-		BackBottomMaterial = overrides.BackBottomMaterial or current.BackBottomMaterial,
-		FrontTopColor = overrides.FrontTopColor or current.FrontTopColor,
-		FrontBottomColor = overrides.FrontBottomColor or current.FrontBottomColor,
-		BackTopColor = overrides.BackTopColor or current.BackTopColor,
-		BackBottomColor = overrides.BackBottomColor or current.BackBottomColor,
-		Part = wallModel,
+		FrontTopMaterial = overrides.FrontTopMaterial or wallData.FrontTopMaterial,
+		FrontBottomMaterial = overrides.FrontBottomMaterial or wallData.FrontBottomMaterial,
+		BackTopMaterial = overrides.BackTopMaterial or wallData.BackTopMaterial,
+		BackBottomMaterial = overrides.BackBottomMaterial or wallData.BackBottomMaterial,
+		FrontTopColor = overrides.FrontTopColor or wallData.FrontTopColor,
+		FrontBottomColor = overrides.FrontBottomColor or wallData.FrontBottomColor,
+		BackTopColor = overrides.BackTopColor or wallData.BackTopColor,
+		BackBottomColor = overrides.BackBottomColor or wallData.BackBottomColor,
+		Part = wallData.Part,
 	}
 
 	Formex.Walls.Edit(updated, plotInfo.PlotPart, false)
@@ -537,18 +405,15 @@ end
 function Walls.ApplySelectedAppearance(overrides: {[string]: any}): boolean
 	local plotInfo = FormexClient.CurrentPlot
 	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then return false end
-	local wallModel = getWallModelFromInstance(getSelectionPart())
-	if not wallModel then return false end
-	applyWallAppearance(plotInfo, wallModel, overrides)
+	local wallData = getSelectionData()
+	if not wallData then return false end
+	applyWallAppearance(plotInfo, wallData, overrides)
 	return true
 end
 
-function Walls.ApplyPaintToTarget(target: Instance, wallSide: Formex.ObjectSide?): boolean
-	local wallModel = getWallModelFromInstance(target)
-	if not wallModel then return false end
-
-	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid then return false end
+function Walls.ApplyPaintToTarget(input: any): boolean
+	if not input or not input.PlotInfo or not input.WallData or not input.WallSide then return false end
+	local plotInfo = input.PlotInfo
 
 	local paintSettings = getWallPaintSettings() :: WallPaintSettings
 
@@ -556,7 +421,7 @@ function Walls.ApplyPaintToTarget(target: Instance, wallSide: Formex.ObjectSide?
 		Height = paintSettings.Height == nil and false or paintSettings.Height,
 	}
 
-	if wallSide == Formex.ObjectSide.Front then
+	if input.WallSide == Formex.ObjectSide.Front then
 		overrides.FrontSplitHeight = paintSettings.SplitHeight == nil and false or paintSettings.SplitHeight
 		overrides.FrontTopMaterial = paintSettings.TopMaterial
 		overrides.FrontBottomMaterial = paintSettings.BottomMaterial
@@ -570,27 +435,23 @@ function Walls.ApplyPaintToTarget(target: Instance, wallSide: Formex.ObjectSide?
 		overrides.BackBottomColor = paintSettings.BottomColor
 	end
 
-	applyWallAppearance(plotInfo, wallModel, overrides)
+	applyWallAppearance(plotInfo, input.WallData, overrides)
 	return true
 end
 
-function Walls.CopyPaintFromTarget(target: Instance, wallSide: Formex.ObjectSide?): boolean
-	local wallModel, side = getWallSideFromTarget(target, wallSide)
-	if not wallModel or not side then return false end
-	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then return false end
-	local wallId = tonumber(wallModel.Name) or 0
-	local level = tonumber(wallModel.Parent.Parent.Name) or getCurrentLevel()
-	local appearance = getWallDataFromPart(wallModel, wallId, level)
-	local splitHeight = side == "Front" and appearance.FrontSplitHeight or appearance.BackSplitHeight
-	local topMaterial = side == "Front" and appearance.FrontTopMaterial or appearance.BackTopMaterial
-	local bottomMaterial = side == "Front" and appearance.FrontBottomMaterial or appearance.BackBottomMaterial
-	local topColor = side == "Front" and appearance.FrontTopColor or appearance.BackTopColor
-	local bottomColor = side == "Front" and appearance.FrontBottomColor or appearance.BackBottomColor
+function Walls.CopyPaintFromTarget(input: any): boolean
+	if not input or not input.WallData or not input.WallSide then return false end
+	local wallData = input.WallData
+	local isFront = input.WallSide == Formex.ObjectSide.Front
+	local splitHeight = isFront and wallData.FrontSplitHeight or wallData.BackSplitHeight
+	local topMaterial = isFront and wallData.FrontTopMaterial or wallData.BackTopMaterial
+	local bottomMaterial = isFront and wallData.FrontBottomMaterial or wallData.BackBottomMaterial
+	local topColor = isFront and wallData.FrontTopColor or wallData.BackTopColor
+	local bottomColor = isFront and wallData.FrontBottomColor or wallData.BackBottomColor
 
 	updateDesignState({
 		Wall = {
-			Height = appearance.Height == nil and false or appearance.Height,
+			Height = wallData.Height == nil and false or wallData.Height,
 			SplitHeight = splitHeight == nil and 0 or splitHeight,
 			TopMaterial = topMaterial,
 			BottomMaterial = bottomMaterial,
@@ -602,13 +463,15 @@ function Walls.CopyPaintFromTarget(target: Instance, wallSide: Formex.ObjectSide
 	return true
 end
 
-local function applyWallTransform(plotPart: BasePart, wall: WallInfo)
-	if not wall.Part then return end
-	local wallData = getWallDataFromPart(wall.Part, wall.WallId, wall.Level)
+local function applyWallTransform(plotInfo: any, wall: WallInfo)
+	if not wall.Part or not plotInfo or not plotInfo.PlotPart then return end
+	local baseData = getWallDataFromPlot(plotInfo, wall.Level, wall.WallId)
+	if not baseData then return end
+	local wallData = table.clone(baseData)
 	wallData.Start = wall.Start
 	wallData.End = wall.End
 	wallData.Part = wall.Part
-	Formex.Walls.Edit(wallData, plotPart, false)
+	Formex.Walls.Edit(wallData, plotInfo.PlotPart, false)
 end
 
 local function isPointOnSegment(point: Vector2int16, startPoint: Vector2int16, endPoint: Vector2int16): boolean
@@ -716,7 +579,8 @@ end
 
 local function splitWallAtPoint(plotInfo: any, wall: WallInfo, splitPoint: Vector2int16): (boolean, Formex.WallData?, Formex.WallData?)
 	if not plotInfo.PlotPart or not wall.Part then return false end
-	local baseData = getWallDataFromPart(wall.Part, wall.WallId, wall.Level)
+	local baseData = getWallDataFromPlot(plotInfo, wall.Level, wall.WallId)
+	if not baseData then return false end
 	local wallDataA = table.clone(baseData)
 	wallDataA.WallId = 0
 	wallDataA.Level = wall.Level
@@ -847,7 +711,9 @@ local function onWallFlip()
 	if not selectedWall or not input or not input.PlotInfo or not input.PlotInfo.PlotPart then return end
 	local wallModel = selectedWall.Part
 	if not wallModel then return end
-	local wallData = getWallDataFromPart(wallModel, selectedWall.WallId, selectedWall.Level)
+	local wallData = getWallDataFromPlot(input.PlotInfo, selectedWall.Level, selectedWall.WallId)
+	if not wallData then return end
+	wallData = table.clone(wallData)
 	wallData.Start = selectedWall.End
 	wallData.End = selectedWall.Start
 	wallData.Part = nil
@@ -870,7 +736,8 @@ local function onWallDivide()
 	local startPoint = selectedWall.Start
 	local endPoint = selectedWall.End
 	local selectedLevel = selectedWall.Level
-	if not hasWallSplitRoom(startPoint, endPoint) then return end	local splitPoint = getWallSplitPoint(startPoint, endPoint)
+	if not hasWallSplitRoom(startPoint, endPoint) then return end
+	local splitPoint = getWallSplitPoint(startPoint, endPoint)
 
 	local ok, resultA, resultB = splitWallAtPoint(input.PlotInfo, {
 		WallId = selectedWall.WallId,
@@ -990,47 +857,33 @@ local function updateWallHandles(plotInfo: any)
 	if getDesignMode() ~= Enums.DesignMode.Wall
 	or getActionType() ~= Enums.ActionType.Select
 	or getSelectionType() ~= Enums.SelectionType.Wall
-	or not getSelectionPart()
 	or not plotInfo
 	or not plotInfo.PlotPart then
 		Walls.ClearSelection()
 		return
 	end
 
-	local selectionPart = getSelectionPart()
-	local selectionKind, partId, level = getSelectionInfoFromInstance(selectionPart)
-	if not selectionKind or selectionKind ~= Enums.SelectionType.Wall or not level then
+	local wallData = getSelectionData()
+	if not wallData or not wallData.Part then
 		Walls.ClearSelection()
 		return
 	end
 
-	local wallModel = selectionPart
-	if wallModel and wallModel:IsA("BasePart") then
-		local ancestor = wallModel:FindFirstAncestorOfClass("Model")
-		if ancestor then
-			wallModel = ancestor
-		end
-	end
-	if not wallModel or not wallModel:IsA("Model") then
+	local wallModel = wallData.Part
+	local startPoint = wallData.Start
+	local endPoint = wallData.End
+	if not startPoint or not endPoint then
 		Walls.ClearSelection()
 		return
 	end
-	local frontPart = getWallFrontPart(wallModel)
-	if not frontPart then
-		Walls.ClearSelection()
-		return
-	end
-
-	local startPoint, endPoint = getWallEndpoints(wallModel)
-	local wallId = partId or tonumber(wallModel.Name) or 0
 	selectedWall = {
-		WallId = wallId,
-		Level = level,
+		WallId = wallData.WallId,
+		Level = wallData.Level,
 		Start = startPoint,
 		End = endPoint,
 		Part = wallModel,
 	}
-	Highlight.UpdateWallEdgePreview(plotInfo, level, startPoint, endPoint, true)
+	Highlight.UpdateWallEdgePreview(plotInfo, wallData.Level, startPoint, endPoint, true)
 
 	local canSplit = hasWallSplitRoom(startPoint, endPoint)
 	local splitPoint = getWallSplitPoint(startPoint, endPoint)
@@ -1049,7 +902,7 @@ local function updateWallHandles(plotInfo: any)
 	wallHandleDivide = Handles.CreateHandle("WallHandleDivide", divideHandleColor, Formex.Icons.WallDivide, onWallDivide)
 
 	local viewSettings = getViewSettings()
-	local handleY = getWallHandleY(level, viewSettings.HandleLocation or Enums.HandleLocation.Middle)
+	local handleY = getWallHandleY(wallData.Level, viewSettings.HandleLocation or Enums.HandleLocation.Middle)
 	local function toWorld(point: Vector2)
 		return plotInfo.PlotPart.CFrame:PointToWorldSpace(Vector3.new(point.X, handleY, point.Y))
 	end
@@ -1113,7 +966,8 @@ local function updateWallGhost(input: any)
 	and (snappedEndPoint.X ~= wallStart.X or snappedEndPoint.Y ~= wallStart.Y) then
 		wallBuildMode = "Drag"
 	end
-	if lastPreviewPoint and snappedEndPoint == lastPreviewPoint then return end	lastPreviewPoint = snappedEndPoint
+	if lastPreviewPoint and snappedEndPoint == lastPreviewPoint then return end
+	lastPreviewPoint = snappedEndPoint
 
 	ensureWallGhost(input.PlotInfo.PlotPart, wallStart, snappedEndPoint)
 
@@ -1133,7 +987,8 @@ end
 local function updateWallStartGhost(input: any)
 	if not input.SnapPoint or not input.PlotInfo.PlotPart then return end
 	local startPoint = input.SnapPoint
-	if lastPreviewPoint and startPoint == lastPreviewPoint then return end	lastPreviewPoint = startPoint
+	if lastPreviewPoint and startPoint == lastPreviewPoint then return end
+	lastPreviewPoint = startPoint
 
 	ensureWallGhost(input.PlotInfo.PlotPart, startPoint, startPoint)
 	updateGhostValidity(isPointInOwnedSegments(input.PlotInfo, Vector2.new(startPoint.X, startPoint.Y)))
@@ -1148,14 +1003,16 @@ local function updateWallMoveGhost(input: any)
 	local newEnd = endPoint
 
 	if activeWallHandle == "Center" then
-		if not input.HitPosition or not moveDragOriginLocal then return end		local currentLocal = getLocalXZ(input.PlotInfo.PlotPart, input.HitPosition)
+		if not input.HitPosition or not moveDragOriginLocal then return end
+		local currentLocal = getLocalXZ(input.PlotInfo.PlotPart, input.HitPosition)
 		local delta = currentLocal - moveDragOriginLocal
 		local startRaw = Vector2.new(startPoint.X + delta.X, startPoint.Y + delta.Y)
 		local endRaw = Vector2.new(endPoint.X + delta.X, endPoint.Y + delta.Y)
 		newStart = toSnappedVector2int16(startRaw)
 		newEnd = toSnappedVector2int16(endRaw)
 	else
-		if not input.SnapPoint then return end		local rawPoint = Vector2.new(input.SnapPoint.X, input.SnapPoint.Y)
+		if not input.SnapPoint then return end
+		local rawPoint = Vector2.new(input.SnapPoint.X, input.SnapPoint.Y)
 		if activeWallHandle == "Start" or activeWallHandle == "StartSolo" then
 			local snapped = snapWallEndPoint(Vector2.new(endPoint.X, endPoint.Y), rawPoint)
 			newStart = toSnappedVector2int16(snapped)
@@ -1173,7 +1030,8 @@ local function updateWallMoveGhost(input: any)
 	local updatedWalls: {[number]: WallInfo} = {}
 	local function setUpdatedWall(wallId: number, startValue: Vector2int16, endValue: Vector2int16)
 		local original = moveWallOriginals[wallId]
-		if not original then return end		updatedWalls[wallId] = {
+		if not original then return end
+		updatedWalls[wallId] = {
 			WallId = original.WallId,
 			Level = original.Level,
 			Start = startValue,
@@ -1237,7 +1095,7 @@ local function updateWallMoveGhost(input: any)
 	end
 
 	for _, wall in pairs(updatedWalls) do
-		applyWallTransform(input.PlotInfo.PlotPart, wall)
+		applyWallTransform(input.PlotInfo, wall)
 	end
 	moveWallUpdated = updatedWalls
 
@@ -1307,7 +1165,8 @@ local function finalizeWall(plotInfo: any, endPosition: Vector3)
 end
 
 local function finalizeWallMove(plotInfo: any)
-	if not moveWallOriginal or not movePreviewStart or not movePreviewEnd then return end	local originalWall = moveWallOriginal
+	if not moveWallOriginal or not movePreviewStart or not movePreviewEnd then return end
+	local originalWall = moveWallOriginal
 
 	local updates = moveWallUpdated
 	if not updates or next(updates) == nil then
@@ -1447,7 +1306,7 @@ function Walls.CancelAction()
 		local plotInfo = FormexClient.CurrentPlot
 		if plotInfo and plotInfo.IsValid and plotInfo.PlotPart then
 			for _, wall in pairs(moveWallOriginals) do
-				applyWallTransform(plotInfo.PlotPart, wall)
+				applyWallTransform(plotInfo, wall)
 			end
 		end
 	end
@@ -1489,17 +1348,18 @@ end
 function Walls.HandlePrimaryClick(input: any)
 	local actionType = getActionType()
 	if actionType == Enums.ActionType.Select then
-		local currentSelection = getSelectionPart()
-		local hadSelection = getSelectionType() ~= Enums.SelectionType.None or currentSelection ~= nil
-		if hadSelection and input.Target and currentSelection then
-			if input.Target == currentSelection
-			or input.Target:IsDescendantOf(currentSelection)
-			or currentSelection:IsDescendantOf(input.Target) then
-				return
-			end
+		local selectionType = getSelectionType()
+		local selectionData = getSelectionData()
+		local hadSelection = selectionType ~= Enums.SelectionType.None
+		if hadSelection
+			and selectionType == Enums.SelectionType.Wall
+			and input.WallData
+			and selectionData
+			and input.WallData == selectionData then
+			return
 		end
 
-		local selected = input.Target and select(input.Target) or false
+		local selected = select(input)
 		if selected then return end
 		if hadSelection then
 			clearSelection()

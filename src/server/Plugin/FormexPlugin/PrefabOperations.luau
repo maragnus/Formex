@@ -47,7 +47,8 @@ end
 
 local function setSubtractVisibility(root: Model, visible: boolean)
 	local subtract = root:FindFirstChild(Constants.Prefab.SubtractModelName)
-	if not (subtract and subtract:IsA("Model")) then return end	for _, child in ipairs(subtract:GetDescendants()) do
+	if not (subtract and subtract:IsA("Model")) then return end
+	for _, child in ipairs(subtract:GetDescendants()) do
 		if child:IsA("BasePart") then
 			child.Transparency = visible and 0.35 or 1
 			child.CanCollide = false
@@ -60,7 +61,8 @@ end
 
 local function hasSubtractParts(subtract: Model): boolean
 	for _, child in ipairs(subtract:GetDescendants()) do
-		if child:IsA("BasePart") then return true end	end
+		if child:IsA("BasePart") then return true end
+	end
 	return false
 end
 
@@ -87,7 +89,8 @@ end
 
 local function isSubtractVisible(subtract: Model): boolean
 	for _, child in ipairs(subtract:GetDescendants()) do
-		if child:IsA("BasePart") and child.Transparency < 0.99 then return true end	end
+		if child:IsA("BasePart") and child.Transparency < 0.99 then return true end
+	end
 	return false
 end
 
@@ -158,8 +161,10 @@ end
 
 local function getSizeGuide(root: Model): BasePart?
 	local stage = StageManager.GetStage(root)
-	if not stage then return nil end	local guide = stage:FindFirstChild(Constants.Prefab.SizeGuideName)
-	if guide and guide:IsA("BasePart") then return guide end	return nil
+	if not stage then return nil end
+	local guide = stage:FindFirstChild(Constants.Prefab.SizeGuideName)
+	if guide and guide:IsA("BasePart") then return guide end
+	return nil
 end
 
 local function ensureSizeGuide(root: Model): BasePart?
@@ -247,7 +252,8 @@ local function wrapAsPrefab(instance: Instance, workspaceRoot: Folder): Model
 end
 
 local function ensurePrefabRoot(instance: Instance, workspaceRoot: Folder): Model?
-	if not instance:IsDescendantOf(Workspace) then return nil end	if instance:IsA("Model") and PrefabCatalog.IsPrefabRoot(instance) then
+	if not instance:IsDescendantOf(Workspace) then return nil end
+	if instance:IsA("Model") and PrefabCatalog.IsPrefabRoot(instance) then
 		if not instance:IsDescendantOf(workspaceRoot) then
 			instance.Parent = workspaceRoot
 		end
@@ -339,7 +345,8 @@ end
 
 function PrefabOperations.AutoPosition(root: Model): boolean
 	sanitizePrefabTransforms(root)
-	if not StageManager.GetStage(root) then return false end	local prefabModel = PrefabMetadata.GetPrefabModel(root) or root
+	if not StageManager.GetStage(root) then return false end
+	local prefabModel = PrefabMetadata.GetPrefabModel(root) or root
 	local minBounds, maxBounds = getWorldBounds(prefabModel)
 	local center = (minBounds + maxBounds) * 0.5
 
@@ -365,7 +372,8 @@ function PrefabOperations.AutoPosition(root: Model): boolean
 		offset = Vector3.new(stageCenter.X - center.X, floorPlaneY - minBounds.Y, stageCenter.Z - center.Z)
 	end
 
-	if offset.Magnitude <= 1e-4 then return false end	shiftModel(prefabModel, offset)
+	if offset.Magnitude <= 1e-4 then return false end
+	shiftModel(prefabModel, offset)
 	local subtract = root:FindFirstChild(Constants.Prefab.SubtractModelName)
 	if subtract and subtract:IsA("Model") then
 		shiftModel(subtract, offset)
@@ -391,8 +399,10 @@ end
 function PrefabOperations.ApplySizeGuide(root: Model)
 	sanitizePrefabTransforms(root)
 	local stage = StageManager.GetStage(root)
-	if not stage then return nil end	local guide = stage:FindFirstChild(Constants.Prefab.SizeGuideName)
-	if not (guide and guide:IsA("BasePart")) then return nil end	local attributes = PrefabMetadata.ReadAttributes(root)
+	if not stage then return nil end
+	local guide = stage:FindFirstChild(Constants.Prefab.SizeGuideName)
+	if not (guide and guide:IsA("BasePart")) then return nil end
+	local attributes = PrefabMetadata.ReadAttributes(root)
 	local size = PrefabSizing.SnapSize(guide.Size, attributes.ObjectMount)
 	PrefabMetadata.ApplyAttributes(root, { Size = size })
 	StageManager.RefreshSizeGuide(root, size)
@@ -417,7 +427,8 @@ end
 
 function PrefabOperations.ToggleSubtract(root: Model): Model?
 	local attributes = PrefabMetadata.ReadAttributes(root)
-	if not isDoorWindow(attributes.ObjectMount) then return nil end	local subtract = ensureSubtractModel(root)
+	if not isDoorWindow(attributes.ObjectMount) then return nil end
+	local subtract = ensureSubtractModel(root)
 	local anyVisible = isSubtractVisible(subtract)
 	if anyVisible then
 		setSubtractVisibility(root, false)

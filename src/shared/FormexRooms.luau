@@ -26,7 +26,8 @@ local cacheByPlot = setmetatable({}, { __mode = "k" }) :: {[any]: RoomCache}
 
 local function getCache(plotData: any): RoomCache
 	local cache = cacheByPlot[plotData]
-	if cache then return cache end	cache = {
+	if cache then return cache end
+	cache = {
 		WallKeysByLevel = {},
 		RoomSeedsByLevel = {},
 	}
@@ -134,10 +135,13 @@ end
 
 local function floorTouchesRoom(formex: any, roomPoints: {Vector2int16}, floorPoints: {Vector2int16}): boolean
 	local epsilon = formex.EPSILON
-	if FormexPoly.PolygonsIntersect(roomPoints, floorPoints, epsilon) then return true end	for _, point in ipairs(floorPoints) do
-		if FormexPoly.IsPointInsidePolygon(Vector2.new(point.X, point.Y), roomPoints, true, epsilon) then return true end	end
+	if FormexPoly.PolygonsIntersect(roomPoints, floorPoints, epsilon) then return true end
+	for _, point in ipairs(floorPoints) do
+		if FormexPoly.IsPointInsidePolygon(Vector2.new(point.X, point.Y), roomPoints, true, epsilon) then return true end
+	end
 	for _, point in ipairs(roomPoints) do
-		if FormexPoly.IsPointInsidePolygon(Vector2.new(point.X, point.Y), floorPoints, true, epsilon) then return true end	end
+		if FormexPoly.IsPointInsidePolygon(Vector2.new(point.X, point.Y), floorPoints, true, epsilon) then return true end
+	end
 	return false
 end
 
@@ -245,7 +249,8 @@ local function buildConnections(formex: any, plotData: any, roomsByLevel: {[numb
 		local idB = roomB.RoomId
 		local key = idA < idB and (tostring(idA) .. ":" .. tostring(idB)) or (tostring(idB) .. ":" .. tostring(idA))
 		local existing = connectionMap[key]
-		if existing then return existing end		local connection = {
+		if existing then return existing end
+		local connection = {
 			Room1 = roomA,
 			Room2 = roomB,
 			IsConnected = false,
@@ -278,8 +283,8 @@ local function buildConnections(formex: any, plotData: any, roomsByLevel: {[numb
 			local roomLeft = findRoomAtPoint(formex, rooms, mid + normal * offset)
 			local roomRight = findRoomAtPoint(formex, rooms, mid - normal * offset)
 
-			wall.ConnectedRoomFront = roomLeft and roomLeft.RoomId or nil
-			wall.ConnectedRoomBack = roomRight and roomRight.RoomId or nil
+			wall.FrontRoom = roomLeft and roomLeft.RoomId or nil
+			wall.BackRoom = roomRight and roomRight.RoomId or nil
 
 			if roomLeft and roomRight and roomLeft.RoomId ~= roomRight.RoomId then
 				local connection = getConnection(roomLeft, roomRight)

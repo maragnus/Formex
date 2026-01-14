@@ -174,7 +174,8 @@ local function updateRoomHighlight(plotInfo: any, room: any)
 end
 
 local function getCursorLocalPoint(plotInfo: any, input: any): Vector2?
-	if not plotInfo or not plotInfo.PlotPart then return nil end	if input and input.HitPosition then
+	if not plotInfo or not plotInfo.PlotPart then return nil end
+	if input and input.HitPosition then
 		return getLocalXZ(plotInfo.PlotPart, input.HitPosition)
 	end
 	if input and input.LayoutTile then
@@ -276,7 +277,8 @@ end
 local function beginPointMove(point: Vector2int16)
 	local room = getSelectionData()
 	local input = getLastInputInfo()
-	if not room or not input or not input.PlotInfo or not input.PlotInfo.PlotPart then return end	local editMode = getEditMode()
+	if not room or not input or not input.PlotInfo or not input.PlotInfo.PlotPart then return end
+	local editMode = getEditMode()
 	local roomWallSet = nil
 	local roomFloorSet = nil
 	if editMode == Enums.EditMode.DisconnectMove then
@@ -370,7 +372,8 @@ local function updatePointMovePreview(plotInfo: any, input: any)
 end
 
 local function updateMovePreview(plotInfo: any, input: any)
-	if not activeMove then return end	if activeMove.Kind == "Point" then
+	if not activeMove then return end
+	if activeMove.Kind == "Point" then
 		updatePointMovePreview(plotInfo, input)
 		return
 	end
@@ -684,7 +687,8 @@ local function finalizePointMove(plotInfo: any)
 end
 
 local function finalizeMove(plotInfo: any)
-	if not activeMove then return end	if activeMove.Kind == "Point" then
+	if not activeMove then return end
+	if activeMove.Kind == "Point" then
 		finalizePointMove(plotInfo)
 	else
 		finalizeWallMove(plotInfo)
@@ -832,7 +836,8 @@ function Rooms.HandleUpdate(input: any)
 end
 
 function Rooms.HandlePrimaryClick(input: any): boolean
-	if getActionType() ~= Enums.ActionType.Select then return false end	local plotInfo = input and input.PlotInfo or nil
+	if getActionType() ~= Enums.ActionType.Select then return false end
+	local plotInfo = input and input.PlotInfo or nil
 	if not plotInfo or not plotInfo.PlotPart then return false end
 	local cursorPoint = getCursorLocalPoint(plotInfo, input)
 	local levelIndex = getCurrentLevel()

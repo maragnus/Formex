@@ -89,7 +89,8 @@ local function ensureSelectionHighlight(): Highlight
 end
 
 function FormexDesignHighlights.IsHighlightInstance(instance: Instance?): boolean
-	if not instance then return false end	return selectionHighlight ~= nil and instance == selectionHighlight
+	if not instance then return false end
+	return selectionHighlight ~= nil and instance == selectionHighlight
 end
 
 function FormexDesignHighlights.UpdateSelectionHighlight()
@@ -334,12 +335,14 @@ end
 
 local function getLevelFolder(plotInfo: any, levelIndex: number): Instance?
 	local plotPart = plotInfo and plotInfo.PlotPart
-	if not plotPart then return nil end	return plotPart:FindFirstChild(tostring(levelIndex))
+	if not plotPart then return nil end
+	return plotPart:FindFirstChild(tostring(levelIndex))
 end
 
 local function getLevelFolderChild(plotInfo: any, levelIndex: number, name: string): Instance?
 	local levelFolder = getLevelFolder(plotInfo, levelIndex)
-	if not levelFolder then return nil end	return levelFolder:FindFirstChild(name)
+	if not levelFolder then return nil end
+	return levelFolder:FindFirstChild(name)
 end
 
 function FormexDesignHighlights.UpdateFloorEdgePreview(

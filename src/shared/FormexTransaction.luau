@@ -85,7 +85,8 @@ local function isZeroLength(startPoint: Vector2int16, endPoint: Vector2int16): b
 end
 
 local function snapToGrid(value: number, grid: number): number
-	if grid <= 0 then return value end	return math.round(value / grid) * grid
+	if grid <= 0 then return value end
+	return math.round(value / grid) * grid
 end
 
 local function resolveWallHeight(value: number?, existing: number?): number
@@ -110,7 +111,8 @@ local function resolveSplitHeight(height: number, value: number?, existing: numb
 	if resolved == nil then
 		resolved = existing
 	end
-	if resolved == nil or resolved <= 0 or height <= Formex.LayoutGridSize * 2 then return 0 end	local snapped = snapToGrid(resolved, Formex.LayoutGridSize)
+	if resolved == nil or resolved <= 0 or height <= Formex.LayoutGridSize * 2 then return 0 end
+	local snapped = snapToGrid(resolved, Formex.LayoutGridSize)
 	local maxSplit = height - Formex.LayoutGridSize
 	return math.clamp(snapped, Formex.LayoutGridSize, maxSplit)
 end
@@ -137,7 +139,8 @@ local function resolveColor(primary: Color3?, fallback: Color3?): Color3
 end
 
 local function normalizeMaterialId(value: number?): number?
-	if type(value) ~= "number" or value <= 0 then return nil end	return value
+	if type(value) ~= "number" or value <= 0 then return nil end
+	return value
 end
 
 local function resolveSideMaterials(entryTop: number?, entryBottom: number?, entryLegacy: number?, existingTop: number?, existingBottom: number?, existingLegacy: number?, defaultMaterial: number): (number, number)
@@ -348,7 +351,10 @@ local function segmentsIntersect(a: Vector2, b: Vector2, c: Vector2, d: Vector2)
 	local cross3 = cross2(cd, ca)
 	local cross4 = cross2(cd, cb)
 
-	if math.abs(cross1) <= EPSILON and Formex.Plot.IsPointOnSegment(c, a, b) then return true end	if math.abs(cross2Value) <= EPSILON and Formex.Plot.IsPointOnSegment(d, a, b) then return true end	if math.abs(cross3) <= EPSILON and Formex.Plot.IsPointOnSegment(a, c, d) then return true end	if math.abs(cross4) <= EPSILON and Formex.Plot.IsPointOnSegment(b, c, d) then return true end
+	if math.abs(cross1) <= EPSILON and Formex.Plot.IsPointOnSegment(c, a, b) then return true end
+	if math.abs(cross2Value) <= EPSILON and Formex.Plot.IsPointOnSegment(d, a, b) then return true end
+	if math.abs(cross3) <= EPSILON and Formex.Plot.IsPointOnSegment(a, c, d) then return true end
+	if math.abs(cross4) <= EPSILON and Formex.Plot.IsPointOnSegment(b, c, d) then return true end
 	return (cross1 > 0 and cross2Value < 0 or cross1 < 0 and cross2Value > 0)
 		and (cross3 > 0 and cross4 < 0 or cross3 < 0 and cross4 > 0)
 end
@@ -383,7 +389,8 @@ local function validateWallIntersections(levelData: Formex.LevelData, wallId: nu
 	local newEnd = toVector2(wall.End)
 	for existingId, existing in pairs(walls) do
 		if existingId ~= wallId and existing and existing.Start and existing.End then
-			if isWallIntersectionDisallowed(newStart, newEnd, toVector2(existing.Start), toVector2(existing.End)) then return false end		end
+			if isWallIntersectionDisallowed(newStart, newEnd, toVector2(existing.Start), toVector2(existing.End)) then return false end
+		end
 	end
 	return true
 end
@@ -402,7 +409,11 @@ local function isSegmentOnWall(segmentStart: Vector2int16, segmentEnd: Vector2in
 	local b1 = toVector2(wallStart)
 	local b2 = toVector2(wallEnd)
 	local wallDir = b2 - b1
-	if wallDir.Magnitude <= EPSILON then return false end	if math.abs(cross2(wallDir, a1 - b1)) > EPSILON then return false end	if math.abs(cross2(wallDir, a2 - b1)) > EPSILON then return false end	if not Formex.Plot.IsPointOnSegment(a1, b1, b2) then return false end	if not Formex.Plot.IsPointOnSegment(a2, b1, b2) then return false end	return true
+	if wallDir.Magnitude <= EPSILON then return false end
+	if math.abs(cross2(wallDir, a1 - b1)) > EPSILON then return false end
+	if math.abs(cross2(wallDir, a2 - b1)) > EPSILON then return false end
+	if not Formex.Plot.IsPointOnSegment(a1, b1, b2) then return false end
+	if not Formex.Plot.IsPointOnSegment(a2, b1, b2) then return false end	return true
 end
 
 local function getWallDirection2(wall: Formex.WallData): Vector2
@@ -462,8 +473,8 @@ local function buildWallFromSide(
 		BackBottomPart = wall.BackBottomPart,
 		FrontTopPart = wall.FrontTopPart,
 		BackTopPart = wall.BackTopPart,
-		ConnectedRoomFront = nil,
-		ConnectedRoomBack = nil,
+		FrontRoom = nil,
+		BackRoom = nil,
 	} :: Formex.WallData
 
 	resolved.FrontSplitHeight = resolveSplitHeight(height, resolved.FrontSplitHeight, nil)
@@ -530,7 +541,8 @@ local function mergeWallsForLevel(
 	end
 
 	table.sort(segmentEntries, function(a, b)
-		if a.Key == b.Key then return false end		return a.Key < b.Key
+		if a.Key == b.Key then return false end
+		return a.Key < b.Key
 	end)
 
 	local assignedIds = {}
@@ -603,8 +615,8 @@ local function mergeWallsForLevel(
 			local wallHeight = resolveWallHeight(wall.Height, nil)
 			local wallDir = getWallDirection2(wall)
 			local sameDirection = wallDir:Dot(primaryDir) >= 0
-			local frontRoom = wall.ConnectedRoomFront
-			local backRoom = wall.ConnectedRoomBack
+			local frontRoom = wall.FrontRoom
+			local backRoom = wall.BackRoom
 			local frontSide: "Front" | "Back" = "Front"
 			local backSide: "Front" | "Back" = "Back"
 			if not sameDirection then
@@ -662,8 +674,6 @@ local function mergeWallsForLevel(
 		newWall.Level = levelIndex
 		newWall.Start = orientedStart
 		newWall.End = orientedEnd
-		newWall.ConnectedRoomFront = nil
-		newWall.ConnectedRoomBack = nil
 
 		if newWall.WallId ~= (baseWall.WallId or 0) then
 			newWall.Part = nil
@@ -721,7 +731,8 @@ local function resolvePrefab(entry: Formex.ObjectData): Formex.ObjectPrefab?
 	if entry.Prefab and entry.Prefab.PrefabName then
 		prefabName = entry.Prefab.PrefabName
 	end
-	if not prefabName then return nil end	return Formex.Objects.GetPrefab(prefabName)
+	if not prefabName then return nil end
+	return Formex.Objects.GetPrefab(prefabName)
 end
 
 local function ensureObjectDesign(entry: Formex.ObjectData, prefab: Formex.ObjectPrefab)
@@ -805,15 +816,20 @@ local function isWallMount(mount: Formex.ObjectMount?): boolean
 end
 
 local function isObjectValid(plotData: Formex.PlotData, levelData: Formex.LevelData, entry: Formex.ObjectData, prefab: Formex.ObjectPrefab): boolean
-	if not entry.Position or not entry.Rotation then return false end	local _, boundsSize = Formex.Objects.GetPrefabBounds(prefab, nil)
+	if not entry.Position or not entry.Rotation then return false end
+	local _, boundsSize = Formex.Objects.GetPrefabBounds(prefab, nil)
 	local mount = prefab.ObjectMount
 
 	if isWallMount(mount) then
-		if not entry.WallId then return false end		local wallData = levelData.Walls and levelData.Walls[entry.WallId]
-		if not wallData then return false end		local dir, _, startLocal, length = Formex.Objects.GetWallBasis(wallData)
-		if length <= EPSILON then return false end		local minX = boundsSize.X / 2
+		if not entry.WallId then return false end
+		local wallData = levelData.Walls and levelData.Walls[entry.WallId]
+		if not wallData then return false end
+		local dir, _, startLocal, length = Formex.Objects.GetWallBasis(wallData)
+		if length <= EPSILON then return false end
+		local minX = boundsSize.X / 2
 		local maxX = length - (boundsSize.X / 2)
-		if entry.Position.X < minX - EPSILON or entry.Position.X > maxX + EPSILON then return false end		local levelIndex = wallData.Level or entry.Level or 1
+		if entry.Position.X < minX - EPSILON or entry.Position.X > maxX + EPSILON then return false end
+		local levelIndex = wallData.Level or entry.Level or 1
 		local levelOffset = Formex.Plot.GetLevelOffset(levelIndex)
 		local wallHeight = wallData.Height or Formex.LevelHeight
 		local wallTop = levelOffset + wallHeight
@@ -824,15 +840,19 @@ local function isObjectValid(plotData: Formex.PlotData, levelData: Formex.LevelD
 		if mount == Formex.MountType.Door then
 			elevation = 0
 		end
-		if elevation < -EPSILON then return false end		local bottomY = floorHeight + elevation
+		if elevation < -EPSILON then return false end
+		local bottomY = floorHeight + elevation
 		local topY = bottomY + boundsSize.Y
-		if topY > wallTop + EPSILON then return false end		return true
+		if topY > wallTop + EPSILON then return false end
+		return true
 	end
 
 	local position2 = Vector2.new(entry.Position.X, entry.Position.Z)
-	if not Formex.Plot.IsPointInUnlockedSegments(position2, plotData.SegmentsUnlocked) then return false end	if mount == Formex.MountType.Floor or mount == Formex.MountType.Ceiling then
+	if not Formex.Plot.IsPointInUnlockedSegments(position2, plotData.SegmentsUnlocked) then return false end
+	if mount == Formex.MountType.Floor or mount == Formex.MountType.Ceiling then
 		local floorData = Formex.Objects.GetFloorAtPosition(plotData, entry.Level or 1, position2)
-		if not floorData then return false end	end
+		if not floorData then return false end
+	end
 	return true
 end
 
@@ -994,9 +1014,12 @@ local function collectObjectCollisions(plotData: Formex.PlotData, levelIndex: nu
 	end
 
 	local function preferEntry(existingKeyType: string?, objectId: any, objectData: Formex.ObjectData): boolean
-		if objectData.ObjectId == nil then return false end		local desiredType = type(objectData.ObjectId)
-		if desiredType ~= "number" and desiredType ~= "string" then return false end		local keyType = type(objectId)
-		if keyType == desiredType and existingKeyType ~= desiredType then return true end		return false
+		if objectData.ObjectId == nil then return false end
+		local desiredType = type(objectData.ObjectId)
+		if desiredType ~= "number" and desiredType ~= "string" then return false end
+		local keyType = type(objectId)
+		if keyType == desiredType and existingKeyType ~= desiredType then return true end
+		return false
 	end
 
 	local entries = {}
@@ -1083,7 +1106,8 @@ local function applyTransaction(plotData: Formex.PlotData, changes: {BuildChange
 	local originalLevels = plotData and plotData.Levels
 	local originalNextId = plotData and plotData.NextId or 1
 	local function rollback()
-		if not plotData then return end		plotData.Levels = originalLevels
+		if not plotData then return end
+		plotData.Levels = originalLevels
 		plotData.NextId = originalNextId
 	end
 
@@ -1200,8 +1224,8 @@ local function applyTransaction(plotData: Formex.PlotData, changes: {BuildChange
 						BackTopColor = backTopColor,
 						BackBottomColor = backBottomColor,
 						Part = nil,
-						ConnectedRoomFront = nil,
-						ConnectedRoomBack = nil,
+						FrontRoom = nil,
+						BackRoom = nil,
 					} :: Formex.WallData
 					walls[newId] = newWall
 					table.insert(addedWalls, { Level = levelIndex, WallId = newId })
@@ -1278,8 +1302,7 @@ local function applyTransaction(plotData: Formex.PlotData, changes: {BuildChange
 							BackBottomPart = existing.BackBottomPart,
 							FrontTopPart = existing.FrontTopPart,
 							BackTopPart = existing.BackTopPart,
-							ConnectedRoomFront = existing.ConnectedRoomFront,
-							ConnectedRoomBack = existing.ConnectedRoomBack,
+							Room = existing.Room,
 						} :: Formex.WallData
 						walls[existing.WallId] = updated
 						table.insert(updatedWalls, { Level = levelIndex, WallId = existing.WallId })
@@ -1354,9 +1377,7 @@ local function applyTransaction(plotData: Formex.PlotData, changes: {BuildChange
 						FloorClientPart = existing.FloorClientPart,
 						FoundationClientPart = existing.FoundationClientPart,
 						CeilingClientPart = existing.CeilingClientPart,
-						ConnectedRooms = existing.ConnectedRooms,
-						ConnectedWalls = existing.ConnectedWalls,
-						ConnectedFloors = existing.ConnectedFloors,
+						Room = existing.Room,
 					} :: Formex.FloorData
 					floors[existing.FloorId] = updated
 					table.insert(updatedFloors, { Level = levelIndex, FloorId = existing.FloorId })
@@ -1563,14 +1584,15 @@ local function applyTransaction(plotData: Formex.PlotData, changes: {BuildChange
 end
 
 function Formex.Transaction.Apply(plotData: Formex.PlotData, changes: {BuildChange}, options: TransactionOptions?): TransactionResult
+	print("Applying transaction with " .. tostring(#changes) .. " changes", changes[1])
 	return applyTransaction(plotData, changes, options or {Commit = true})
 end
 
-function Formex.Transaction.Validate(plotData: Formex.PlotData, changes: {BuildChange})
+function Formex.Transaction.Validate(plotData: Formex.PlotData, changes: {BuildChange}): TransactionResult
 	return applyTransaction(plotData, changes, {Commit = false})
 end
 
-function Formex.IsTransactionValid(plotData: Formex.PlotData, changes: {BuildChange})
+function Formex.IsTransactionValid(plotData: Formex.PlotData, changes: {BuildChange}): TransactionResult
 	return Formex.Transaction.Validate(plotData, changes)
 end
 

@@ -250,11 +250,13 @@ local function snapToGrid(value: number): number
 end
 
 local function clampWallSplit(value: number?, height: number?): number?
-	if value == nil then return 0 end	local maxHeight = height
+	if value == nil then return 0 end
+	local maxHeight = height
 	if not maxHeight or maxHeight <= 0 then
 		maxHeight = Formex.LevelHeight
 	end
-	if value < Formex.GridSize or value >= maxHeight then return 0 end	local snapped = snapToGrid(value)
+	if value < Formex.GridSize or value >= maxHeight then return 0 end
+	local snapped = snapToGrid(value)
 	return math.clamp(snapped, 0, maxHeight - Formex.GridSize)
 end
 
@@ -343,7 +345,8 @@ local function createRoomMaterialRow(options)
 end
 
 local function updateWallSplitVisibility()
-	if not ui.WallFrontTopRow or not ui.WallBackTopRow then return end	local showFrontBottom = wallFrontSplitValue ~= nil and wallFrontSplitValue > 0
+	if not ui.WallFrontTopRow or not ui.WallBackTopRow then return end
+	local showFrontBottom = wallFrontSplitValue ~= nil and wallFrontSplitValue > 0
 	local showBackBottom = wallBackSplitValue ~= nil and wallBackSplitValue > 0
 	ui.WallFrontTopRow.Visible = true
 	ui.WallBackTopRow.Visible = true
@@ -356,7 +359,8 @@ local function updateWallSplitVisibility()
 end
 
 local function updateSplitRanges()
-	if not ui.WallFrontSplitSlider or not ui.WallBackSplitSlider then return end	local maxHeight = wallHeightValue
+	if not ui.WallFrontSplitSlider or not ui.WallBackSplitSlider then return end
+	local maxHeight = wallHeightValue
 	if not maxHeight or maxHeight <= 0 then
 		maxHeight = Formex.LevelHeight
 	end
@@ -378,7 +382,8 @@ local function updateSplitRanges()
 end
 
 local function updateSideSplitRange()
-	if not ui.WallSideSplitSlider then return end	local maxHeight = wallPaintHeightValue
+	if not ui.WallSideSplitSlider then return end
+	local maxHeight = wallPaintHeightValue
 	if not maxHeight or maxHeight <= 0 then
 		maxHeight = Formex.LevelHeight
 	end
@@ -392,7 +397,8 @@ local function updateSideSplitRange()
 end
 
 local function clearObjectPalette()
-    if not ui.ObjectPaletteButtons then return end    for _, buttonInfo in pairs(ui.ObjectPaletteButtons) do
+    if not ui.ObjectPaletteButtons then return end
+    for _, buttonInfo in pairs(ui.ObjectPaletteButtons) do
         if buttonInfo.Button then
             buttonInfo.Button:Destroy()
         end
@@ -402,7 +408,8 @@ end
 
 local function buildObjectPalette(prefabs: {Formex.ObjectPrefab})
     clearObjectPalette()
-    if not ui.ObjectPaletteFrame then return end    for _, prefab in ipairs(prefabs) do
+    if not ui.ObjectPaletteFrame then return end
+    for _, prefab in ipairs(prefabs) do
         if prefab.PrefabName and prefab.PrefabName ~= "" then
             local buttonInfo = createPaletteButton(ui.ObjectPaletteFrame, prefab, function(prefabName)
                 FormexDesign.UpdateDesignState({ Object = { PrefabName = prefabName } })
@@ -413,7 +420,8 @@ local function buildObjectPalette(prefabs: {Formex.ObjectPrefab})
 end
 
 local function clearObjectDesignRows()
-    if not ui.ObjectDesignRows then return end    for _, rowInfo in pairs(ui.ObjectDesignRows) do
+    if not ui.ObjectDesignRows then return end
+    for _, rowInfo in pairs(ui.ObjectDesignRows) do
         if rowInfo.Row then
             rowInfo.Row:Destroy()
         end
@@ -475,7 +483,8 @@ local function buildObjectDesignRows(prefab: Formex.ObjectPrefab?, design: {[num
 end
 
 local function clearRoomMaterialRows(rowsTable)
-	if not rowsTable then return end	for _, handle in pairs(rowsTable) do
+	if not rowsTable then return end
+	for _, handle in pairs(rowsTable) do
 		if handle and handle.Frame then
 			handle.Frame:Destroy()
 		end
@@ -504,7 +513,8 @@ local function buildRoomMaterialRows(parent: Instance, rowsTable, materials, par
 			MaterialValue = entry.MaterialId,
 			OnMaterialChanged = function(newMaterial)
 				local resolved = newMaterial or entry.MaterialId
-				if resolved == entry.MaterialId then return end				onReplace(entry.MaterialId, resolved)
+				if resolved == entry.MaterialId then return end
+				onReplace(entry.MaterialId, resolved)
 			end,
 		})
 		rowsTable[entry.MaterialId] = handle
@@ -513,7 +523,8 @@ end
 
 local function setCollapsed(collapsed: boolean)
     sidebarCollapsed = collapsed
-    if not ui.Container then return end    ui.Container.Size = UDim2.new(0, collapsed and COLLAPSED_WIDTH or EXPANDED_WIDTH, 1, -BOTTOM_OFFSET)
+    if not ui.Container then return end
+    ui.Container.Size = UDim2.new(0, collapsed and COLLAPSED_WIDTH or EXPANDED_WIDTH, 1, -BOTTOM_OFFSET)
     ui.Content.Visible = not collapsed
     ui.PlotInfo.Visible = not collapsed
     ui.HeaderTitle.Visible = not collapsed
@@ -532,12 +543,14 @@ local function setDesignExpanded(expanded: boolean)
 end
 
 local function updateOwnerAvatar(userId: number)
-    if not ui.OwnerAvatar then return end    if userId <= 0 then
+    if not ui.OwnerAvatar then return end
+    if userId <= 0 then
         cachedOwnerUserId = userId
         ui.OwnerAvatar.ImageContent = Content.fromAssetId(0)
         return
     end
-    if cachedOwnerUserId == userId then return end    cachedOwnerUserId = userId
+    if cachedOwnerUserId == userId then return end
+    cachedOwnerUserId = userId
     local image = Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size60x60)
     ui.OwnerAvatar.Image = image
 end
@@ -567,14 +580,16 @@ local function runBuildTransaction(changes)
 end
 
 local function addMaterialCount(materials, materialId: number)
-	if materialId == nil then return end	materials[materialId] = (materials[materialId] or 0) + 1
+	if materialId == nil then return end
+	materials[materialId] = (materials[materialId] or 0) + 1
 end
 
 local function buildRoomFloorMaterials(plotInfo, roomData)
 	local materials = {}
 	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[roomData.LevelIndex]
 	local floors = levelData and levelData.Floors
-	if not floors then return materials end	for _, floorId in ipairs(roomData.Floors or {}) do
+	if not floors then return materials end
+	for _, floorId in ipairs(roomData.Floors or {}) do
 		local floor = floors[floorId]
 		if floor then
 			local materialId = floor.FloorMaterial or Formex.DefaultFloorMaterial
@@ -588,16 +603,17 @@ local function buildRoomInteriorWallMaterials(plotInfo, roomData)
 	local materials = {}
 	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[roomData.LevelIndex]
 	local walls = levelData and levelData.Walls
-	if not walls then return materials end	for _, wallId in ipairs(roomData.Walls or {}) do
+	if not walls then return materials end
+	for _, wallId in ipairs(roomData.Walls or {}) do
 		local wall = walls[wallId]
 		if wall then
-			if wall.ConnectedRoomFront == roomData.RoomId then
+			if wall.FrontRoom == roomData.RoomId then
 				local topMaterial = wall.FrontTopMaterial or Formex.DefaultWallMaterial
 				local bottomMaterial = wall.FrontBottomMaterial or topMaterial
 				addMaterialCount(materials, topMaterial)
 				addMaterialCount(materials, bottomMaterial)
 			end
-			if wall.ConnectedRoomBack == roomData.RoomId then
+			if wall.BackRoom == roomData.RoomId then
 				local topMaterial = wall.BackTopMaterial or Formex.DefaultWallMaterial
 				local bottomMaterial = wall.BackBottomMaterial or topMaterial
 				addMaterialCount(materials, topMaterial)
@@ -609,9 +625,11 @@ local function buildRoomInteriorWallMaterials(plotInfo, roomData)
 end
 
 local function replaceRoomFloorMaterial(plotInfo, roomData, fromMaterial: number, toMaterial: number)
-	if fromMaterial == toMaterial then return end	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[roomData.LevelIndex]
+	if fromMaterial == toMaterial then return end
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[roomData.LevelIndex]
 	local floors = levelData and levelData.Floors
-	if not floors then return end	local updates = {}
+	if not floors then return end
+	local updates = {}
 	for _, floorId in ipairs(roomData.Floors or {}) do
 		local floor = floors[floorId]
 		if floor then
@@ -648,9 +666,11 @@ local function replaceRoomFloorMaterial(plotInfo, roomData, fromMaterial: number
 end
 
 local function replaceRoomInteriorWallMaterial(plotInfo, roomData, fromMaterial: number, toMaterial: number)
-	if fromMaterial == toMaterial then return end	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[roomData.LevelIndex]
+	if fromMaterial == toMaterial then return end
+	local levelData = plotInfo.PlotData.Levels and plotInfo.PlotData.Levels[roomData.LevelIndex]
 	local walls = levelData and levelData.Walls
-	if not walls then return end	local updates = {}
+	if not walls then return end
+	local updates = {}
 	for _, wallId in ipairs(roomData.Walls or {}) do
 		local wall = walls[wallId]
 		if wall and wall.Start and wall.End then
@@ -660,7 +680,7 @@ local function replaceRoomInteriorWallMaterial(plotInfo, roomData, fromMaterial:
 			local backBottomMaterial = wall.BackBottomMaterial or backTopMaterial
 			local updated = false
 
-			if wall.ConnectedRoomFront == roomData.RoomId then
+			if wall.FrontRoom == roomData.RoomId then
 				if frontTopMaterial == fromMaterial then
 					frontTopMaterial = toMaterial
 					updated = true
@@ -670,7 +690,7 @@ local function replaceRoomInteriorWallMaterial(plotInfo, roomData, fromMaterial:
 					updated = true
 				end
 			end
-			if wall.ConnectedRoomBack == roomData.RoomId then
+			if wall.BackRoom == roomData.RoomId then
 				if backTopMaterial == fromMaterial then
 					backTopMaterial = toMaterial
 					updated = true
@@ -1151,7 +1171,8 @@ local function buildSidebar()
         AllowEmpty = true,
         PlaceholderText = "Auto",
     }, function(value)
-        if suppressWallInputs then return end        if value == nil then
+        if suppressWallInputs then return end
+        if value == nil then
             FormexDesign.UpdateDesignState({ Wall = { Height = false } })
             return
         end
@@ -1177,7 +1198,8 @@ local function buildSidebar()
         AllowEmpty = true,
         PlaceholderText = "None",
     }, function(value)
-        if suppressWallInputs then return end        FormexDesign.UpdateDesignState({ Wall = { FrontSplitHeight = value or false } })
+        if suppressWallInputs then return end
+        FormexDesign.UpdateDesignState({ Wall = { FrontSplitHeight = value or false } })
     end)
 
     local wallFrontTopRow = createMaterialColorRow({
@@ -1233,7 +1255,8 @@ local function buildSidebar()
         AllowEmpty = true,
         PlaceholderText = "None",
     }, function(value)
-        if suppressWallInputs then return end        FormexDesign.UpdateDesignState({ Wall = { BackSplitHeight = value or false } })
+        if suppressWallInputs then return end
+        FormexDesign.UpdateDesignState({ Wall = { BackSplitHeight = value or false } })
     end)
 
     local wallBackTopRow = createMaterialColorRow({
@@ -1301,7 +1324,8 @@ local function buildSidebar()
         AllowEmpty = true,
         PlaceholderText = "Auto",
     }, function(value)
-        if suppressWallSideInputs then return end        if value == nil then
+        if suppressWallSideInputs then return end
+        if value == nil then
             FormexDesign.UpdateDesignState({ Wall = { Height = false } })
             return
         end
@@ -1318,7 +1342,8 @@ local function buildSidebar()
         AllowEmpty = true,
         PlaceholderText = "None",
     }, function(value)
-        if suppressWallSideInputs then return end        FormexDesign.UpdateDesignState({ Wall = { SplitHeight = value or false } })
+        if suppressWallSideInputs then return end
+        FormexDesign.UpdateDesignState({ Wall = { SplitHeight = value or false } })
     end)
 
     local wallSideTopRow = createMaterialColorRow({
@@ -1376,7 +1401,8 @@ local function buildSidebar()
         AllowEmpty = false,
         PlaceholderText = "0",
     }, function(value)
-        if suppressFloorInputs then return end        FormexDesign.UpdateDesignState({ Floor = { RaiseHeight = value } })
+        if suppressFloorInputs then return end
+        FormexDesign.UpdateDesignState({ Floor = { RaiseHeight = value } })
     end)
     
     local floorRow = createMaterialColorRow({
@@ -1391,7 +1417,8 @@ local function buildSidebar()
             FormexDesign.UpdateDesignState({ Floor = { FloorMaterial = resolved } })
         end,
         OnColorChanged = function(color)
-            if suppressFloorInputs then return end            local resolved = color or Color3.new(1, 1, 1)
+            if suppressFloorInputs then return end
+            local resolved = color or Color3.new(1, 1, 1)
             FormexDesign.UpdateDesignState({ Floor = { FloorColor = resolved } })
         end,
     })
@@ -1408,7 +1435,8 @@ local function buildSidebar()
             FormexDesign.UpdateDesignState({ Floor = { FoundationMaterial = resolved } })
         end,
         OnColorChanged = function(color)
-            if suppressFloorInputs then return end            local resolved = color or Color3.new(1, 1, 1)
+            if suppressFloorInputs then return end
+            local resolved = color or Color3.new(1, 1, 1)
             FormexDesign.UpdateDesignState({ Floor = { FoundationColor = resolved } })
         end,
     })

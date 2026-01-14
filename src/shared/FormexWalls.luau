@@ -76,7 +76,8 @@ local function resolveColor(primary: Color3?, fallback: Color3?): Color3
 end
 
 local function normalizeMaterialId(value: number?): number?
-	if type(value) ~= "number" or value <= 0 then return nil end	return value
+	if type(value) ~= "number" or value <= 0 then return nil end
+	return value
 end
 
 local function cross2(a: Vector2, b: Vector2): number
@@ -96,7 +97,10 @@ local function segmentsIntersect(a: Vector2, b: Vector2, c: Vector2, d: Vector2)
 	local cross3 = cross2(cd, ca)
 	local cross4 = cross2(cd, cb)
 
-	if math.abs(cross1) <= EPSILON and Formex.Plot.IsPointOnSegment(c, a, b) then return true end	if math.abs(cross2Value) <= EPSILON and Formex.Plot.IsPointOnSegment(d, a, b) then return true end	if math.abs(cross3) <= EPSILON and Formex.Plot.IsPointOnSegment(a, c, d) then return true end	if math.abs(cross4) <= EPSILON and Formex.Plot.IsPointOnSegment(b, c, d) then return true end
+	if math.abs(cross1) <= EPSILON and Formex.Plot.IsPointOnSegment(c, a, b) then return true end
+	if math.abs(cross2Value) <= EPSILON and Formex.Plot.IsPointOnSegment(d, a, b) then return true end
+	if math.abs(cross3) <= EPSILON and Formex.Plot.IsPointOnSegment(a, c, d) then return true end
+	if math.abs(cross4) <= EPSILON and Formex.Plot.IsPointOnSegment(b, c, d) then return true end
 	return (cross1 > 0 and cross2Value < 0 or cross1 < 0 and cross2Value > 0)
 		and (cross3 > 0 and cross4 < 0 or cross3 < 0 and cross4 > 0)
 end
@@ -140,7 +144,8 @@ function Formex.IsWallValid(plot: Formex.PlotData, wall: Formex.WallData)
 		if walls then
 			for wallId, existing in walls do
 				if wallId ~= wall.WallId and existing and existing.Start and existing.End then
-					if isWallIntersectionDisallowed(wall.Start, wall.End, existing.Start, existing.End) then return false end				end
+					if isWallIntersectionDisallowed(wall.Start, wall.End, existing.Start, existing.End) then return false end
+				end
 			end
 		end
 	end

@@ -53,7 +53,8 @@ end
 
 local function toVector2(point: Vector2 | Vector2int16): Vector2
 	-- Normalize point types for shared math helpers.
-	if typeof(point) == "Vector2" then return point end	return Vector2.new(point.X, point.Y)
+	if typeof(point) == "Vector2" then return point end
+	return Vector2.new(point.X, point.Y)
 end
 
 local function cross2(a: Vector2, b: Vector2): number
@@ -149,7 +150,8 @@ end
 local function orientation(a: Vector2, b: Vector2, c: Vector2): number
 	-- Helper for segment intersection tests.
 	local value = (b.Y - a.Y) * (c.X - b.X) - (b.X - a.X) * (c.Y - b.Y)
-	if math.abs(value) <= EPSILON then return 0 end	return value > 0 and 1 or 2
+	if math.abs(value) <= EPSILON then return 0 end
+	return value > 0 and 1 or 2
 end
 
 local function onSegment(a: Vector2, b: Vector2, c: Vector2): boolean
@@ -186,7 +188,8 @@ local function isSimplePolygon(points: { Vector2 }): boolean
 			local b2 = points[(j % count) + 1]
 
 			local isAdjacent = j == i + 1 or (i == 1 and j == count)
-			if not isAdjacent and segmentsIntersect(a1, a2, b1, b2) then return false end		end
+			if not isAdjacent and segmentsIntersect(a1, a2, b1, b2) then return false end
+		end
 	end
 
 	return true
@@ -244,7 +247,8 @@ function Formex.Floors.IsValid(plot: Formex.PlotData, floor: Formex.FloorData): 
 	for i = 1, count do
 		local a = polygon[i]
 		local b = polygon[(i % count) + 1]
-		if not Formex.Plot.IsLineWithinUnlockedSegments(a, b, plot.SegmentsUnlocked) then return false end	end
+		if not Formex.Plot.IsLineWithinUnlockedSegments(a, b, plot.SegmentsUnlocked) then return false end
+	end
 
 	return true
 end
@@ -257,7 +261,8 @@ local function addTriangle(triangles: { Triangle }, a: Vector2, b: Vector2, c: V
 	-- Insert a CCW triangle if it has area, while respecting the max triangle budget.
 	if #triangles >= maxTriangles then return false end
 	local area = cross2(b - a, c - a) / 2
-	if math.abs(area) <= EPSILON then return true end	if area < 0 then
+	if math.abs(area) <= EPSILON then return true end
+	if area < 0 then
 		b, c = c, b
 	end
 	table.insert(triangles, { a, b, c })
@@ -321,7 +326,8 @@ local function triangulateEarClipping(points: { Vector2int16 }, maxTriangles: nu
 				end
 
 				if not hasPointInside then
-					if not addTriangle(triangles, a, b, c, maxTriangles) then return triangles end					table.remove(indices, i)
+					if not addTriangle(triangles, a, b, c, maxTriangles) then return triangles end
+					table.remove(indices, i)
 					earFound = true
 					break
 				end
@@ -366,7 +372,8 @@ end
 
 local function normalizeMaterialId(value: number?): number?
 	-- Treat 0/invalid material ids as nil.
-	if type(value) ~= "number" or value <= 0 then return nil end	return value
+	if type(value) ~= "number" or value <= 0 then return nil end
+	return value
 end
 
 local function ensureFloorModel(floor: Formex.FloorData, parent: Instance?): Model
@@ -390,7 +397,8 @@ local function getPlotPartFromInstance(instance: Instance?): BasePart?
 	-- Walk up the hierarchy to locate the plot root part.
 	local current = instance
 	while current do
-		if current:IsA("BasePart") and current:GetAttribute("PlotId") then return current end		current = current.Parent
+		if current:IsA("BasePart") and current:GetAttribute("PlotId") then return current end
+		current = current.Parent
 	end
 	return nil
 end
@@ -934,7 +942,8 @@ function Formex.Floors.ApplyClientMaterials(model: Model)
 end
 
 function Formex.Floors.DestroyClientMeshes(model: Model)
-	if not model or model.Parent == nil then return end	clearMeshParts(model, CLIENT_MESH_SUFFIX)
+	if not model or model.Parent == nil then return end
+	clearMeshParts(model, CLIENT_MESH_SUFFIX)
 end
 
 function Formex.Floors.Create(

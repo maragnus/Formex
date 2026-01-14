@@ -33,7 +33,8 @@ function FormexPrompts.PlotLoad()
     end)
 
     local function formatTimestamp(timestamp: number?): string
-        if not timestamp or timestamp == 0 then return "Never played" end        return "Last played " .. os.date("%x %X", timestamp)
+        if not timestamp or timestamp == 0 then return "Never played" end
+        return "Last played " .. os.date("%x %X", timestamp)
     end
 
     FormexUI.Dialog({
@@ -218,7 +219,8 @@ function FormexPrompts.PlotPermissions()
         end
 
         table.sort(entries, function(a, b)
-            if a.InPermissions ~= b.InPermissions then return a.InPermissions end            return string.lower(a.Name) < string.lower(b.Name)
+            if a.InPermissions ~= b.InPermissions then return a.InPermissions end
+            return string.lower(a.Name) < string.lower(b.Name)
         end)
 
         return entries

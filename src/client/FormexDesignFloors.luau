@@ -4,12 +4,11 @@ FormexDesignFloors
 Handles floor design actions (placement, handles, paint/dropper).
 Exports:
 - Init(): load shared dependencies
-- ApplyPaintToTarget(target): boolean
-- CopyPaintFromTarget(target): boolean
+- ApplyPaintToTarget(input): boolean
+- CopyPaintFromTarget(input): boolean
 - ApplySelectedAppearance(overrides): boolean
 - GetSelectedFloorModel(): Model?
 - GetSelectedFloorData(): Formex.FloorData?
-- GetFloorDataFromModel(model): Formex.FloorData
 - UpdateHandles(plotInfo): ()
 - StartFloor(): ()
 - CancelAction(): ()
@@ -70,7 +69,7 @@ local setActionType: (string) -> ()
 local getDesignMode: () -> string
 local getCurrentLevel: () -> number
 local getSelectionType: () -> string
-local getSelectionPart: () -> Instance?
+local getSelectionData: () -> any?
 local getSelectionSnapshot: () -> any?
 local getFloorMaterialId: () -> number
 local getCeilingMaterialId: () -> number
@@ -87,10 +86,8 @@ local clearGhost: () -> ()
 local isGhostActive: () -> boolean
 local getGhostType: () -> any?
 local updateDesignState: (any) -> ()
-local select: (Instance) -> boolean
+local select: (any) -> boolean
 local clearSelection: () -> ()
-local getSelectionInfoFromInstance: (Instance?) -> (string?, number?, number?)
-local getPlotModelFromPlotData: (any, string, number, number) -> Model?
 local selectPlotModelByIdAsync: (any, string, number, number, number?) -> ()
 local notifyDesignModeChange: () -> ()
 local cancelAction: () -> ()
@@ -109,7 +106,6 @@ local lastHandleLevelIndex: number? = nil
 local lastHandlePointsKey: string? = nil
 local lastHandleRaiseHeight: number = 0
 local lastHandleEditMode: string? = nil
-local lastPreviewTile: Vector2int16? = nil
 
 function Floors.Init()
 	local ctx = Context.Get()
@@ -125,7 +121,7 @@ function Floors.Init()
 	getDesignMode = ctx.GetDesignMode
 	getCurrentLevel = ctx.GetCurrentLevel
 	getSelectionType = ctx.GetSelectionType
-	getSelectionPart = ctx.GetSelectionPart
+	getSelectionData = ctx.GetSelectionData
 	getSelectionSnapshot = ctx.GetSelectionSnapshot
 	getFloorMaterialId = ctx.GetFloorMaterialId
 	getCeilingMaterialId = ctx.GetCeilingMaterialId
@@ -144,8 +140,6 @@ function Floors.Init()
 	updateDesignState = ctx.UpdateDesignState
 	select = ctx.Select
 	clearSelection = ctx.ClearSelection
-	getSelectionInfoFromInstance = ctx.GetSelectionInfoFromInstance
-	getPlotModelFromPlotData = ctx.GetPlotModelFromPlotData
 	selectPlotModelByIdAsync = ctx.SelectPlotModelByIdAsync
 	notifyDesignModeChange = ctx.NotifyDesignModeChange
 	cancelAction = ctx.CancelAction
@@ -159,7 +153,8 @@ local function pointsEqual(a: Vector2int16, b: Vector2int16): boolean
 end
 
 local function getResultFloorId(result: any): number?
-	if type(result) == "number" then return result end	if type(result) == "table" then
+	if type(result) == "number" then return result end
+	if type(result) == "table" then
 		if result.FloorId then
 			return result.FloorId
 		end
@@ -191,7 +186,8 @@ local function buildFloor(floorData: any, action: any, selection: Formex.Selecti
 			Data = floorData,
 		},
 	}, selection)
-	if not results then return nil end	local changeResult = results[1]
+	if not results then return nil end
+	local changeResult = results[1]
 	return changeResult and changeResult.Result or nil
 end
 
@@ -204,7 +200,8 @@ local function cross2(a: Vector2, b: Vector2): number
 end
 
 local function isPointOnSegment(point: Vector2, a: Vector2, b: Vector2): boolean
-	if math.abs(cross2(b - a, point - a)) > Formex.EPSILON then return false end	return math.min(a.X, b.X) - Formex.EPSILON <= point.X and point.X <= math.max(a.X, b.X) + Formex.EPSILON
+	if math.abs(cross2(b - a, point - a)) > Formex.EPSILON then return false end
+	return math.min(a.X, b.X) - Formex.EPSILON <= point.X and point.X <= math.max(a.X, b.X) + Formex.EPSILON
 		and math.min(a.Y, b.Y) - Formex.EPSILON <= point.Y and point.Y <= math.max(a.Y, b.Y) + Formex.EPSILON
 end
 
@@ -240,7 +237,8 @@ end
 
 local function orientation(a: Vector2, b: Vector2, c: Vector2): number
 	local value = (b.Y - a.Y) * (c.X - b.X) - (b.X - a.X) * (c.Y - b.Y)
-	if math.abs(value) <= Formex.EPSILON then return 0 end	return value > 0 and 1 or 2
+	if math.abs(value) <= Formex.EPSILON then return 0 end
+	return value > 0 and 1 or 2
 end
 
 local function onSegment(a: Vector2, b: Vector2, c: Vector2): boolean
@@ -268,7 +266,8 @@ local function pointsEqualVector2(a: Vector2, b: Vector2): boolean
 end
 
 local function segmentsProperlyIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2): boolean
-	if not segmentsIntersect(p1, p2, q1, q2) then return false end	if pointsEqualVector2(p1, q1) or pointsEqualVector2(p1, q2)
+	if not segmentsIntersect(p1, p2, q1, q2) then return false end
+	if pointsEqualVector2(p1, q1) or pointsEqualVector2(p1, q2)
 		or pointsEqualVector2(p2, q1) or pointsEqualVector2(p2, q2) then
 		return false
 	end
@@ -286,7 +285,8 @@ local function polygonsProperlyIntersect(a: {Vector2int16}, b: {Vector2int16}): 
 		for j = 1, #b do
 			local b1 = toVector2(b[j])
 			local b2 = toVector2(b[(j % #b) + 1])
-			if segmentsProperlyIntersect(a1, a2, b1, b2) then return true end		end
+			if segmentsProperlyIntersect(a1, a2, b1, b2) then return true end
+		end
 	end
 
 	return false
@@ -295,44 +295,14 @@ end
 local function isPolygonInside(outer: {Vector2int16}, inner: {Vector2int16}): boolean
 	if #outer < 3 or #inner < 3 then return false end
 	for _, point in ipairs(inner) do
-		if not isPointInsidePolygon(Vector2.new(point.X, point.Y), outer, false) then return false end	end
+		if not isPointInsidePolygon(Vector2.new(point.X, point.Y), outer, false) then return false end
+	end
 
 	return true
 end
 
 local function getPointKey(point: Vector2int16): string
 	return tostring(point.X) .. "," .. tostring(point.Y)
-end
-
-local function buildFloorDataFromTile(tile: Vector2int16): Formex.FloorData
-	local tileSize = Formex.LayoutGridSize
-	local x0 = tile.X * tileSize - (Formex.Dimensions.Width / 2)
-	local z0 = tile.Y * tileSize - (Formex.Dimensions.Depth / 2)
-	local materialId = getFloorMaterialId()
-	local ceilingMaterial = getCeilingMaterialId()
-	local raiseHeight = getFloorRaiseHeight()
-	local floorColor = getFloorColor()
-	local ceilingColor = getCeilingColor()
-	local foundationMaterial = getFoundationMaterialId()
-	local foundationColor = getFoundationColor()
-	return {
-		FloorId = 0,
-		LevelIndex = getCurrentLevel(),
-		Points = {
-			Vector2int16.new(x0, z0),
-			Vector2int16.new(x0 + tileSize, z0),
-			Vector2int16.new(x0 + tileSize, z0 + tileSize),
-			Vector2int16.new(x0, z0 + tileSize),
-		},
-		RaiseHeight = raiseHeight,
-		FloorMaterial = materialId,
-		CeilingMaterial = ceilingMaterial,
-		FoundationMaterial = foundationMaterial,
-		FloorColor = floorColor,
-		CeilingColor = ceilingColor,
-		FoundationColor = foundationColor,
-		Model = nil,
-	}
 end
 
 local function isOverlappingExistingFloor(plotInfo: any, previewPoints: {Vector2int16}): boolean
@@ -346,7 +316,9 @@ local function isOverlappingExistingFloor(plotInfo: any, previewPoints: {Vector2
 		if floor.Points and #floor.Points >= 3 then
 			local existing = Formex.Floors.CleanPolygon(floor.Points)
 			if #existing >= 3 then
-				if polygonsProperlyIntersect(preview, existing) then return true end				if isPolygonInside(preview, existing) or isPolygonInside(existing, preview) then return true end			end
+				if polygonsProperlyIntersect(preview, existing) then return true end
+				if isPolygonInside(preview, existing) or isPolygonInside(existing, preview) then return true end
+			end
 		end
 	end
 
@@ -354,44 +326,25 @@ local function isOverlappingExistingFloor(plotInfo: any, previewPoints: {Vector2
 end
 
 local function getFloorModelFromSelection(): Model?
-	local selectionPart = getSelectionPart()
-	if not selectionPart then return nil end
-	if selectionPart:IsA("Model") then
-		local parent = selectionPart.Parent
-		if parent and parent:IsA("Folder") and parent.Name == "Floors" then return selectionPart end	end
-
-	local selectionKind, floorId, level = getSelectionInfoFromInstance(selectionPart)
-	if selectionKind ~= Enums.SelectionType.Floor or not floorId or not level then return nil end
-	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo then return nil end
-	return getPlotModelFromPlotData(plotInfo, Enums.SelectionType.Floor, level, floorId)
+	if getSelectionType() ~= Enums.SelectionType.Floor then return nil end
+	local selectionData = getSelectionData()
+	if not selectionData or not selectionData.Model then return nil end
+	return selectionData.Model
 end
 
-local function getFloorDataFromModel(model: Model): Formex.FloorData
-	local points = Formex.DecodeFloorPoints(model:GetAttribute("Points"))
-	local floorMaterial = model:GetAttribute("FloorMaterial") or Formex.DefaultFloorMaterial
-	local ceilingMaterial = model:GetAttribute("CeilingMaterial") or floorMaterial
-	local foundationMaterial = model:GetAttribute("FoundationMaterial") or Formex.DefaultFoundationMaterial
-	local floorColor = model:GetAttribute("FloorColor") or Color3.new(1, 1, 1)
-	local ceilingColor = model:GetAttribute("CeilingColor") or floorColor
-	local foundationColor = model:GetAttribute("FoundationColor") or floorColor
-	local raiseHeight = model:GetAttribute("RaiseHeight") or 0
-	local levelIndex = tonumber(model.Parent.Parent.Name) or getCurrentLevel()
-	local floorId = tonumber(model.Name) or 0
+local function cloneFloorData(floorData: Formex.FloorData): Formex.FloorData
+	local clone = table.clone(floorData)
+	if floorData.Points then
+		clone.Points = table.clone(floorData.Points)
+	end
+	return clone
+end
 
-	return {
-		FloorId = floorId,
-		LevelIndex = levelIndex,
-		Points = points,
-		RaiseHeight = raiseHeight,
-		FloorMaterial = floorMaterial,
-		CeilingMaterial = ceilingMaterial,
-		FoundationMaterial = foundationMaterial,
-		FloorColor = floorColor,
-		CeilingColor = ceilingColor,
-		FoundationColor = foundationColor,
-		Model = model,
-	}
+local function getFloorDataFromSelection(): Formex.FloorData?
+	if getSelectionType() ~= Enums.SelectionType.Floor then return nil end
+	local selectionData = getSelectionData()
+	if not selectionData then return nil end
+	return cloneFloorData(selectionData)
 end
 
 function Floors.GetSelectedFloorModel(): Model?
@@ -399,25 +352,12 @@ function Floors.GetSelectedFloorModel(): Model?
 end
 
 function Floors.GetSelectedFloorData(): Formex.FloorData?
-	local model = getFloorModelFromSelection()
-	if not model then return nil end	return getFloorDataFromModel(model)
+	return getFloorDataFromSelection()
 end
 
-function Floors.GetFloorDataFromModel(model: Model): Formex.FloorData
-	return getFloorDataFromModel(model)
-end
-
-local function getFloorModelFromTarget(target: Instance?): Model?
-	if not target then return nil end	if target:IsA("Model") and target.Parent and target.Parent:IsA("Folder") and target.Parent.Name == "Floors" then return target end	local model = target:FindFirstAncestorOfClass("Model")
-	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then return model end	return nil
-end
-
-function Floors.ApplyPaintToTarget(target: Instance): boolean
-	local model = getFloorModelFromTarget(target)
-	if not model then return false end
-	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid then return false end
-	local current = getFloorDataFromModel(model)
+function Floors.ApplyPaintToTarget(input: any): boolean
+	if not input or not input.FloorData then return false end
+	local current = input.FloorData
 	if not current.Points or #current.Points < 3 then return false end
 	local updated = {
 		FloorId = current.FloorId,
@@ -430,7 +370,7 @@ function Floors.ApplyPaintToTarget(target: Instance): boolean
 		FloorColor = getFloorColor(),
 		CeilingColor = getCeilingColor(),
 		FoundationColor = getFoundationColor(),
-		Model = model,
+		Model = current.Model,
 	}
 
 	buildFloor(updated, Formex.BuildAction.Edit, getSelectionSnapshot())
@@ -438,12 +378,9 @@ function Floors.ApplyPaintToTarget(target: Instance): boolean
 end
 
 function Floors.ApplySelectedAppearance(overrides: {[string]: any}): boolean
-	local model = getFloorModelFromSelection()
-	if not model then return false end
-	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid then return false end
-	local current = getFloorDataFromModel(model)
-	if #current.Points < 3 then return false end	local raiseHeight = overrides.RaiseHeight ~= nil and overrides.RaiseHeight or current.RaiseHeight
+	local current = getFloorDataFromSelection()
+	if not current or #current.Points < 3 then return false end
+	local raiseHeight = overrides.RaiseHeight ~= nil and overrides.RaiseHeight or current.RaiseHeight
 	local updated = {
 		FloorId = current.FloorId,
 		LevelIndex = current.LevelIndex,
@@ -455,17 +392,16 @@ function Floors.ApplySelectedAppearance(overrides: {[string]: any}): boolean
 		FloorColor = overrides.FloorColor or current.FloorColor,
 		CeilingColor = overrides.CeilingColor or current.CeilingColor,
 		FoundationColor = overrides.FoundationColor or current.FoundationColor,
-		Model = model,
+		Model = current.Model,
 	}
 
 	buildFloor(updated, Formex.BuildAction.Edit, getSelectionSnapshot())
 	return true
 end
 
-function Floors.CopyPaintFromTarget(target: Instance): boolean
-	local model = getFloorModelFromTarget(target)
-	if not model then return false end
-	local current = getFloorDataFromModel(model)
+function Floors.CopyPaintFromTarget(input: any): boolean
+	if not input or not input.FloorData then return false end
+	local current = input.FloorData
 	updateDesignState({
 		Floor = {
 			RaiseHeight = current.RaiseHeight,
@@ -503,7 +439,8 @@ local function clearFloorHandles()
 end
 
 local function getFloorValidation(plotInfo: any, floorData: Formex.FloorData, action: Formex.BuildAction?)
-	if not plotInfo or not plotInfo.PlotData then return nil end	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
+	if not plotInfo or not plotInfo.PlotData then return nil end
+	local validation = Formex.IsTransactionValid(plotInfo.PlotData, {
 		{
 			PartType = Formex.PartType.Floor,
 			Action = action or Formex.BuildAction.Edit,
@@ -676,9 +613,8 @@ end
 local function finalizeMove(plotInfo: any)
 	if not movePreviewPoints or not moveFloorId or not moveLevelIndex then return end
 	local updates = {}
-	local floorModel = getFloorModelFromSelection()
-	if floorModel then
-		local current = getFloorDataFromModel(floorModel)
+	local current = getFloorDataFromSelection()
+	if current then
 		current.Points = mergeDuplicatePoints(movePreviewPoints)
 		current.LevelIndex = moveLevelIndex
 		current.FloorId = moveFloorId
@@ -719,8 +655,10 @@ local function finalizeMove(plotInfo: any)
 end
 
 local function handlePointMove(plotInfo: any, input: any)
-	if not activeHandle or activeHandle.Kind == "Delete" then return end	if activeHandle.Kind == "Height" then
-		if not input.HitPosition or not plotInfo or not plotInfo.PlotPart or not moveLevelIndex then return end		local localPosition = plotInfo.PlotPart.CFrame:PointToObjectSpace(input.HitPosition)
+	if not activeHandle or activeHandle.Kind == "Delete" then return end
+	if activeHandle.Kind == "Height" then
+		if not input.HitPosition or not plotInfo or not plotInfo.PlotPart or not moveLevelIndex then return end
+		local localPosition = plotInfo.PlotPart.CFrame:PointToObjectSpace(input.HitPosition)
 		local baseY = getHandleY(moveLevelIndex)
 		local newHeight = localPosition.Y - baseY
 		updateDesignState({
@@ -747,7 +685,8 @@ local function handlePointMove(plotInfo: any, input: any)
 	if activeHandle.Kind == "Side" then
 		local nextIndex = activeHandle.NextIndex or ((activeHandle.Index % #movePreviewPoints) + 1)
 		local midpoint = getSnappedMidpoint(movePreviewPoints, activeHandle.Index)
-		if not midpoint then return end		local deltaX = newPoint.X - midpoint.X
+		if not midpoint then return end
+		local deltaX = newPoint.X - midpoint.X
 		local deltaY = newPoint.Y - midpoint.Y
 		local startPoint = movePreviewPoints[activeHandle.Index]
 		local endPoint = movePreviewPoints[nextIndex]
@@ -791,58 +730,15 @@ local function handlePointMove(plotInfo: any, input: any)
 	end
 end
 
-local function createFloorFromTile(tile: Vector2int16, floorData: Formex.FloorData?)
-	local plotInfo = FormexClient.CurrentPlot
-	local data = floorData or buildFloorDataFromTile(tile)
-	local result = buildFloor(data, Formex.BuildAction.Add, getSelectionSnapshot())
-	local resultFloorId = getResultFloorId(result)
-	if plotInfo and resultFloorId then
-		selectPlotModelByIdAsync(plotInfo, Enums.SelectionType.Floor, data.LevelIndex, resultFloorId)
-	end
-end
-
-local function updateFloorGhost(plotInfo: any, tile: Vector2int16): (boolean, Formex.FloorData)
-	if not plotInfo or not plotInfo.PlotPart then
-		return false, buildFloorDataFromTile(tile)
-	end
-
-	local floorData = buildFloorDataFromTile(tile)
-	ensureFloorGhost(plotInfo.PlotPart, getCurrentLevel(), tile, Formex.PartType.Floor)
-	local validation = getFloorValidation(plotInfo, floorData, Formex.BuildAction.Add)
-	local isValid = validation ~= nil and validation.IsValid == true
-	if isValid and isOverlappingExistingFloor(plotInfo, floorData.Points) then
-		isValid = false
-	end
-	updateGhostValidity(isValid)
-	return isValid, floorData
-end
-
-local function updateFloorStartGhost(input: any)
-	if not input.LayoutTile then return end
-	local tile = input.LayoutTile
-	if lastPreviewTile and pointsEqual(tile, lastPreviewTile) then return end	lastPreviewTile = tile
-
-	updateFloorGhost(input.PlotInfo, tile)
-end
-
-local function finalizeFloorPlacement(plotInfo: any, tile: Vector2int16)
-	local isValid, floorData = updateFloorGhost(plotInfo, tile)
-	if not isValid then return end
-	createFloorFromTile(tile, floorData)
-	lastPreviewTile = nil
-	setActionType(Enums.ActionType.Select)
-	clearGhost()
-	notifyDesignModeChange()
-end
 
 local function onFloorHandleClicked(info: any)
 	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.PlotPart then return end	local editMode = getEditMode()
+	if not plotInfo or not plotInfo.PlotPart then return end
+	local editMode = getEditMode()
 	local allowShared = editMode ~= Enums.EditMode.DisconnectMove
 
-	local floorModel = getFloorModelFromSelection()
-	if not floorModel then return end
-	local floorData = getFloorDataFromModel(floorModel)
+	local floorData = getFloorDataFromSelection()
+	if not floorData then return end
 	if info.Kind == "Delete" then
 		buildFloor({
 			FloorId = floorData.FloorId,
@@ -859,8 +755,10 @@ local function onFloorHandleClicked(info: any)
 	local points = table.clone(floorData.Points)
 	local handleIndex = info.Index
 	if info.Kind == "Midpoint" then
-		if #points >= Formex.MaxFloorPoints then return end		local midpoint = getSnappedMidpoint(points, handleIndex)
-		if not midpoint then return end		table.insert(points, handleIndex + 1, midpoint)
+		if #points >= Formex.MaxFloorPoints then return end
+		local midpoint = getSnappedMidpoint(points, handleIndex)
+		if not midpoint then return end
+		table.insert(points, handleIndex + 1, midpoint)
 		handleIndex = handleIndex + 1
 	end
 
@@ -924,15 +822,20 @@ local function updateFloorHandles(plotInfo: any)
 		return
 	end
 
-	local floorModel = getFloorModelFromSelection()
-	if not floorModel or not plotInfo or not plotInfo.PlotPart then
+	if not plotInfo or not plotInfo.PlotPart then
 		clearFloorHandles()
 		Highlight.ClearFloorEdgePreview()
 		Highlight.UpdateSelectionHighlight()
 		return
 	end
 
-	local floorData = getFloorDataFromModel(floorModel)
+	local floorData = getFloorDataFromSelection()
+	if not floorData then
+		clearFloorHandles()
+		Highlight.ClearFloorEdgePreview()
+		Highlight.UpdateSelectionHighlight()
+		return
+	end
 	local points = movePreviewPoints or floorData.Points
 	local editMode = getEditMode()
 	local pointsKey = Formex.EncodeFloorPoints(points)
@@ -1060,14 +963,6 @@ function Floors.StartFloor()
 		AutofillFloors.StartFloor()
 		return
 	end
-
-	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid or not plotInfo.PlotPart then return end
-	setActionType(Enums.ActionType.Start)
-	lastPreviewTile = nil
-	clearGhost()
-	clearSelection()
-	notifyDesignModeChange()
 end
 
 function Floors.CancelAction()
@@ -1109,7 +1004,6 @@ function Floors.CancelAction()
 		moveRaiseHeightOriginal = nil
 		activeHandle = nil
 	end
-	lastPreviewTile = nil
 	setActionType(Enums.ActionType.Select)
 	Highlight.UpdateSelectionHighlight()
 end
@@ -1123,7 +1017,6 @@ function Floors.ClearSelection()
 	moveRaiseHeight = 0
 	moveRaiseHeightOriginal = nil
 	activeHandle = nil
-	lastPreviewTile = nil
 	clearFloorHandles()
 	Highlight.ClearFloorEdgePreview()
 	Highlight.UpdateSelectionHighlight()
@@ -1149,11 +1042,6 @@ function Floors.HandleUpdate(input: any)
 			clearGhost()
 		end
 		Highlight.UpdateSelectionHighlight()
-		return
-	end
-
-	if actionType == Enums.ActionType.Start then
-		updateFloorStartGhost(input)
 		return
 	end
 
@@ -1201,17 +1089,18 @@ function Floors.HandlePrimaryClick(input: any)
 		end
 	end
 	if actionType == Enums.ActionType.Select then
-		local currentSelection = getSelectionPart()
-		local hadSelection = getSelectionType() ~= Enums.SelectionType.None or currentSelection ~= nil
-		if hadSelection and input.Target and currentSelection then
-			if input.Target == currentSelection
-			or input.Target:IsDescendantOf(currentSelection)
-			or currentSelection:IsDescendantOf(input.Target) then
-				return
-			end
+		local selectionType = getSelectionType()
+		local selectionData = getSelectionData()
+		local hadSelection = selectionType ~= Enums.SelectionType.None
+		if hadSelection
+			and selectionType == Enums.SelectionType.Floor
+			and input.FloorData
+			and selectionData
+			and input.FloorData == selectionData then
+			return
 		end
 
-		local selected = input.Target and select(input.Target) or false
+		local selected = select(input)
 		if selected then return end
 
 		if hadSelection then
@@ -1223,12 +1112,6 @@ function Floors.HandlePrimaryClick(input: any)
 			Floors.StartFloor()
 		end
 		return
-	end
-
-	if actionType == Enums.ActionType.Start then
-		if input.LayoutTile then
-			finalizeFloorPlacement(input.PlotInfo, input.LayoutTile)
-		end
 	end
 end
 

@@ -43,7 +43,7 @@ local selectAfterFloorBuild: (any, number, {Vector2int16}, any?) -> ()
 local updateGhostValidity: (boolean) -> ()
 local clearGhost: () -> ()
 local clearSelection: () -> ()
-local select: (Instance) -> boolean
+local select: (any) -> boolean
 local notifyDesignModeChange: () -> ()
 
 local ghostPoints = {} :: {BasePart}
@@ -100,7 +100,8 @@ local function cross2(a: Vector2, b: Vector2): number
 end
 
 local function isPointOnSegment(point: Vector2, a: Vector2, b: Vector2): boolean
-	if math.abs(cross2(b - a, point - a)) > Formex.EPSILON then return false end	return math.min(a.X, b.X) - Formex.EPSILON <= point.X and point.X <= math.max(a.X, b.X) + Formex.EPSILON
+	if math.abs(cross2(b - a, point - a)) > Formex.EPSILON then return false end
+	return math.min(a.X, b.X) - Formex.EPSILON <= point.X and point.X <= math.max(a.X, b.X) + Formex.EPSILON
 		and math.min(a.Y, b.Y) - Formex.EPSILON <= point.Y and point.Y <= math.max(a.Y, b.Y) + Formex.EPSILON
 end
 
@@ -136,7 +137,8 @@ end
 
 local function orientation(a: Vector2, b: Vector2, c: Vector2): number
 	local value = (b.Y - a.Y) * (c.X - b.X) - (b.X - a.X) * (c.Y - b.Y)
-	if math.abs(value) <= Formex.EPSILON then return 0 end	return value > 0 and 1 or 2
+	if math.abs(value) <= Formex.EPSILON then return 0 end
+	return value > 0 and 1 or 2
 end
 
 local function onSegment(a: Vector2, b: Vector2, c: Vector2): boolean
@@ -164,7 +166,8 @@ local function pointsEqualVector2(a: Vector2, b: Vector2): boolean
 end
 
 local function segmentsProperlyIntersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2): boolean
-	if not segmentsIntersect(p1, p2, q1, q2) then return false end	if pointsEqualVector2(p1, q1) or pointsEqualVector2(p1, q2)
+	if not segmentsIntersect(p1, p2, q1, q2) then return false end
+	if pointsEqualVector2(p1, q1) or pointsEqualVector2(p1, q2)
 		or pointsEqualVector2(p2, q1) or pointsEqualVector2(p2, q2) then
 		return false
 	end
@@ -182,7 +185,8 @@ local function polygonsProperlyIntersect(a: {Vector2int16}, b: {Vector2int16}): 
 		for j = 1, #b do
 			local b1 = toVector2(b[j])
 			local b2 = toVector2(b[(j % #b) + 1])
-			if segmentsProperlyIntersect(a1, a2, b1, b2) then return true end		end
+			if segmentsProperlyIntersect(a1, a2, b1, b2) then return true end
+		end
 	end
 
 	return false
@@ -191,7 +195,8 @@ end
 local function isPolygonInside(outer: {Vector2int16}, inner: {Vector2int16}): boolean
 	if #outer < 3 or #inner < 3 then return false end
 	for _, point in ipairs(inner) do
-		if not isPointInsidePolygon(Vector2.new(point.X, point.Y), outer, false) then return false end	end
+		if not isPointInsidePolygon(Vector2.new(point.X, point.Y), outer, false) then return false end
+	end
 
 	return true
 end
@@ -206,16 +211,12 @@ local function isPointOnOrInExistingFloor(plotInfo: any, point: Vector2int16): b
 		if floor.Points and #floor.Points >= 3 then
 			local existing = Formex.Floors.CleanPolygon(floor.Points)
 			if #existing >= 3 then
-				if isPointInsidePolygon(testPoint, existing, true) then return true end			end
+				if isPointInsidePolygon(testPoint, existing, true) then return true end
+			end
 		end
 	end
 
 	return false
-end
-
-local function getFloorModelFromTarget(target: Instance?): Model?
-	if not target then return nil end	if target:IsA("Model") and target.Parent and target.Parent:IsA("Folder") and target.Parent.Name == "Floors" then return target end	local model = target:FindFirstAncestorOfClass("Model")
-	if model and model.Parent and model.Parent:IsA("Folder") and model.Parent.Name == "Floors" then return model end	return nil
 end
 
 local function isOverlappingExistingFloor(plotInfo: any, previewPoints: {Vector2int16}): boolean
@@ -229,7 +230,9 @@ local function isOverlappingExistingFloor(plotInfo: any, previewPoints: {Vector2
 		if floor.Points and #floor.Points >= 3 then
 			local existing = Formex.Floors.CleanPolygon(floor.Points)
 			if #existing >= 3 then
-				if polygonsProperlyIntersect(preview, existing) then return true end				if isPolygonInside(preview, existing) or isPolygonInside(existing, preview) then return true end			end
+				if polygonsProperlyIntersect(preview, existing) then return true end
+				if isPolygonInside(preview, existing) or isPolygonInside(existing, preview) then return true end
+			end
 		end
 	end
 
@@ -258,7 +261,8 @@ local function createGhostBall(name: string, color: Color3): BasePart
 end
 
 local function setGhostBallColor(part: BasePart?, color: Color3)
-	if not part then return end	part.Color = color
+	if not part then return end
+	part.Color = color
 end
 
 local function ensureGhostPoint(index: number, color: Color3): BasePart
@@ -399,7 +403,9 @@ local function isPreviewValid(plotInfo: any, previewPoints: {Vector2int16}): boo
 			Data = previewData,
 		},
 	})
-	if not validation or validation.IsValid ~= true then return false end	if isOverlappingExistingFloor(plotInfo, previewPoints) then return false end	return true
+	if not validation or validation.IsValid ~= true then return false end
+	if isOverlappingExistingFloor(plotInfo, previewPoints) then return false end
+	return true
 end
 
 local function updateGhosts(plotInfo: any, cursorPoint: Vector2int16?)
@@ -432,7 +438,8 @@ end
 
 local function finalizeFloor()
 	local plotInfo = FormexClient.CurrentPlot
-	if not plotInfo or not plotInfo.IsValid then return end	if #points < 3 then return end
+	if not plotInfo or not plotInfo.IsValid then return end
+	if #points < 3 then return end
 	local floorData = buildFloorDataFromPoints(points)
 	local isValid = isPreviewValid(plotInfo, floorData.Points)
 	if not isValid then
@@ -518,12 +525,13 @@ end
 function Manual.HandlePrimaryClick(input: any)
 	if not input then return end
 	local actionType = getActionType()
-	local targetFloor = getFloorModelFromTarget(input.Target)
-	if targetFloor and select(targetFloor) then
+	local selected = input and input.FloorData and select(input) or false
+	if selected then
 		Manual.CancelAction()
 		return
 	end
-	if not input.SnapPoint then return end	if actionType == Enums.ActionType.Start then
+	if not input.SnapPoint then return end
+	if actionType == Enums.ActionType.Start then
 		if isPointOnOrInExistingFloor(FormexClient.CurrentPlot, input.SnapPoint) then
 			updateGhostValidity(false)
 			return
