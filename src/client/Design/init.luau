@@ -280,10 +280,10 @@ local function getDataFromPart(target: Instance?): PartInfo?
 	-- Build hierarchy from plotPart to part
 	local hierarchy = {} :: {Instance}
 
-	local part = target:IsA("Model") and target or target:FindFirstAncestorWhichIsA("Model")
-	while part and part ~= plotPart do
-		table.insert(hierarchy, 1, part)
-		part = part.Parent
+	local cursor: Instance? = target:IsA("Model") and target or target:FindFirstAncestorWhichIsA("Model")
+	while cursor and cursor ~= plotPart do
+		table.insert(hierarchy, 1, cursor)
+		cursor = cursor.Parent
 	end
 
 	-- Expecting hierarchy: Level (Folder) -> Type (Folder) -> Part (BasePart/Model)
@@ -303,32 +303,32 @@ local function getDataFromPart(target: Instance?): PartInfo?
 	}
 
 	if typeName == "Walls" then
-		local data = levelData.Walls and levelData.Walls[partId]
+		local data: Formex.WallData = levelData.Walls and levelData.Walls[partId]
 		if not data then return nil end
 
 		result.PartType = Formex.PartType.Wall
 		result.Data = data
 		result.WallSide = wallSide[target.Name] or nil
 		if result.WallSide == Formex.ObjectSide.Front then
-			result.Room = levelData.Rooms and levelData.Rooms[data.ConnectedRoomFront] or nil
+			result.Room = levelData.Rooms and data.FrontRoom and levelData.Rooms[data.FrontRoom] or nil
 		elseif result.WallSide == Formex.ObjectSide.Back then	
-			result.Room = levelData.Rooms and levelData.Rooms[data.ConnectedRoomBack] or nil
+			result.Room = levelData.Rooms and data.BackRoom and levelData.Rooms[data.BackRoom] or nil
 		end
 	elseif typeName == "Floors" then
-		local data = levelData.Floors and levelData.Floors[partId]
+		local data: Formex.FloorData = levelData.Floors and levelData.Floors[partId]
 		if not data then return nil end
 
 		result.PartType = Formex.PartType.Floor
 		result.Data = data
 		result.FloorSide = floorSide[target.Name] or nil
-		result.Room = levelData.Rooms and levelData.Rooms[data.Room] or nil
+		result.Room = levelData.Rooms and data.Room and levelData.Rooms[data.Room] or nil
 	elseif typeName == "Objects" then
-		local data = levelData.Objects and levelData.Objects[partId]
+		local data: Formex.ObjectData = levelData.Objects and levelData.Objects[partId]
 		if not data then return nil end
 
 		result.PartType = Formex.PartType.Object
 		result.Data = data
-		result.Room = levelData.Rooms and levelData.Rooms[data.Room] or nil
+		result.Room = levelData.Rooms and data.Room and levelData.Rooms[data.Room] or nil
 	end
 
 	return result
@@ -624,7 +624,7 @@ function FormexDesign.SetDesignSubMode(mode: DesignSubMode?)
 	if mode ~= FormexDesign.DesignSubMode.Normal then
 		FormexDesign.ClearSelection()
 	end
-	designSubMode = mode
+	designSubMode = mode or FormexDesign.DesignSubMode.Normal
 	notifyDesignModeChange()
 end
 

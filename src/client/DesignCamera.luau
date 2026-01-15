@@ -44,9 +44,9 @@ local DesignCamera = {}
 
 export type CameraMode = "Play" | "TopDown"
 DesignCamera.CameraMode = table.freeze({
-	Play = "Play",
-	TopDown = "TopDown",
-}) :: {[CameraMode]: CameraMode}
+	Play = "Play" :: CameraMode,
+	TopDown = "TopDown" :: CameraMode,
+})
 
 export type TopDownState = {
 	Position: Vector2,
@@ -680,6 +680,7 @@ local function cameraMoveFunction(_player: Player, moveVector: Vector3, relative
 	end
 	cameraMoveVector = moveVector
 	cameraMoveRelativeToCamera = relativeToCamera
+	return nil
 end
 Controls.moveFunction = cameraMoveFunction
 

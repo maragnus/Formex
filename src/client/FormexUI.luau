@@ -105,6 +105,7 @@ export type LabelOptions = {
     TextWrapped: boolean?
 } & CommonOptions
 
+
 function FormexUI.CreateLabel(options: LabelOptions)
     local label = Instance.new("TextLabel", options.Parent)
     if options.Name then label.Name = options.Name end
@@ -160,13 +161,13 @@ end
 
 export type ButtonType = "Primary" | "Secondary" | "Success" | "Info" | "Warn" | "Danger"
 FormexUI.ButtonType = table.freeze({
-    Primary = "Primary",
-    Secondary = "Secondary",
-    Success = "Success",
-    Info = "Info",
-    Warn = "Warn",
-    Danger = "Danger",
-}) :: {[ButtonType]: ButtonType}
+    Primary = "Primary" :: ButtonType,
+    Secondary = "Secondary" :: ButtonType,
+    Success = "Success" :: ButtonType,
+    Info = "Info" :: ButtonType,
+    Warn = "Warn" :: ButtonType,
+    Danger = "Danger" :: ButtonType,
+})
 
 function FormexUI.GetButtonPalette(buttonType: ButtonType)
     return buttonPalette[buttonType] or buttonPalette.Primary
@@ -174,9 +175,9 @@ end
 
 export type ButtonStyle = "Solid" | "Outline"
 FormexUI.ButtonStyle = table.freeze({
-    Solid = "Solid",
-    Outline = "Outline"
-}) :: {[ButtonStyle]: ButtonStyle}
+    Solid = "Solid" :: ButtonStyle,
+    Outline = "Outline" :: ButtonStyle
+})
 
 export type ButtonOptions = {
     Parent: Instance,
@@ -245,7 +246,7 @@ function FormexUI.CreateButton(options: ButtonOptions, action: (GuiButton) -> ()
         labelText.BackgroundTransparency = 1
         labelText.Size = UDim2.new(0, 0, 1, 0)
         labelText.AutomaticSize = Enum.AutomaticSize.X
-        labelText.Font = Enum.Font.GothamSemibold
+        labelText.Font = Enum.Font.GothamMedium
         labelText.Text = options.Text or ""
         labelText.TextSize = 16
         labelText.TextColor3 = palette.Text
@@ -327,10 +328,10 @@ end
 
 export type DialogSize = "Small" | "Medium" | "Large"
 FormexUI.DialogSize = table.freeze({
-    Small = "Small",
-    Medium = "Medium",
-    Large = "Large",
-}) :: {[DialogSize]: DialogSize}
+    Small = "Small" :: DialogSize,
+    Medium = "Medium" :: DialogSize,
+    Large = "Large" :: DialogSize,
+})
 
 export type ButtonInfo = {
     Result: any?, -- if nil, returns Dialog.Result
@@ -1476,10 +1477,10 @@ function FormexUI.Dialog(options: DialogOptions, contents: ((dialog: Dialog) -> 
         local scrollingFrame = Instance.new("ScrollingFrame", dialogFrame)
         scrollingFrame.Name = "ContentContainer"
         scrollingFrame.BackgroundTransparency = 1
-        scrollingFrame.Size = UDim2.new(1, 0, 0, scrollHeights[dialog.Size] or 320)
+        scrollingFrame.Size = UDim2.new(1, 0, 0, scrollHeights[options.Size] or 320)
         scrollingFrame.AutomaticSize = Enum.AutomaticSize.None
         scrollingFrame.LayoutOrder = 2
-        scrollingFrame.ScrollingDirection = options.Scrolling
+        scrollingFrame.ScrollingDirection = options.Scrolling or Enum.ScrollingDirection.Y
         scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.XY
         scrollingFrame.CanvasSize = UDim2.new()
         scrollingFrame.ScrollBarImageTransparency = 0.15
