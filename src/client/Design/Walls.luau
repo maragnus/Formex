@@ -584,52 +584,39 @@ local function splitWallAtPoint(plotInfo: any, wall: WallInfo, splitPoint: Vecto
 	if not plotInfo.PlotPart or not wall.Part then return false end
 	local baseData = getWallDataFromPlot(plotInfo, wall.Level, wall.WallId)
 	if not baseData then return false end
-	local wallDataA = table.clone(baseData)
-	wallDataA.WallId = 0
-	wallDataA.Level = wall.Level
-	wallDataA.Start = wall.Start
-	wallDataA.End = splitPoint
-	wallDataA.Part = nil
+	local distance = (Vector2.new(splitPoint.X - baseData.Start.X, splitPoint.Y - baseData.Start.Y)).Magnitude
+	local halves = Formex.Walls.Divide(baseData, distance)
+	if not halves or #halves < 2 then
+		return false
+	end
 
-	local wallDataB = table.clone(baseData)
-	wallDataB.WallId = 0
-	wallDataB.Level = wall.Level
-	wallDataB.Start = splitPoint
-	wallDataB.End = wall.End
-	wallDataB.Part = nil
+	local editedWall = halves[1]
+	local addedWall = halves[2]
+	editedWall.Part = nil
+	addedWall.Part = nil
 
-	local previewA = createWallPreview(plotInfo.PlotPart, wallDataA)
-	local previewB = createWallPreview(plotInfo.PlotPart, wallDataB)
+	local previewA = createWallPreview(plotInfo.PlotPart, editedWall)
+	local previewB = createWallPreview(plotInfo.PlotPart, addedWall)
 
-	local deleteData = {
-		WallId = wall.WallId,
-		Level = wall.Level,
-		Start = wall.Start,
-		End = wall.End,
-		Part = nil,
-	}
-	local ok = safeBuildWall(deleteData, Formex.BuildAction.Delete)
-	if not ok then
+	local results = runBuildTransaction({
+		{
+			PartType = Formex.PartType.Wall,
+			Action = Formex.BuildAction.Edit,
+			Data = editedWall,
+		},
+		{
+			PartType = Formex.PartType.Wall,
+			Action = Formex.BuildAction.Add,
+			Data = addedWall,
+		},
+	}, getSelectionSnapshot())
+	if not results then
 		if previewA then previewA:Destroy() end
 		if previewB then previewB:Destroy() end
 		return false
 	end
 
-	local okA, resultA = safeBuildWall(wallDataA, Formex.BuildAction.Add)
-	if not okA then
-		if previewA then previewA:Destroy() end
-		if previewB then previewB:Destroy() end
-		return false
-	end
-
-	local okB, resultB = safeBuildWall(wallDataB, Formex.BuildAction.Add)
-	if not okB then
-		if previewA then previewA:Destroy() end
-		if previewB then previewB:Destroy() end
-		return false
-	end
-
-	return true, resultA, resultB
+	return true, results[1] and results[1].Result or nil, results[2] and results[2].Result or nil
 end
 
 local function splitWallsAtPoints(plotInfo: any, level: number, points: {Vector2int16}, ignoreIds: {[number]: boolean})
@@ -758,8 +745,7 @@ local function onWallDivide()
 	clearSelection()
 	notifyDesignModeChange()
 
-	local result = resultA or resultB
-	local resultWallId = getResultWallId(result)
+	local resultWallId = getResultWallId(resultB or resultA)
 	if resultWallId then
 		selectWallByIdAsync(input.PlotInfo, selectedLevel, resultWallId)
 	end

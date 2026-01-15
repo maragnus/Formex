@@ -26,7 +26,7 @@ Always check these related documents with reviewing or updating these systems:
     - `if not plotInfo or not plotInfo.IsValid then return true end`
     - `if not Walls[wallId] then contiue end`
 
-4. Always update `FormexSerialization.luau` when changing serializable properties on `Formex.LevelData`, `Formex.WallData`, `Formex.FloorData`, `Formex.ObjectData` data type definitions
+4. Always update `src/shared/Serialization.luau` when changing serializable properties on `Formex.LevelData`, `Formex.WallData`, `Formex.FloorData`, `Formex.ObjectData` data type definitions
 
 5. Luau requires that a `local function` is always defined before it's first usage. Make sure this is always the case when adding a new `local function` by resolving in one of these ways:
     - Make the function a `function module.*`
@@ -131,18 +131,18 @@ A **Plot** has a permissions list of other players that can interact with it. Th
   - Floors also use Material/MaterialVariant and Color for design of their sides
   - Floor and Ceilings are a grid of `Formex.LayoutGrid` size, and `Formex.FoundationHeight` for Level 1, and `Formex.InterfloorHeight` at upper levels.
   - Floors uses a complex algorithm to triangulate the polygon into a collection axis-aligned right triangles.
-- Shared module `Formex.luau` provides a shared interface to create Wall and Floor parts for server-side geometry and client-side ghosts for designing as well as confirm validity.
+- Shared module `src/shared/init.luau` (ReplicatedStorage/Formex) provides the shared interface to create wall/floor parts for server-side geometry and client-side ghosts for designing as well as confirm validity.
 
 ## Server/Client PlotData Sync (Attributes)
 
-- Server-side rendering writes the authoritative attributes onto each **Model** (`FormexWalls.luau`, `FormexFloors.luau`, and object builders).
-- Clients maintain a local `PlotData` copy in `FormexClient.luau` by watching the plot hierarchy (`Plots/{level}/Walls|Floors|Objects`) and subscribing to model attribute changes.
+- Server-side rendering writes the authoritative attributes onto each **Model** (shared builders in `src/shared/Walls.luau`, `src/shared/Floors.luau`, and `src/shared/Objects.luau`).
+- Clients maintain a local `PlotData` copy in `src/client/Client.luau` by watching the plot hierarchy (`Plots/{level}/Walls|Floors|Objects`) and subscribing to model attribute changes.
 - Clients never infer wall/floor/object data from Part properties; always read `model:GetAttribute(name) or default`.
 - Floors trigger client mesh updates on attribute changes (`Formex.Floors.RenderClientMeshes` for geometry, `Formex.Floors.ApplyClientMaterials` for appearance).
 - `FormexClient` emits `FormexEvents` (`PlotPartChanged`) so selection/UI can refresh immediately.
 - Client selection/lookup by id must use `PlotData` references (`Levels[*].Walls/Floors/Objects`) and not traverse the Workspace hierarchy as a fallback.
 - When applying client-side predictions, update model attributes via the shared builders (`Formex.Walls.Edit`, `Formex.Floors.Edit`) so `PlotData` stays in sync.
-- If a client-side predicted model is created, assign the server-returned id, then replace it once the authoritative model appears (keep this reconciliation logic centralized, e.g. in `FormexDesignContext`).
+- If a client-side predicted model is created, assign the server-returned id, then replace it once the authoritative model appears (keep this reconciliation logic centralized, e.g. in `src/client/Design/Context.luau`).
 
 ## Multiplayer Undo/Redo System
 
@@ -155,44 +155,67 @@ A **Plot** has a permissions list of other players that can interact with it. Th
 - Selection metadata includes the edit mode and the selected item (type + level + id) at snapshot time.
 - Undo/redo should restore the snapshot and reselect the stored item, switching design modes accordingly.
 - `CanUndo`/`CanRedo` are player attributes (not plot attributes). Update them when the player’s `CurrentPlotId` changes and after any history mutation.
-- `FormexDesign.luau` subscribes to player `CanUndo`/`CanRedo` and updates Design State.
+- `src/client/Design/init.luau` subscribes to player `CanUndo`/`CanRedo` and updates Design State.
 - `FormexSidebar.client.luau` reads `DesignState.CanUndo`/`CanRedo` to enable/disable undo/redo UI.
 
 ## Changing PlotData Types
 
 When updating `PlotData`, `LevelData`, `WallData`, `FloorData`, or `ObjectData`:
-- Update type definitions in `src/shared/Formex.luau`.
-- Update save/load and versioning in `src/shared/FormexSerialization.luau`.
-- Update server render/attribute writers (`src/shared/FormexWalls.luau`, `src/shared/FormexFloors.luau`, plus any object builders) so Models expose the new attributes.
-- Update client watchers in `src/client/FormexClient.luau` to read/store the new attributes and subscribe to changes.
-- Update selection/UX readers (`src/client/FormexDesign.luau`, `src/client/FormexDesignWalls.luau`, `src/client/FormexDesignFloors.luau`).
+- Update type definitions in `src/shared/init.luau`.
+- Update save/load and versioning in `src/shared/Serialization.luau`.
+- Update server render/attribute writers (`src/shared/Walls.luau`, `src/shared/Floors.luau`, `src/shared/Objects.luau`) so Models expose the new attributes.
+- Update client watchers in `src/client/Client.luau` to read/store the new attributes and subscribe to changes.
+- Update selection/UX readers in `src/client/Design` (`init.luau`, `Walls.luau`, `Floors.luau`, `Objects.luau`, `Rooms.luau`).
 
-## Shared Modules
-- `Formex.luau` is the shared interface between client and server, contains constants and utilities, hub of related modules
-  - `Formex.Walls` is provided by `FormexWalls.luau` for created, updating, and validating walls
-  - `Formex.Floors` is provided by `FormexFloors.luau` for created, updating, and validating floors
-  - `Formex.Plot` is provided by `FormexPlot.luau` for maintaining the plot itself
-  - `Formex.Serialization` is provided by `FormexSerialization.luau` is responsible for the save format of `Formex.PlotData`
+## File Map (refactored)
 
-## Modules
-- `Formex` is the shared interface between client and server
+### Shared (ReplicatedStorage/Formex)
+- `src/shared/init.luau`: Formex root; constants, enums, type defs, network function names, and exported module tables.
+- `src/shared/Data.luau`: material catalog + UI icon ids.
+- `src/shared/Buffer.luau`: base64 buffer reader/writer used by serialization.
+- `src/shared/Serialization.luau`: versioned save/load of PlotData (walls/floors/objects) using Buffer; clamps/snap values and NextId.
+- `src/shared/Util.luau`: helpers (EnsureFolder, DeepClone, ApplyMaterial, encode/decode floor points).
+- `src/shared/Math.luau`: line/polygon intersection helpers.
+- `src/shared/Plot.luau`: segment grid math (bitmasks, bounds, level offsets, unlocked checks).
+- `src/shared/Poly.luau`: polygon/segment graph utilities for tracing faces and intersection tests.
+- `src/shared/Walls.luau`: wall validation plus create/edit geometry + attributes; split helper.
+- `src/shared/Floors.luau`: polygon cleaning/triangulation, validation, mesh create/edit, client mesh/material rendering.
+- `src/shared/Objects.luau`: prefab lookup (ReplicatedStorage/Workspace), mount placement math, design encode/decode, object create/edit/carving.
+- `src/shared/Rooms.luau`: rebuilds room adjacency/metadata from wall/floor geometry with caching.
+- `src/shared/Transaction.luau`: copy-on-write transaction validation/apply for walls/floors/objects; returns merge info, selection snapshot, and NextId updates.
 
-### Server-side
-- `FormexSystem`: manage core plot ownership and common systems
-- `FormexPlot`: handles client functions related to plot management
-- `FormexBuild`: handles client functions related to building and designing
+### Server (ServerScriptService/Formex)
+- `src/server/init.server.luau`: bootstraps plot registration via System.
+- `src/server/Server.luau`: loads shared Formex modules server-side.
+- `src/server/System.luau`: authoritative plot registry and state (claim/unassign, attribute sync, DataStore save/load queue, level placeholders, render + wall carve refresh).
+- `src/server/Plot.luau`: player plot actions (claim/release, rename, save list/load/delete/new, permissions, segment unlock) delegating to System.
+- `src/server/Build.luau`: applies build transactions with shared Transaction; spawns/edits models, queues carving, tracks undo/redo per player, updates CanUndo/CanRedo.
+- `src/server/ServerFunctions.server.luau`: `FormexFunctions` RemoteFunction dispatcher wiring `Formex.Function.*` to Plot/Build.
+- `src/server/Plugin/FormexPlugin/*`: Studio prefab toolkit (workspace/ReplicatedStorage prefab roots, metadata read/write, sizing, staging/layout, grid textures, viewport dialogs, UI).
 
-### Client-side
-- `DesignCamera`: manages camera modes
-- `FormexClient`: core management for the Formex state
-- `FormexDesign`: design mode functionality (floors, walls, objects) and all the 3D design tools
-- `FormexSidebar`: UI for the sidebar menu
-- `FormexPrompts`: UI popups
-- `FormexUI`: custom UI component library
+### Client (StarterPlayerScripts/Formex)
+- `src/client/init.client.luau`: bootstrap; tracks player plot attributes and registers plots with Client.
+- `src/client/Client.luau`: client PlotData mirror and event hub; watches plot folders/attributes, runs predictions, wraps remote calls (plot actions, build transactions, undo/redo), emits `FormexEvents`.
+- `src/client/DesignCamera.luau`: camera controller for play/top-down/expand design views.
+- `src/client/FormexUI.luau`: UI component library/dialog helpers (alerts, rows, fields).
+- `src/client/FormexPrompts.luau`: plot/save/permission prompts using FormexUI.
+- `src/client/FormexPrefabCatalog.luau`: prefab browser UI + viewport previews.
+- `src/client/Gui/FormexSidebar.client.luau`: sidebar UX for design/plot actions (tools, materials, undo/redo), with `src/client/Gui/FormexFooter.client.luau` status bar and `src/client/Gui/FormexTips.client.lua` tips overlay.
+- `src/client/BlurController.luau`: depth-of-field blur helper for UI backdrops.
+- `src/client/TestEditableMeshCount.client.luau`: debug helper for editable mesh counts.
+- `src/client/Design/init.luau`: design-mode orchestrator (input routing, ghosting, selection, state, overlays) wiring Handles/Highlights/Context + FormexClient.
+- `src/client/Design/Context.luau`: shared enums/constants/state accessors for design modules (design mode, paint/build settings, selection snapshot).
+- `src/client/Design/Handles.luau`: interactive 3D handles + busy spinner management.
+- `src/client/Design/Highlights.lua`: selection/highlight/edge previews and room overlays.
+- `src/client/Design/Floors.luau`: floor edit hub (handles, paint/dropper) coordinating Manual vs Autofill flows.
+- `src/client/Design/FloorsManual.luau`: manual polygon placement/edit handles for floors.
+- `src/client/Design/FloorsAutofill.luau`: room-tracing autofill polygon builder using Poly/wall/floor segments.
+- `src/client/Design/Walls.luau`: wall placement/edit/paint and wall-handle logic.
+- `src/client/Design/Objects.luau`: object placement/rotation/paint with ghost previews and build transactions.
+- `src/client/Design/Rooms.luau`: room selection overlays plus wall/point move/merge handles tied to rooms.
 
-## Communication
-- `FormexClient` has methods that call methods named in `Formex.Function`
-- `FormexServerFunctions` is the receiver for client functions and dispatches them to `FormexBuild`, `FormexServer`, etc
+### Networking
+- `ReplicatedStorage/FormexFunctions` RemoteFunction uses names in `Formex.Function.*`; client wrappers live in `src/client/Client.luau` and server routing in `src/server/ServerFunctions.server.luau`.
 
 ## Large Changes Check-In
 - For large, multi-file changes, pause to confirm assumptions and present a brief proposed approach before implementing.

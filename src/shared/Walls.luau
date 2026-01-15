@@ -51,6 +51,46 @@ local function snapToGrid(value: number): number
 	return math.round(value / grid) * grid
 end
 
+local function getGreatestCommonDivisor(a: number, b: number): number
+	a = math.abs(a)
+	b = math.abs(b)
+	while b ~= 0 do
+		local temp = a % b
+		a = b
+		b = temp
+	end
+	return a
+end
+
+local function getGridAlignedPointOnSegment(startPoint: Vector2int16, endPoint: Vector2int16, targetDistance: number, grid: number): Vector2int16?
+	local dx = endPoint.X - startPoint.X
+	local dy = endPoint.Y - startPoint.Y
+	local gcd = getGreatestCommonDivisor(dx, dy)
+	if gcd <= 1 then
+		return nil
+	end
+
+	local stepX = dx / gcd
+	local stepY = dy / gcd
+	local bestPoint: Vector2int16? = nil
+	local bestDelta = math.huge
+
+	for i = 1, gcd - 1 do
+		local x = startPoint.X + stepX * i
+		local y = startPoint.Y + stepY * i
+		if x % grid == 0 and y % grid == 0 then
+			local dist = math.sqrt((x - startPoint.X) * (x - startPoint.X) + (y - startPoint.Y) * (y - startPoint.Y))
+			local delta = math.abs(dist - targetDistance)
+			if delta < bestDelta then
+				bestDelta = delta
+				bestPoint = Vector2int16.new(math.round(x), math.round(y))
+			end
+		end
+	end
+
+	return bestPoint
+end
+
 local function resolveWallHeight(value: number?): number
 	local resolved = value
 	if resolved ~= nil and resolved <= 0 then
@@ -287,8 +327,52 @@ Formex.Walls.Edit = function(wall: Formex.WallData, plotPart: BasePart?, allowCr
 end
 
 Formex.Walls.Divide = function(wall: Formex.WallData, distance: number): {Formex.WallData}
-	-- TODO returns two new walls split at `distance` from `wall.Start`, snapped to LayoutGridSize
-	return {wall}
+	local startPoint = wall.Start
+	local endPoint = wall.End
+	local dir = Vector2.new(endPoint.X - startPoint.X, endPoint.Y - startPoint.Y)
+	local length = dir.Magnitude
+	if length <= EPSILON then
+		return { wall }
+	end
+
+	local grid = Formex.LayoutGridSize > 0 and Formex.LayoutGridSize or 1
+	local minDistance = grid
+	local maxDistance = length - grid
+	if maxDistance < minDistance then
+		return { wall }
+	end
+
+	local targetDistance = distance
+	if type(targetDistance) ~= "number" then
+		targetDistance = length / 2
+	end
+	targetDistance = math.clamp(targetDistance, minDistance, maxDistance)
+
+	local splitPoint = getGridAlignedPointOnSegment(startPoint, endPoint, targetDistance, grid)
+	if not splitPoint then
+		return { wall }
+	end
+
+	local function clearRuntimeFields(entry: Formex.WallData)
+		entry.Part = nil
+		entry.FrontBottomPart = nil
+		entry.BackBottomPart = nil
+		entry.FrontTopPart = nil
+		entry.BackTopPart = nil
+		entry.FrontRoom = nil
+		entry.BackRoom = nil
+	end
+
+	local first = table.clone(wall)
+	first.End = splitPoint
+	clearRuntimeFields(first)
+
+	local second = table.clone(wall)
+	second.WallId = 0
+	second.Start = splitPoint
+	clearRuntimeFields(second)
+
+	return { first, second }
 end
 
 return Formex.Walls
